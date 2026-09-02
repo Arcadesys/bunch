@@ -42,4 +42,3 @@ test("MCP advertises and serves the System Companion skill snapshot", async () =
     await server.close();
   }
 });
-

@@ -45,4 +45,3 @@ export function registerSystemSkill(server: McpServer) {
     return { skill: systemSkillEntry() } as never;
   });
 }
-

@@ -11,4 +11,3 @@ dependencies:
       url: "https://system-arcades-me.vercel.app/mcp"
 policy:
   allow_implicit_invocation: true
-
