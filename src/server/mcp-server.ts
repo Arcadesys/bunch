@@ -38,7 +38,10 @@ const WIDGET_URI = "ui://system-arcades-me.vercel.app/companion-v10.html";
 // Existing ChatGPT conversations can retain a render-tool descriptor after an
 // app update. Keep the prior URI readable until those cached conversations
 // naturally reconnect, while the current tool continues to advertise v10.
-const LEGACY_WIDGET_URI = "ui://system.arcades.me/companion-v8.html";
+const LEGACY_WIDGET_URIS = [
+  "ui://system.arcades.me/companion-v7.html",
+  "ui://system.arcades.me/companion-v8.html",
+] as const;
 const coverageSchema = z.object({ id: uuidSchema, ownerId: z.string(), alterId: uuidSchema.optional(), startsOn: z.string().date(), endsOn: z.string().date().optional(), status: z.enum(["DRAFT", "CONFIRMED", "REJECTED"]), reasons: z.array(z.string()), createdAt: z.string().datetime(), confirmedAt: z.string().datetime().optional() });
 const legacyNoteViewSchema = z.object({ id: uuidSchema, ownerId: z.string(), body: z.string(), alterId: uuidSchema.optional(), coverageId: uuidSchema.optional(), actorAlterId: uuidSchema.optional(), createdAt: z.string().datetime() });
 const preferenceViewSchema = z.object({ key: z.string(), value: z.string(), updatedAt: z.string().datetime() });
@@ -106,7 +109,9 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   const publicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN ?? "https://system-arcades-me.vercel.app";
   const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "An accessible private companion that displays owner-authorized private profile pictures inline.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
   server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
-  server.registerResource("system-companion-legacy", LEGACY_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: LEGACY_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
+  for (const [index, uri] of LEGACY_WIDGET_URIS.entries()) {
+    server.registerResource(`system-companion-legacy-${index + 1}`, uri, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
+  }
 
   server.registerTool("get_companion_state", { title: "Get private companion state", description: "Use this when the user wants to review their System records in ChatGPT. It returns the current front plus authorized profiles, notes, to-dos, preferences, and coverage records, but never image bytes, private image URLs, storage keys, or raw chat transcripts.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Loaded your authorized private companion records." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));
   server.registerTool("render_system_companion", { title: "Open System companion", description: "Use this when the user wants the interactive private System companion in ChatGPT, especially to view or add private profile photos inline. Call get_companion_state first.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Opened your private System companion." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));

@@ -29,13 +29,13 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const resources = await client.listResources();
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v10.html");
     assert.ok(widget, "the v10 companion widget must be registered");
-    const legacyWidget = resources.resources.find((resource) => resource.uri === "ui://system.arcades.me/companion-v8.html");
-    assert.ok(legacyWidget, "the cached v8 companion URI must remain readable during the transition");
+    const legacyWidgets = ["ui://system.arcades.me/companion-v7.html", "ui://system.arcades.me/companion-v8.html"].map((uri) => resources.resources.find((resource) => resource.uri === uri));
+    assert.ok(legacyWidgets.every(Boolean), "the cached v7 and v8 companion URIs must remain readable during the transition");
     const widgetContent = await client.readResource({ uri: widget.uri });
-    const legacyWidgetContent = await client.readResource({ uri: legacyWidget.uri });
+    const legacyWidgetContents = await Promise.all(legacyWidgets.map((resource) => client.readResource({ uri: resource!.uri })));
     const content = widgetContent.contents[0];
     const html = "text" in content ? content.text : "";
-    const legacyHtml = "text" in legacyWidgetContent.contents[0] ? legacyWidgetContent.contents[0].text : "";
+    const legacyHtml = legacyWidgetContents.map((result) => "text" in result.contents[0] ? result.contents[0].text : "");
     assert.deepEqual(content._meta?.ui, {
       csp: { connectDomains: ["https://system-arcades-me.vercel.app"], resourceDomains: ["https://system-arcades-me.vercel.app"] },
       prefersBorder: true,
@@ -49,7 +49,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.match(html, /Private picture gallery/);
     assert.match(html, /imageManifest/);
     assert.match(html, /image\.src/);
-    assert.match(legacyHtml, /Private picture gallery/);
+    for (const cachedHtml of legacyHtml) assert.match(cachedHtml, /Private picture gallery/);
     assert.match(html, /ui\/notifications\/tool-result'\)render\(m\.params\?\.structuredContent,m\.params\?\._meta/);
     assert.doesNotMatch(html, /ui\/notifications\/tool-result'\)render\(m\.params\?\.result\)/);
   } finally {

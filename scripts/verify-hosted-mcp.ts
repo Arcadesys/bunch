@@ -37,6 +37,13 @@ try {
   const resources = await client.listResources();
   const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v10.html");
   if (!widget) throw new Error("Hosted MCP is missing the v10 companion widget.");
+  for (const uri of ["ui://system.arcades.me/companion-v7.html", "ui://system.arcades.me/companion-v8.html"]) {
+    const cachedWidget = resources.resources.find((resource) => resource.uri === uri);
+    if (!cachedWidget) throw new Error(`Hosted MCP is missing cached companion widget ${uri}.`);
+    const cachedResult = await client.readResource({ uri });
+    const cachedHtml = "text" in cachedResult.contents[0] ? cachedResult.contents[0].text : "";
+    if (!cachedHtml.includes("Private picture gallery")) throw new Error(`Cached companion widget ${uri} is not current.`);
+  }
   const widgetResult = await client.readResource({ uri: widget.uri });
   const widgetHtml = "text" in widgetResult.contents[0] ? widgetResult.contents[0].text : "";
   if (!widgetHtml.includes('id="local-image"')) throw new Error("Hosted companion widget is missing its desktop/web file-picker fallback.");
