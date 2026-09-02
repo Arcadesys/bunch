@@ -35,11 +35,12 @@ try {
   );
   if (!skillCatalog.skills.some((skill) => skill.frontmatter.name === "system-companion")) throw new Error("Hosted MCP is missing the System Companion skill.");
   const resources = await client.listResources();
-  const widget = resources.resources.find((resource) => resource.uri === "ui://system.arcades.me/companion-v8.html");
-  if (!widget) throw new Error("Hosted MCP is missing the v6 companion widget.");
+  const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v10.html");
+  if (!widget) throw new Error("Hosted MCP is missing the v10 companion widget.");
   const widgetResult = await client.readResource({ uri: widget.uri });
   const widgetHtml = "text" in widgetResult.contents[0] ? widgetResult.contents[0].text : "";
   if (!widgetHtml.includes('id="local-image"')) throw new Error("Hosted companion widget is missing its desktop/web file-picker fallback.");
+  if (!widgetHtml.includes("Private picture gallery")) throw new Error("Hosted companion widget is missing inline image rendering.");
 
   console.log("Natural-language case: Show my private System notes.");
   const noteResult = (await client.callTool({ name: "list_system_notes", arguments: { limit: 1 } })).structuredContent as { data?: unknown[] } | undefined;

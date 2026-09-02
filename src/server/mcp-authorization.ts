@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } 
 import { ownerIdFromAuth0Subject } from "@/server/auth";
 
 type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number };
+type ImageReadClaims = { sub: string; imageId: string; scope: "image:read"; exp: number };
 export const COMPANION_SCOPE = "system:companion";
 export const COMPANION_OAUTH_SCOPES = [COMPANION_SCOPE, "openid", "profile", "email", "offline_access"] as const;
 
@@ -103,5 +104,20 @@ export function requireImageUploadCapability(request: Request) {
   if (!authorization?.startsWith("Bearer ")) throw new Error("A valid image upload capability is required.");
   const claims = verifiedClaims<ImageUploadClaims>(authorization.slice(7));
   if (!claims.sub || !claims.alterId || claims.scope !== "image:write") throw new Error("A valid image upload capability is required.");
+  return claims;
+}
+
+// Widget-only image URLs need a capability because the ChatGPT iframe does not
+// share the owner's Auth0 website session. The capability is scoped to one
+// image and expires quickly; storage keys never leave the backend.
+export function issueImageReadCapability(ownerId: string, imageId: string) {
+  return signClaims({ sub: ownerId, imageId, scope: "image:read", exp: Math.floor(Date.now() / 1000) + 5 * 60 });
+}
+
+export function requireImageReadCapability(request: Request) {
+  const token = new URL(request.url).searchParams.get("cap");
+  if (!token) throw new Error("A valid image view capability is required.");
+  const claims = verifiedClaims<ImageReadClaims>(token);
+  if (!claims.sub || !claims.imageId || claims.scope !== "image:read") throw new Error("A valid image view capability is required.");
   return claims;
 }

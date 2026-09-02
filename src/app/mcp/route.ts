@@ -8,16 +8,29 @@ export async function GET(request: Request) { return handle(request); }
 export async function POST(request: Request) { return handle(request); }
 export async function DELETE(request: Request) { return handle(request); }
 
+async function rpcMethod(request: Request) {
+  if (!request.headers.get("content-type")?.includes("application/json")) return undefined;
+  try {
+    const body = await request.clone().json() as { method?: unknown };
+    return typeof body.method === "string" ? body.method : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function handle(request: Request) {
+  const method = await rpcMethod(request);
   try {
     const ownerId = await requireCompanionAccessToken(request);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     const server = createMcpServer(ownerId);
     await server.connect(transport);
     const response = await transport.handleRequest(request);
+    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: method, status: response.status });
     return addOAuthSecuritySchemes(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unauthorized";
+    console.warn("[mcp] rejected request", { httpMethod: request.method, rpcMethod: method, reason: message });
     let challenge = `Bearer scope="${COMPANION_SCOPE}"`;
     try { challenge = mcpWwwAuthenticate("invalid_token"); } catch { /* configuration error remains unauthorized */ }
     return Response.json({ error: message }, { status: 401, headers: { "WWW-Authenticate": challenge } });

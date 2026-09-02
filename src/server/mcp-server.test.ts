@@ -19,27 +19,38 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, false, `${tool.name} must be closed-world`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system.arcades.me/companion-v8.html");
-    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
+    assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v10.html");
+    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
+    assert.ok(byName.get("open_private_photo_gallery")?.outputSchema?.properties?.url, "gallery fallback must return a URL");
+    const gallery = await client.callTool({ name: "open_private_photo_gallery", arguments: {} });
+    assert.deepEqual(gallery.structuredContent, { url: "https://system-arcades-me.vercel.app/gallery" });
     for (const name of ["erase_alter", "erase_todo", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.destructiveHint, true, `${name} must be destructive`);
     for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
     const resources = await client.listResources();
-    const widget = resources.resources.find((resource) => resource.uri === "ui://system.arcades.me/companion-v8.html");
-    assert.ok(widget, "the v8 companion widget must be registered");
+    const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v10.html");
+    assert.ok(widget, "the v10 companion widget must be registered");
+    const legacyWidget = resources.resources.find((resource) => resource.uri === "ui://system.arcades.me/companion-v8.html");
+    assert.ok(legacyWidget, "the cached v8 companion URI must remain readable during the transition");
     const widgetContent = await client.readResource({ uri: widget.uri });
+    const legacyWidgetContent = await client.readResource({ uri: legacyWidget.uri });
     const content = widgetContent.contents[0];
     const html = "text" in content ? content.text : "";
+    const legacyHtml = "text" in legacyWidgetContent.contents[0] ? legacyWidgetContent.contents[0].text : "";
     assert.deepEqual(content._meta?.ui, {
-      csp: { connectDomains: ["https://system-arcades-me.vercel.app"], resourceDomains: [] },
+      csp: { connectDomains: ["https://system-arcades-me.vercel.app"], resourceDomains: ["https://system-arcades-me.vercel.app"] },
       prefersBorder: true,
     });
     assert.deepEqual(content._meta?.["openai/widgetCSP"], {
       connect_domains: ["https://system-arcades-me.vercel.app"],
-      resource_domains: [],
+      resource_domains: ["https://system-arcades-me.vercel.app"],
     });
     assert.match(html, /id="local-image"/);
     assert.match(html, /window\.openai\?\.selectFiles/);
-    assert.match(html, /ui\/notifications\/tool-result'\)render\(m\.params\?\.structuredContent\)/);
+    assert.match(html, /Private picture gallery/);
+    assert.match(html, /imageManifest/);
+    assert.match(html, /image\.src/);
+    assert.match(legacyHtml, /Private picture gallery/);
+    assert.match(html, /ui\/notifications\/tool-result'\)render\(m\.params\?\.structuredContent,m\.params\?\._meta/);
     assert.doesNotMatch(html, /ui\/notifications\/tool-result'\)render\(m\.params\?\.result\)/);
   } finally {
     await client.close();
