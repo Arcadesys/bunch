@@ -1,0 +1,14 @@
+interface:
+  display_name: "System Companion"
+  short_description: "Private notes, switches, and profile photos"
+  default_prompt: "Use $system-companion to review my private System state."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "system-companion"
+      description: "Authenticated private System MCP server"
+      transport: "streamable_http"
+      url: "https://system-arcades-me.vercel.app/mcp"
+policy:
+  allow_implicit_invocation: true
+

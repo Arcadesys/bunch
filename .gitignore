@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+private-uploads/
+.env
+.env.local
+*.tsbuildinfo
+.vercel
+.env*

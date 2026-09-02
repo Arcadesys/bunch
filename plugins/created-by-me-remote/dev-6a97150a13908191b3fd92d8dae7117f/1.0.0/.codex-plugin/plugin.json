@@ -1,0 +1,18 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "App developer"
+  },
+  "description": "Current private MCP companion for notes, front switches, alter profiles, todos, preferences, and private photos.",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "App developer",
+    "displayName": "System Companion Current",
+    "longDescription": "Current private MCP companion for notes, front switches, alter profiles, todos, preferences, and private photos.",
+    "shortDescription": "Current private MCP companion for notes, front switches, alter profiles, todos, preferences, and private photos."
+  },
+  "name": "dev-6a97150a13908191b3fd92d8dae7117f",
+  "version": "1.0.0"
+}

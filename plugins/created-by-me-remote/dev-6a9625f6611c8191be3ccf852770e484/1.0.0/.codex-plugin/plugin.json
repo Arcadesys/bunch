@@ -1,0 +1,18 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "App developer"
+  },
+  "description": "Private MCP-first companion for alters, todos, preferences, notes, and handoffs.",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "App developer",
+    "displayName": "System",
+    "longDescription": "Private MCP-first companion for alters, todos, preferences, notes, and handoffs.",
+    "shortDescription": "Private MCP-first companion for alters, todos, preferences, notes, and handoffs."
+  },
+  "name": "dev-6a9625f6611c8191be3ccf852770e484",
+  "version": "1.0.0"
+}
