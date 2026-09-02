@@ -28,13 +28,17 @@ import {
   uuidSchema,
   versionMutationSchema,
 } from "@/domain/contracts";
-import { issueImageUploadCapability } from "@/server/mcp-authorization";
+import { issueImageReadCapability, issueImageUploadCapability } from "@/server/mcp-authorization";
 import { repository } from "@/server/repository";
 import { draftSchema, noteSchema, preferenceSchema, resolveDraftSchema } from "@/server/schemas";
 import { registerSystemSkill } from "@/server/system-skill";
 import { getSystemService } from "@/server/system-service";
 
-const WIDGET_URI = "ui://system.arcades.me/companion-v8.html";
+const WIDGET_URI = "ui://system-arcades-me.vercel.app/companion-v10.html";
+// Existing ChatGPT conversations can retain a render-tool descriptor after an
+// app update. Keep the prior URI readable until those cached conversations
+// naturally reconnect, while the current tool continues to advertise v10.
+const LEGACY_WIDGET_URI = "ui://system.arcades.me/companion-v8.html";
 const coverageSchema = z.object({ id: uuidSchema, ownerId: z.string(), alterId: uuidSchema.optional(), startsOn: z.string().date(), endsOn: z.string().date().optional(), status: z.enum(["DRAFT", "CONFIRMED", "REJECTED"]), reasons: z.array(z.string()), createdAt: z.string().datetime(), confirmedAt: z.string().datetime().optional() });
 const legacyNoteViewSchema = z.object({ id: uuidSchema, ownerId: z.string(), body: z.string(), alterId: uuidSchema.optional(), coverageId: uuidSchema.optional(), actorAlterId: uuidSchema.optional(), createdAt: z.string().datetime() });
 const preferenceViewSchema = z.object({ key: z.string(), value: z.string(), updatedAt: z.string().datetime() });
@@ -42,6 +46,7 @@ const companionStateSchema = z.object({ currentFront: frontingSessionViewSchema.
 const coverageOutputSchema = z.object({ draft: coverageSchema });
 const noteOutputSchema = z.object({ note: legacyNoteViewSchema });
 const preferenceOutputSchema = z.object({ preference: preferenceViewSchema });
+const privateGalleryOutputSchema = z.object({ url: z.string().url() });
 
 function companionWidget() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>System companion</title><style>:root{font:18px/1.5 system-ui,sans-serif;color:#101820;background:#fff}body{margin:0;padding:16px}.card{max-width:700px;border:3px solid #101820;padding:18px}h2,h3{line-height:1.1}.notice{background:#eff6ff;border-left:6px solid #075985;padding:10px;font-weight:700}.entry{border-top:2px solid #101820;padding:12px 0}.muted{color:#334155}button,input,select{font:inherit;padding:9px;border:2px solid #101820}button{background:#075985;color:#fff;font-weight:800;cursor:pointer}.secondary{background:#fff;color:#101820}.row{display:flex;gap:10px;flex-wrap:wrap}</style></head><body><main class="card"><h2>System companion</h2><p class="notice" id="notice">Loading authorized records…</p><section><h3>Profiles</h3><div id="profiles" class="muted"></div></section><section><h3>Open to-dos</h3><div id="todos" class="muted"></div></section><section><h3>Coverage drafts</h3><div id="drafts" class="muted"></div></section><section><h3>Private images</h3><p class="muted">Add an image to a selected profile from ChatGPT. The image is transferred into private backend storage, not retained as a ChatGPT record.</p><label>Profile <select id="image-alter"><option value="">Choose a profile</option></select></label><div class="row"><button id="add-image">Select private image</button><button class="secondary" id="refresh">Refresh state</button></div></section></main><script>
@@ -66,21 +71,49 @@ function companionWidgetV4() {
     .replace("if(m?.method==='ui/initialize')render(m.params?.toolResult);if(m?.method==='ui/notifications/tool-result')render(m.params?.result);", "if(m?.method==='ui/notifications/tool-result')render(m.params?.structuredContent);");
 }
 
+function companionWidgetV5() {
+  return companionWidgetV4()
+    .replace('<head><meta charset="utf-8">', '<head><meta charset="utf-8"><meta name="referrer" content="no-referrer">')
+    .replace(".secondary{background:#0b1626;color:#f8fafc}", ".secondary{background:#0b1626;color:#f8fafc}.gallery{display:grid;gap:18px}.gallery-group{border-top:2px solid #e2e8f0;padding-top:14px}.gallery-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}.gallery-image{width:100%;min-height:180px;max-height:320px;object-fit:contain;background:#020617;border:3px solid #e2e8f0}")
+    .replace("let n=1,state={profiles:[],assignments:[],todos:[]};", "let n=1,state={profiles:[],assignments:[],todos:[]},imageManifest=[];function privateImages(meta){for(const candidate of [meta,meta?._meta,meta?.result,meta?.mcp_tool_result,meta?.call_tool_result])if(Array.isArray(candidate?.privateImages))return candidate.privateImages;return null;}")
+    .replace("function render(data){state=", "function render(data,meta){const images=privateImages(meta);if(images)imageManifest=images;state=")
+    .replace("$('image-alter').innerHTML=", "$('gallery').innerHTML=ps.map(p=>{const images=imageManifest.filter(image=>image.alterId===p.id);return images.length?'<section class=\"gallery-group\"><h4>'+esc(p.name)+' — '+images.length+' private picture'+(images.length===1?'':'s')+'</h4><div class=\"gallery-grid\">'+images.map((image,index)=>'<img class=\"gallery-image\" src=\"'+esc(image.src)+'\" alt=\"Private picture '+(index+1)+' of '+esc(p.name)+'\" loading=\"lazy\">').join('')+'</div></section>':'';}).join('')||'No private pictures stored.';$('image-alter').innerHTML=")
+    .replace("</section><section><h3>Open to-dos</h3>", "</section><section aria-labelledby=\"gallery-heading\"><h3 id=\"gallery-heading\">Private picture gallery</h3><div id=\"gallery\" class=\"gallery muted\">Loading private pictures…</div></section><section><h3>Open to-dos</h3>")
+    .replace("async function refresh(){try{render(await tool('get_companion_state',{}));}", "async function refresh(){try{const result=await tool('get_companion_state',{});render(result,result?._meta||result?.meta||window.openai?.toolResponseMetadata);}")
+    .replace("if(m?.method==='ui/notifications/tool-result')render(m.params?.structuredContent);", "if(m?.method==='ui/notifications/tool-result')render(m.params?.structuredContent,m.params?._meta||m.params?.meta||window.openai?.toolResponseMetadata);")
+    .replace("if(window.openai?.toolOutput)render(window.openai.toolOutput);", "if(window.openai?.toolOutput)render(window.openai.toolOutput,window.openai.toolResponseMetadata);");
+}
+
 async function companionState(ownerId: string) {
   const service = getSystemService();
   const [currentFront, profiles, assignments, notes, todos, preferences] = await Promise.all([service.getCurrentFront(ownerId), service.listAlters(ownerId), repository.listAssignments(ownerId), service.listNotes(ownerId), service.listTodos(ownerId), repository.listPreferences(ownerId)]);
   return { currentFront, profiles: profiles.data, assignments, notes: notes.data, todos: todos.data, preferences };
 }
 
+async function companionWidgetMeta(ownerId: string, publicOrigin: string) {
+  const profiles = await repository.listProfiles(ownerId);
+  return {
+    privateImages: profiles.flatMap((profile) => profile.images.map((image) => ({
+      alterId: profile.id,
+      src: `${publicOrigin}/api/system/images/inline/${image.id}?cap=${encodeURIComponent(issueImageReadCapability(ownerId, image.id))}`,
+    }))),
+  };
+}
+
 export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>) {
-  const server = new McpServer({ name: "system-companion", version: "0.4.0" }, { instructions: "Use System only for owner-authorized private records. Never infer who is fronting: read current state and record a switch only after explicit user confirmation. For notes, preserve the approved body and record an actor only when named. For photos, open the companion widget so bytes transfer directly to private storage; never expose image bytes or storage keys to the model." });
+  const server = new McpServer({ name: "system-companion", version: "0.4.0" }, { instructions: "Use System only for owner-authorized private records. Never infer who is fronting: read current state and record a switch only after explicit user confirmation. For notes, preserve the approved body and record an actor only when named. For photos, open the companion widget so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
   registerSystemSkill(server);
   const publicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN ?? "https://system-arcades-me.vercel.app";
-  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [] }, prefersBorder: true }, "openai/widgetDescription": "An accessible private companion for System records and ChatGPT-to-backend handoffs.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [] } };
-  server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV4(), _meta: widgetMeta }] }));
+  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "An accessible private companion that displays owner-authorized private profile pictures inline.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
+  server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
+  server.registerResource("system-companion-legacy", LEGACY_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: LEGACY_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
 
-  server.registerTool("get_companion_state", { title: "Get private companion state", description: "Use this when the user wants to review their System records in ChatGPT. It returns the current front plus authorized profiles, notes, to-dos, preferences, and coverage records, but never image bytes or raw chat transcripts.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Loaded your authorized private companion records." }] }));
-  server.registerTool("render_system_companion", { title: "Open System companion", description: "Use this when the user wants the interactive private System companion in ChatGPT, especially to add a private profile photo. Call get_companion_state first.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Opened your private System companion." }] }));
+  server.registerTool("get_companion_state", { title: "Get private companion state", description: "Use this when the user wants to review their System records in ChatGPT. It returns the current front plus authorized profiles, notes, to-dos, preferences, and coverage records, but never image bytes, private image URLs, storage keys, or raw chat transcripts.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Loaded your authorized private companion records." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));
+  server.registerTool("render_system_companion", { title: "Open System companion", description: "Use this when the user wants the interactive private System companion in ChatGPT, especially to view or add private profile photos inline. Call get_companion_state first.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Opened your private System companion." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));
+  server.registerTool("open_private_photo_gallery", { title: "Open private photo gallery", description: "Use this when the user wants to view private profile photos but the current host cannot render the System companion widget. It returns a permanent authenticated browser route, never image bytes or temporary image links.", inputSchema: {}, outputSchema: privateGalleryOutputSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => {
+    const url = `${publicOrigin}/gallery`;
+    return { structuredContent: { url }, content: [{ type: "text", text: `Open your authenticated private photo gallery: ${url}` }] };
+  });
 
   const service = serviceOverride ?? getSystemService();
   server.registerTool("get_current_front", { title: "Get current front", description: "Use this when the user asks who is fronting right now. It returns only the user-confirmed timestamped current front, or null when none is recorded.", inputSchema: {}, outputSchema: currentFrontResponseSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async () => { const current = await service.getCurrentFront(ownerId); return { structuredContent: { data: current, meta: {} }, content: [{ type: "text", text: current ? `${current.alterName} is the recorded current front.` : "No current front is recorded." }] }; });

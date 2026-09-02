@@ -269,6 +269,43 @@ textarea:focus-visible {
   background: var(--wash);
 }
 
+.gallery-shell {
+  max-width: 1500px;
+}
+
+.gallery-section {
+  border-top: 4px solid var(--line);
+  margin-top: 32px;
+  padding-top: 24px;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px;
+}
+
+.gallery-card {
+  border: 4px solid var(--line);
+  background: var(--surface);
+  margin: 0;
+  padding: 12px;
+}
+
+.gallery-card img {
+  background: var(--wash);
+  display: block;
+  height: auto;
+  max-height: 72vh;
+  object-fit: contain;
+  width: 100%;
+}
+
+.gallery-card figcaption {
+  font-weight: 800;
+  margin-top: 10px;
+}
+
 .profile-summary {
   min-width: 0;
 }

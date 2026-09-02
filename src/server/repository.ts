@@ -23,6 +23,7 @@ export interface SystemRepository {
   listProfiles(ownerId: string): Promise<AlterProfile[]>;
   saveProfile(ownerId: string, input: ProfileInput, profileId?: string): Promise<AlterProfile>;
   attachImage(ownerId: string, alterId: string, image: PrivateImage): Promise<void>;
+  getImage(ownerId: string, imageId: string): Promise<PrivateImage | null>;
   listAssignments(ownerId: string): Promise<CoverageAssignment[]>;
   createDraft(ownerId: string, input: Omit<CoverageAssignment, "id" | "ownerId" | "createdAt" | "confirmedAt" | "status">): Promise<CoverageAssignment>;
   resolveDraft(ownerId: string, draftId: string, result: "CONFIRMED" | "REJECTED", alterId?: string): Promise<CoverageAssignment>;
@@ -64,6 +65,11 @@ class MemorySystemRepository implements SystemRepository {
     if (!profile) throw new Error("Profile not found.");
     profile.images.push(image);
     profile.updatedAt = new Date().toISOString();
+  }
+
+  async getImage(ownerId: string, imageId: string) {
+    const profile = this.profiles.find((item) => item.ownerId === ownerId && item.images.some((image) => image.id === imageId));
+    return structuredClone(profile?.images.find((image) => image.id === imageId) ?? null);
   }
 
   async listAssignments(ownerId: string) {
@@ -173,6 +179,13 @@ class NeonSystemRepository implements SystemRepository {
     if (!rows.length) throw new Error("Profile not found.");
   }
 
+  async getImage(ownerId: string, imageId: string) {
+    const sql = this.sql();
+    const rows = await sql`select id, storage_key, content_type from private_image where owner_id = ${ownerId} and id = ${imageId}::uuid limit 1`;
+    const row = rows[0];
+    return row ? { id: String(row.id), storageKey: String(row.storage_key), contentType: String(row.content_type) } : null;
+  }
+
   async listAssignments(ownerId: string) {
     const sql = this.sql();
     const rows = await sql`select id, owner_id, alter_id, starts_on, ends_on, status, suggestion_reasons, created_at, confirmed_at from coverage_assignment where owner_id = ${ownerId} order by starts_on desc, created_at desc`;
@@ -272,6 +285,7 @@ class UnconfiguredRepository implements SystemRepository {
   listProfiles(): Promise<AlterProfile[]> { return Promise.reject(this.unavailable()); }
   saveProfile(): Promise<AlterProfile> { return Promise.reject(this.unavailable()); }
   attachImage(): Promise<void> { return Promise.reject(this.unavailable()); }
+  getImage(): Promise<PrivateImage | null> { return Promise.reject(this.unavailable()); }
   listAssignments(): Promise<CoverageAssignment[]> { return Promise.reject(this.unavailable()); }
   createDraft(): Promise<CoverageAssignment> { return Promise.reject(this.unavailable()); }
   resolveDraft(): Promise<CoverageAssignment> { return Promise.reject(this.unavailable()); }

@@ -28,6 +28,7 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 
 - Use `render_system_companion` when the user wants to add a photo.
 - Ask the user to choose the profile and image in the companion widget. The widget obtains a short-lived upload capability and transfers the bytes directly to private System storage.
+- When the current host cannot render the companion widget, use `open_private_photo_gallery` to give the user a permanent authenticated browser route.
 - Do not place image bytes, temporary download URLs, or storage keys in model-visible notes or tool arguments.
 - Do not claim an upload succeeded until the widget refresh shows the profile's updated private-image count.
 
