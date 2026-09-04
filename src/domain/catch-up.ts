@@ -40,6 +40,43 @@ export const catchUpSessionSchema = z.object({
   stateVersion: z.number().int().nonnegative(),
 });
 
+const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value, context) => {
+  if (value !== "UTC" && !value.includes("/")) {
+    context.addIssue({ code: "custom", message: "Use an IANA time zone, such as America/Chicago." });
+    return;
+  }
+  try { new Intl.DateTimeFormat("en-US", { timeZone: value }); } catch { context.addIssue({ code: "custom", message: "Use an IANA time zone, such as America/Chicago." }); }
+});
+
+export const prepareConversationCatchUpSchema = z.object({
+  alterId: uuidSchema,
+  startAt: isoTimestampSchema.optional(),
+  endAt: isoTimestampSchema.optional(),
+  timeZone: ianaTimeZoneSchema,
+}).strict().superRefine((value, context) => {
+  if (Boolean(value.startAt) !== Boolean(value.endAt)) {
+    context.addIssue({ code: "custom", path: [value.startAt ? "endAt" : "startAt"], message: "Provide both startAt and endAt, or neither." });
+  }
+  if (value.startAt && value.endAt && new Date(value.endAt).getTime() < new Date(value.startAt).getTime()) {
+    context.addIssue({ code: "custom", path: ["endAt"], message: "endAt must be on or after startAt." });
+  }
+});
+
+export const conversationCatchUpHandoffSchema = z.object({
+  status: z.enum(["READY", "NEEDS_DATES"]),
+  alterId: uuidSchema,
+  alterName: z.string(),
+  historyAccess: z.literal("HOST_REQUIRED"),
+  window: z.object({
+    startAt: isoTimestampSchema,
+    endAt: isoTimestampSchema,
+    timeZone: z.string(),
+    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW"]),
+  }).optional(),
+  source: z.object({ frontingSessionId: uuidSchema, catchUpSessionId: uuidSchema.optional() }).optional(),
+  instructions: z.array(z.string()).min(1),
+});
+
 export const setCatchUpItemStateSchema = z.object({
   requestId: uuidSchema,
   expectedVersion: z.number().int().positive(),
@@ -81,6 +118,8 @@ export type CatchUpItemType = z.infer<typeof catchUpItemTypeSchema>;
 export type CatchUpReviewState = z.infer<typeof catchUpReviewStateSchema>;
 export type CatchUpItem = z.infer<typeof catchUpItemSchema>;
 export type CatchUpSession = z.infer<typeof catchUpSessionSchema>;
+export type PrepareConversationCatchUp = z.infer<typeof prepareConversationCatchUpSchema>;
+export type ConversationCatchUpHandoff = z.infer<typeof conversationCatchUpHandoffSchema>;
 export type SetCatchUpItemState = z.infer<typeof setCatchUpItemStateSchema>;
 export type ImportantThreadCreate = z.infer<typeof importantThreadCreateSchema>;
 export type SystemDecisionCreate = z.infer<typeof systemDecisionCreateSchema>;

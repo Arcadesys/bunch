@@ -2,13 +2,17 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import {
   catchUpSessionSchema,
+  conversationCatchUpHandoffSchema,
   importantThreadCreateSchema,
+  prepareConversationCatchUpSchema,
   setCatchUpItemStateSchema,
   systemDecisionCreateSchema,
   type CatchUpItem,
   type CatchUpItemType,
   type CatchUpSession,
+  type ConversationCatchUpHandoff,
   type ImportantThreadCreate,
+  type PrepareConversationCatchUp,
   type SetCatchUpItemState,
   type SystemDecisionCreate,
 } from "@/domain/catch-up";
@@ -34,6 +38,12 @@ const demoSessionId = "33333333-3333-4333-8333-333333333333";
 
 function iso(value: Date | string) {
   return new Date(value).toISOString();
+}
+
+function isValidWindow(startAt: Date | string, endAt: Date | string) {
+  const start = new Date(startAt).getTime();
+  const end = new Date(endAt).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start;
 }
 
 function demoItems(): CatchUpItem[] {
@@ -163,6 +173,44 @@ export class CatchUpService {
       where d.owner_id = $1 and d.archived_at is null
       group by d.id, actor.name order by d.updated_at desc`, [ownerId]);
     return result.rows.map((row) => ({ ...row, updatedAt: iso(row.updatedAt) }));
+  }
+
+  async prepareConversationCatchUp(ownerId: string, raw: PrepareConversationCatchUp): Promise<ConversationCatchUpHandoff> {
+    const input = prepareConversationCatchUpSchema.parse(raw);
+    const instructions = [
+      "This handoff does not give System access to ChatGPT conversation history.",
+      "A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
+      "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
+      "Keep conversation findings separate from current authenticated facts and real-world completion. Do not persist raw transcripts or generated chat summaries in System.",
+    ];
+    if (ownerId.startsWith("demo:")) {
+      if (input.alterId !== demoAlterId) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
+      if (input.startAt && input.endAt) return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: demoAlterId, alterName: "Mouse Arcade", historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
+      const session = getDemoCatchUpSession(ownerId);
+      return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: demoAlterId, alterName: session.alterName, historyAccess: "HOST_REQUIRED", window: { startAt: session.windowStart!, endAt: session.windowEnd, timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: demoFrontingId, catchUpSessionId: session.id }, instructions });
+    }
+
+    const client = await this.pool.connect();
+    try {
+      const alter = await client.query<{ id: string; name: string }>("select id, name from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null", [ownerId, input.alterId]);
+      if (!alter.rows[0]) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
+      const profile = alter.rows[0];
+      if (input.startAt && input.endAt) return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
+
+      const current = await client.query<{ id: string; started_at: Date | string }>("select id, started_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and ended_at is null", [ownerId, profile.id]);
+      if (!current.rows[0]) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", instructions: [...instructions, "No recorded current fronting window is available for this profile. Ask the user to choose startAt and endAt."] });
+      const front = current.rows[0];
+      const persisted = await client.query<{ id: string; window_start: Date | string | null; window_end: Date | string }>("select id, window_start, window_end from catch_up_session where owner_id = $1 and fronting_session_id = $2::uuid", [ownerId, front.id]);
+      const stored = persisted.rows[0];
+      if (stored?.window_start) {
+        if (!isValidWindow(stored.window_start, stored.window_end)) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
+        return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(stored.window_start), endAt: iso(stored.window_end), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions });
+      }
+      const previous = await client.query<{ ended_at: Date | string }>("select ended_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and id <> $3::uuid and ended_at is not null and ended_at <= $4::timestamptz order by ended_at desc limit 1", [ownerId, profile.id, front.id, front.started_at]);
+      if (!previous.rows[0]) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "No earlier recorded fronting end is available for this profile. Ask the user to choose startAt and endAt."] });
+      if (!isValidWindow(previous.rows[0].ended_at, front.started_at)) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
+      return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(previous.rows[0].ended_at), endAt: iso(front.started_at), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id }, instructions });
+    } finally { client.release(); }
   }
 
   async openForCurrentFront(ownerId: string): Promise<CatchUpSession | null> {
