@@ -76,7 +76,7 @@ body {
 }
 
 .theme-control {
-  min-width: 13rem;
+  min-width: min(13rem, 100%);
 }
 
 .theme-control span {
@@ -362,6 +362,506 @@ textarea:focus-visible {
   gap: 16px;
 }
 
+/* Catch-up command center: accepted deep-navy, crisp-cyan design system. */
+.command-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-rows: auto 1fr;
+  background: var(--paper);
+}
+
+.command-topbar {
+  grid-column: 1 / -1;
+  min-height: 82px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 28px;
+  border-bottom: 3px solid var(--line);
+  background: var(--surface);
+}
+
+.command-topnav {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1 1 28rem;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1vw, 18px);
+}
+
+.command-topnav a {
+  flex-shrink: 0;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink);
+  border: 3px solid transparent;
+  padding: 7px 10px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.command-topnav a[aria-current="page"] {
+  border-color: var(--accent);
+}
+
+.command-brand {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink);
+  font-size: 1.65rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-decoration: none;
+}
+
+.command-utilities {
+  display: flex;
+  flex: 1 1 20rem;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 18px;
+}
+
+.command-account {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 3px solid var(--line);
+  color: var(--ink);
+  padding: 8px 14px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.command-icon {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+}
+
+.command-main {
+  min-width: 0;
+  padding: 34px clamp(24px, 4vw, 56px) 70px;
+}
+
+.command-hero {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr) 190px;
+  align-items: flex-end;
+  gap: 32px;
+  border-bottom: 4px solid var(--line);
+  padding-bottom: 30px;
+}
+
+.command-avatar {
+  width: 128px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  border: 4px solid var(--accent);
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: -.08em;
+}
+
+.command-kicker {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+.command-hero h1 {
+  max-width: 900px;
+  font-size: clamp(2.6rem, 5vw, 4.7rem);
+  letter-spacing: -0.055em;
+  line-height: .98;
+}
+
+.command-window {
+  max-width: 760px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 1.06rem;
+}
+
+.command-progress {
+  width: 190px;
+  flex: 0 0 190px;
+  display: grid;
+}
+
+.command-progress strong {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.command-progress span {
+  color: var(--muted);
+}
+
+.command-progress-track {
+  height: 14px;
+  margin-top: 10px;
+  border: 2px solid var(--line);
+}
+
+.command-progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.command-notice {
+  margin: 22px 0 0;
+  border-left: 8px solid var(--accent);
+  background: var(--wash);
+  padding: 11px 15px;
+  font-weight: 800;
+}
+
+.command-section {
+  margin-top: 42px;
+}
+
+.command-notice:empty {
+  display: none;
+}
+
+.command-create {
+  margin-top: 34px;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  padding: 22px;
+}
+
+.command-create h2 {
+  font-size: 1.65rem;
+}
+
+.command-create form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.command-create textarea,
+.command-create label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.command-create .command-button {
+  align-self: end;
+}
+
+.command-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 10px;
+}
+
+.command-section-heading h2,
+.command-actions h2 {
+  font-size: 1.65rem;
+  margin: 0;
+}
+
+.command-section-heading p {
+  max-width: 760px;
+  color: var(--muted);
+  margin: 7px 0 0;
+}
+
+.command-count {
+  flex: 0 0 auto;
+  border: 2px solid var(--line);
+  padding: 4px 9px;
+  font-size: .9rem;
+  font-weight: 900;
+}
+
+.command-items {
+  border-top: 3px solid var(--line);
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 22px;
+  padding: 25px 0;
+  border-bottom: 3px solid var(--line);
+}
+
+.command-row-content {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(210px, 1fr) minmax(125px, .65fr) auto;
+  column-gap: 18px;
+  align-items: start;
+}
+
+.command-row.is-reviewed {
+  opacity: .72;
+}
+
+.command-type {
+  align-self: start;
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  color: var(--accent);
+  font-size: .82rem;
+  font-weight: 900;
+  letter-spacing: .05em;
+}
+
+.command-row-content h3 {
+  grid-column: 1;
+  font-size: 1.42rem;
+  margin: 0 0 8px;
+}
+
+.command-row-meta,
+.command-row-status {
+  margin: 5px 0;
+  color: var(--muted);
+  font-size: .92rem;
+}
+
+.command-row-meta {
+  grid-column: 1;
+}
+
+.command-row-status {
+  grid-column: 3;
+  grid-row: 1;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.command-why {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 14px 0;
+  font-weight: 700;
+}
+
+.command-next {
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  border-left: 7px solid var(--accent);
+  background: var(--wash);
+  margin: 16px 0;
+  padding: 10px 13px;
+}
+
+.command-state {
+  grid-column: 3;
+  grid-row: 2;
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.command-row-actions,
+.command-defer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.command-row-actions {
+  grid-column: 4;
+  grid-row: 1 / span 3;
+  align-self: start;
+  margin-top: 0;
+}
+
+.command-row-actions .command-button {
+  width: 100%;
+}
+
+.command-defer {
+  grid-column: 1 / -1;
+  align-items: end;
+  border: 3px solid var(--line);
+  padding: 14px;
+  background: var(--surface);
+}
+
+.command-defer label {
+  min-width: 190px;
+  flex: 1;
+}
+
+.command-button {
+  min-height: 52px;
+  border: 3px solid var(--line);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 9px 14px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.command-button.secondary {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.command-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.command-thread-link {
+  grid-column: 3;
+  grid-row: 3;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-weight: 900;
+  text-underline-offset: 4px;
+}
+
+.command-empty {
+  border: 3px dashed var(--line);
+  padding: 22px;
+  font-weight: 800;
+}
+
+.command-actions {
+  border-left: 3px solid var(--line);
+  padding: 32px 20px;
+  background: var(--surface);
+}
+
+.command-action {
+  width: 100%;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  background: var(--surface);
+  cursor: pointer;
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink);
+  border: 3px solid var(--accent);
+  padding: 15px 13px;
+  margin-top: 28px;
+  text-decoration: none;
+}
+
+.command-action span {
+  display: grid;
+}
+
+.command-action small {
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.command-timeline ol {
+  list-style: none;
+  padding: 4px 0 0 8px;
+  margin: 0;
+}
+
+.command-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 13px;
+  padding: 15px 0;
+}
+
+.command-timeline li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 36px;
+  bottom: -8px;
+  border-left: 3px solid var(--line);
+}
+
+.timeline-dot {
+  width: 23px;
+  height: 23px;
+  border: 4px solid var(--line);
+  background: var(--accent);
+}
+
+.command-timeline li div {
+  display: grid;
+}
+
+.command-timeline li span:last-child {
+  color: var(--muted);
+}
+
+.command-brand:focus-visible,
+.command-account:focus-visible,
+.command-topnav a:focus-visible,
+.command-nav-link:focus-visible,
+.command-action:focus-visible,
+.command-thread-link:focus-visible,
+.command-button:focus-visible {
+  outline: 5px solid var(--focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1180px) {
+  .command-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .command-actions {
+    grid-column: 1;
+    border-left: 0;
+    border-top: 3px solid var(--line);
+  }
+
+  .command-action {
+    max-width: 760px;
+    margin-top: 14px;
+  }
+
+  .command-row-content {
+    grid-template-columns: minmax(180px, 1fr) minmax(210px, 1fr) auto;
+  }
+
+  .command-row-status,
+  .command-state,
+  .command-thread-link {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .command-row-actions {
+    grid-column: 3;
+  }
+}
+
 @media (max-width: 800px) {
   body {
     font-size: 19px;
@@ -410,6 +910,203 @@ textarea:focus-visible {
   .profile-image {
     width: min(70vw, 320px);
   }
+
+  .command-shell {
+    display: block;
+  }
+
+  .command-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding: 10px 16px 12px;
+  }
+
+  .command-utilities {
+    display: contents;
+  }
+
+  .command-utilities .theme-control {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .command-account {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .command-utilities .theme-control,
+  .command-utilities .theme-control select {
+    width: 100%;
+  }
+
+  .command-topnav {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 4px;
+  }
+
+  .command-topnav a {
+    min-width: 0;
+    min-height: 44px;
+    justify-content: center;
+    padding: 5px 4px;
+    font-size: .9rem;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .command-main {
+    min-width: 0;
+    padding: 18px 16px 48px;
+  }
+
+  .command-hero,
+  .command-section-heading {
+    display: grid;
+  }
+
+  .command-hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 14px;
+    padding-bottom: 18px;
+  }
+
+  .command-hero h1 {
+    font-size: clamp(2.1rem, 12vw, 3rem);
+  }
+
+  .command-kicker {
+    margin-bottom: 6px;
+  }
+
+  .command-window {
+    margin-top: 10px;
+  }
+
+  .command-progress {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 8px;
+    width: 100%;
+    max-width: 260px;
+  }
+
+  .command-progress-track {
+    flex-basis: 100%;
+    margin-top: 0;
+  }
+
+  .command-avatar {
+    display: none;
+  }
+
+  .command-section {
+    margin-top: 22px;
+  }
+
+  .command-section-heading {
+    gap: 10px;
+  }
+
+  .command-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 18px 0;
+  }
+
+  .command-row-content {
+    display: block;
+  }
+
+  .command-create form {
+    grid-template-columns: 1fr;
+  }
+
+  .command-create textarea,
+  .command-create label:has(textarea) {
+    grid-column: auto;
+  }
+
+  .command-type {
+    display: flex;
+    align-items: center;
+  }
+
+  .command-row-actions,
+  .command-defer {
+    display: grid;
+  }
+
+  .command-row-actions .command-button,
+  .command-defer .command-button {
+    width: 100%;
+  }
+
+  .command-actions {
+    border-left: 0;
+    border-top: 3px solid var(--line);
+    padding: 28px 18px;
+  }
+}
+
+/* Reflow long, user-supplied titles instead of clipping or scrolling them. */
+.command-shell,
+.command-topbar,
+.command-main,
+.command-hero,
+.command-row,
+.command-row-content,
+.command-section-heading,
+.command-action,
+.command-create,
+.command-create form,
+.command-defer,
+.command-utilities,
+.command-topnav {
+  min-width: 0;
+}
+
+.command-row-content h3,
+.command-hero h1,
+.command-section-heading h2,
+.command-window,
+.command-row-meta,
+.command-row-status,
+.command-why,
+.command-next,
+.command-state,
+.command-thread-link,
+.command-action strong,
+.command-action small {
+  overflow-wrap: anywhere;
+}
+
+.command-brand {
+  overflow-wrap: anywhere;
+}
+
+.command-switch .command-create {
+  padding: 14px;
+}
+
+.command-switch .command-create form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.command-switch select {
+  width: 100%;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

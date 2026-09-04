@@ -348,7 +348,8 @@ export class SystemService {
 
       const current = await this.currentFront(client, ownerId, true);
       const currentVersion = current?.version ?? null;
-      if (input.expectedCurrentVersion !== currentVersion) {
+      if (input.expectedCurrentVersion !== currentVersion
+        || (input.expectedCurrentSessionId !== undefined && input.expectedCurrentSessionId !== (current?.id ?? null))) {
         throw new SystemError("CONFLICT", "The current front changed since it was read.", { currentVersion });
       }
       if (current?.alterId === input.alterId) return { current, previous: null };

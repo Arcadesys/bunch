@@ -11,8 +11,8 @@ const themeScript = `(() => {
 })();`;
 
 export const metadata: Metadata = {
-  title: "System — private coverage record",
-  description: "A private, user-confirmed coverage record.",
+  title: "System — private catch-up command center",
+  description: "A private, user-confirmed catch-up for notes, todos, decisions, threads, and switch history.",
   robots: { index: false, follow: false },
 };
 
