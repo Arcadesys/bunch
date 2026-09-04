@@ -60,6 +60,19 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
     assert.equal(switched.data.previous?.alterName, "Aster");
     assert.ok(switched.data.previous?.endedAt);
     assert.equal((await service.getCurrentFront(ownerA))?.alterId, second.data.id);
+    // Row versions restart at 1; the session ID prevents a stale screen from
+    // accepting a different current front with the same version.
+    await assert.rejects(() => service.switchCurrentFront(ownerA, {
+      requestId: requestId(), alterId: created.data.id,
+      expectedCurrentVersion: firstFront.data.current.version,
+      expectedCurrentSessionId: firstFront.data.current.id,
+    }, "WEB"), (error) => error instanceof SystemError && error.code === "CONFLICT");
+    const unchanged = await service.switchCurrentFront(ownerA, {
+      requestId: requestId(), alterId: second.data.id,
+      expectedCurrentVersion: switched.data.current.version,
+      expectedCurrentSessionId: switched.data.current.id,
+    }, "WEB");
+    assert.equal(unchanged.data.current.id, switched.data.current.id);
     const frontCounts = await pool.query("select count(*) as total, count(*) filter (where ended_at is null) as current from fronting_session where owner_id = $1", [ownerA]);
     assert.deepEqual({ total: Number(frontCounts.rows[0].total), current: Number(frontCounts.rows[0].current) }, { total: 2, current: 1 });
 

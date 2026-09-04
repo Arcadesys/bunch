@@ -71,6 +71,8 @@ export const frontingSwitchSchema = z.object({
   requestId: uuidSchema,
   alterId: uuidSchema,
   expectedCurrentVersion: z.number().int().positive().nullable(),
+  // Bind newer clients to the exact session, since row versions restart at 1.
+  expectedCurrentSessionId: uuidSchema.nullable().optional(),
   switchedAt: isoTimestampSchema.optional(),
 }).strict();
 
