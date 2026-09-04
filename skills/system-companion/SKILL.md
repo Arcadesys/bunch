@@ -32,6 +32,14 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - Do not place image bytes, temporary download URLs, or storage keys in model-visible notes or tool arguments.
 - Do not claim an upload succeeded until the widget refresh shows the profile's updated private-image count.
 
+## Conversation catch-up
+
+- An explicit self-identification or check-in can offer conversation catch-up; it never changes current-front state. Switch front only after separate explicit confirmation.
+- For an explicit catch-up request, resolve the named profile with `list_alters`, then call `prepare_conversation_catch_up` with an IANA time zone. Use an explicit complete `startAt`/`endAt` correction when supplied. A recorded-fronting window is only a candidate, never proof of absence.
+- Explicit timestamp offsets are authoritative for the returned instants; the IANA time zone is display context and is never used to reinterpret those offsets.
+- System does not automatically receive ChatGPT history. A capable host may read available messages in the returned window and report topics, decisions, open matters, source links, and coverage gaps. Never rely only on titles.
+- If host history access is unavailable, say that DIDdy supplied dates but this host cannot retrieve other conversations; offer selected conversations or a capable host. Do not claim that nothing happened, fabricate a summary, or persist raw transcripts/generated summaries in System.
+
 ## Privacy boundary
 
 - Treat profiles, notes, fronting state, and photos as private owner-scoped records.
