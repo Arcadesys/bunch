@@ -9,12 +9,12 @@ test("@eval front switch requires explicit confirmation, updates view and surviv
   await page.screenshot({ path: testInfo.outputPath("switch-confirmation.png") });
   const before = structuredClone(harness.currentFront);
   await page.getByRole("button", { name: "Confirm front switch", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Finch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Test Finch is now the recorded current front.");
   expect(harness.writes[0].body).toEqual({ alterId: harness.profiles[1].id, expectedCurrentVersion: before!.version, expectedCurrentSessionId: before!.id });
   expect(harness.switchCount).toBe(1);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Finch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
 });
 
 test("@eval cancelling a front switch writes nothing and restores trigger focus", async ({ page, harness }) => {
@@ -51,7 +51,7 @@ test("@eval front switch handles pagination and no current front", async ({ page
   await page.getByLabel("Who is fronting now?").selectOption(harness.profiles[1].id);
   expect(harness.profileReads).toBe(2);
   await page.getByRole("button", { name: "Confirm front switch", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Finch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
   expect(harness.writes[0].body.expectedCurrentVersion).toBe(null);
   expect(harness.writes[0].body.expectedCurrentSessionId).toBe(null);
 });
@@ -114,9 +114,9 @@ test("@eval loading is truthful and late catch-up reads cannot undo a confirmed 
   await page.getByRole("button", { name: "Switch front", exact: true }).click();
   await page.getByLabel("Who is fronting now?").selectOption(harness.profiles[1].id);
   await page.getByRole("button", { name: "Confirm front switch", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Finch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
   const response = page.waitForResponse("**/api/v1/catch-up/current");
   release();
   await (await response).finished();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Finch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
 });

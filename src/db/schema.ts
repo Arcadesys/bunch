@@ -67,9 +67,11 @@ export const privateImage = pgTable("private_image", {
   alterId: uuid("alter_id").notNull(),
   storageKey: text("storage_key").notNull().unique(),
   contentType: text("content_type").notNull(),
+  isProfilePicture: boolean("is_profile_picture").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "private_image_owner_alter_fk" }).onDelete("cascade"),
+  uniqueIndex("private_image_one_profile_picture").on(table.ownerId, table.alterId).where(sql`${table.isProfilePicture} = true`),
 ]);
 
 export const coverageAssignment = pgTable("coverage_assignment", {

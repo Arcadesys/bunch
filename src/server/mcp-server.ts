@@ -29,18 +29,23 @@ import {
   versionMutationSchema,
 } from "@/domain/contracts";
 import { issueImageReadCapability, issueImageUploadCapability } from "@/server/mcp-authorization";
-import { repository } from "@/server/repository";
+import { repository, type SystemRepository } from "@/server/repository";
 import { draftSchema, noteSchema, preferenceSchema, resolveDraftSchema } from "@/server/schemas";
 import { registerSystemSkill } from "@/server/system-skill";
 import { getSystemService } from "@/server/system-service";
 import { CatchUpService, getCatchUpService } from "@/server/catch-up-service";
-import { conversationCatchUpHandoffSchema, prepareConversationCatchUpSchema } from "@/domain/catch-up";
+import { importantThreadCreateSchema, catchUpSessionSchema, setCatchUpItemStateSchema, conversationCatchUpHandoffSchema, prepareConversationCatchUpSchema } from "@/domain/catch-up";
 
-const WIDGET_URI = "ui://system-arcades-me.vercel.app/companion-v10.html";
+import { catchUpWidget } from "@/server/companion-widget";
+import { lineupWidget } from "@/server/lineup-widget";
+
+const WIDGET_URI = "ui://system-arcades-me.vercel.app/companion-v13.html";
+const LINEUP_WIDGET_URI = "ui://system-arcades-me.vercel.app/alter-lineup-v2.html";
 // Existing ChatGPT conversations can retain a render-tool descriptor after an
 // app update. Keep the prior URI readable until those cached conversations
-// naturally reconnect, while the current tool continues to advertise v10.
+// naturally reconnect, while the current tool continues to advertise v13.
 const LEGACY_WIDGET_URIS = [
+  "ui://system-arcades-me.vercel.app/companion-v10.html",
   "ui://system.arcades.me/companion-v7.html",
   "ui://system.arcades.me/companion-v8.html",
 ] as const;
@@ -48,10 +53,19 @@ const coverageSchema = z.object({ id: uuidSchema, ownerId: z.string(), alterId: 
 const legacyNoteViewSchema = z.object({ id: uuidSchema, ownerId: z.string(), body: z.string(), alterId: uuidSchema.optional(), coverageId: uuidSchema.optional(), actorAlterId: uuidSchema.optional(), createdAt: z.string().datetime() });
 const preferenceViewSchema = z.object({ key: z.string(), value: z.string(), updatedAt: z.string().datetime() });
 const companionStateSchema = z.object({ currentFront: frontingSessionViewSchema.nullable(), profiles: z.array(alterViewSchema), assignments: z.array(coverageSchema), notes: z.array(noteViewSchema), todos: z.array(todoViewSchema), preferences: z.array(preferenceViewSchema) });
+const lineupStateSchema = z.object({ currentFront: frontingSessionViewSchema.nullable(), profiles: z.array(alterViewSchema) });
 const coverageOutputSchema = z.object({ draft: coverageSchema });
 const noteOutputSchema = z.object({ note: legacyNoteViewSchema });
 const preferenceOutputSchema = z.object({ preference: preferenceViewSchema });
 const privateGalleryOutputSchema = z.object({ url: z.string().url() });
+
+const importantThreadSuggestionViewSchema = importantThreadCreateSchema.extend({
+  id: uuidSchema,
+  status: z.literal("SUGGESTED"),
+  version: z.number().int().positive(),
+  createdAt: z.string().datetime(),
+});
+const importantThreadConfirmationViewSchema = z.object({ id: uuidSchema, status: z.literal("CONFIRMED"), version: z.number().int().positive() });
 
 function companionWidget() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>System companion</title><style>:root{font:18px/1.5 system-ui,sans-serif;color:#101820;background:#fff}body{margin:0;padding:16px}.card{max-width:700px;border:3px solid #101820;padding:18px}h2,h3{line-height:1.1}.notice{background:#eff6ff;border-left:6px solid #075985;padding:10px;font-weight:700}.entry{border-top:2px solid #101820;padding:12px 0}.muted{color:#334155}button,input,select{font:inherit;padding:9px;border:2px solid #101820}button{background:#075985;color:#fff;font-weight:800;cursor:pointer}.secondary{background:#fff;color:#101820}.row{display:flex;gap:10px;flex-wrap:wrap}</style></head><body><main class="card"><h2>System companion</h2><p class="notice" id="notice">Loading authorized records…</p><section><h3>Profiles</h3><div id="profiles" class="muted"></div></section><section><h3>Open to-dos</h3><div id="todos" class="muted"></div></section><section><h3>Coverage drafts</h3><div id="drafts" class="muted"></div></section><section><h3>Private images</h3><p class="muted">Add an image to a selected profile from ChatGPT. The image is transferred into private backend storage, not retained as a ChatGPT record.</p><label>Profile <select id="image-alter"><option value="">Choose a profile</option></select></label><div class="row"><button id="add-image">Select private image</button><button class="secondary" id="refresh">Refresh state</button></div></section></main><script>
@@ -95,34 +109,61 @@ async function companionState(ownerId: string) {
   return { currentFront, profiles: profiles.data, assignments, notes: notes.data, todos: todos.data, preferences };
 }
 
-async function companionWidgetMeta(ownerId: string, publicOrigin: string) {
-  const profiles = await repository.listProfiles(ownerId);
+async function companionWidgetMeta(ownerId: string, publicOrigin: string, profileRepository: Pick<SystemRepository, "listProfiles"> = repository) {
+  const profiles = await profileRepository.listProfiles(ownerId);
   return {
     privateImages: profiles.flatMap((profile) => profile.images.map((image) => ({
       alterId: profile.id,
+      isProfilePicture: image.isProfilePicture,
       src: `${publicOrigin}/api/system/images/inline/${image.id}?cap=${encodeURIComponent(issueImageReadCapability(ownerId, image.id))}`,
     }))),
   };
 }
 
-export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>) {
-  const server = new McpServer({ name: "system-companion", version: "0.4.0" }, { instructions: "Use System only for owner-authorized private records. Never infer who is fronting: read current state and record a switch only after explicit user confirmation. An explicit self-identification may offer conversation catch-up but never authorizes a front switch. For an explicit catch-up request, resolve the named profile with list_alters, call prepare_conversation_catch_up, and use only host capabilities actually available to read messages in the requested window. Report topics, decisions, open matters, source links, and coverage gaps. System does not automatically receive ChatGPT history: if the host lacks access, say that DIDdy supplied dates but the host cannot retrieve other conversations, then offer selected conversations or a capable host. Do not persist raw transcripts or generated chat summaries. For notes, preserve the approved body and record an actor only when named. For photos, open the companion widget so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
+export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository) {
+  const server = new McpServer({ name: "DIDdy", version: "0.5.2" }, { instructions: "Use DIDdy only for owner-authorized private records. Never infer who is fronting: read current state and record a switch only after explicit user confirmation. An explicit self-identification may offer conversation catch-up but never authorizes a front switch. For an explicit catch-up request, resolve the named profile with list_alters, call prepare_conversation_catch_up, and use only host capabilities actually available to read messages in the requested window. Report topics, decisions, open matters, source links, and coverage gaps. System does not automatically receive ChatGPT history: if the host lacks access, say that DIDdy supplied dates but the host cannot retrieve other conversations, then offer selected conversations or a capable host. Do not persist raw transcripts or generated chat summaries. For notes, preserve the approved body and record an actor only when named. For the profile lineup or selected profile pictures, use render_alter_lineup. The catch-up widget shows saved records only, and its review actions never complete underlying tasks. For saving an important thread, use suggest_important_thread only with the user-approved link, summary, key decision or action, flagger, and recipients. Then use confirm_important_thread only after the user explicitly approves that specific suggestion. Never save raw transcripts. For photos, use the authenticated private gallery or the existing private upload workflow so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
   registerSystemSkill(server);
   const publicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN ?? "https://system-arcades-me.vercel.app";
-  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "An accessible private companion that displays owner-authorized private profile pictures inline.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
-  server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
+  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "DIDdy catch-up with clear review actions and accessible record filters.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
+  server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: catchUpWidget(publicOrigin), _meta: widgetMeta }] }));
+  const lineupMeta = { ...widgetMeta, "openai/widgetDescription": "DIDdy profile lineup with selected private profile pictures." };
+  server.registerResource("system-alter-lineup", LINEUP_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: lineupMeta }, async () => ({ contents: [{ uri: LINEUP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: lineupWidget(publicOrigin), _meta: lineupMeta }] }));
+  // Preserve previously advertised catch-up and lineup descriptors as well as
+  // the older companion resources, whose payload uses the original shape.
+  for (const version of [11, 12]) {
+    const uri = `ui://system-arcades-me.vercel.app/companion-v${version}.html`;
+    server.registerResource(`system-catch-up-legacy-${version}`, uri, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: catchUpWidget(publicOrigin), _meta: widgetMeta }] }));
+  }
+  const previousLineupUri = "ui://system-arcades-me.vercel.app/alter-lineup-v1.html";
+  server.registerResource("system-alter-lineup-legacy", previousLineupUri, { mimeType: "text/html;profile=mcp-app", _meta: lineupMeta }, async () => ({ contents: [{ uri: previousLineupUri, mimeType: "text/html;profile=mcp-app", text: lineupWidget(publicOrigin), _meta: lineupMeta }] }));
   for (const [index, uri] of LEGACY_WIDGET_URIS.entries()) {
     server.registerResource(`system-companion-legacy-${index + 1}`, uri, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: companionWidgetV5(), _meta: widgetMeta }] }));
   }
 
   server.registerTool("get_companion_state", { title: "Get private companion state", description: "Use this when the user wants to review their System records in ChatGPT. It returns the current front plus authorized profiles, notes, to-dos, preferences, and coverage records, but never image bytes, private image URLs, storage keys, or raw chat transcripts.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Loaded your authorized private companion records." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));
-  server.registerTool("render_system_companion", { title: "Open System companion", description: "Use this when the user wants the interactive private System companion in ChatGPT, especially to view or add private profile photos inline. Call get_companion_state first.", inputSchema: {}, outputSchema: companionStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } }, async () => ({ structuredContent: await companionState(ownerId), content: [{ type: "text", text: "Opened your private System companion." }], _meta: await companionWidgetMeta(ownerId, publicOrigin) }));
+  server.registerTool("render_system_companion", { title: "Open DIDdy catch-up", description: "Open the private saved-record catch-up for the recorded front. Review actions only affect this catch-up; use render_alter_lineup for profile pictures and prepare_conversation_catch_up for a host conversation-history handoff.", inputSchema: {}, outputSchema: { catchUp: catchUpSessionSchema.nullable() }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } }, async () => ({ structuredContent: { catchUp: await (catchUpOverride ?? getCatchUpService()).openForCurrentFront(ownerId) }, content: [{ type: "text", text: "Opened your private DIDdy catch-up." }] }));
   server.registerTool("open_private_photo_gallery", { title: "Open private photo gallery", description: "Use this when the user wants to view private profile photos but the current host cannot render the System companion widget. It returns a permanent authenticated browser route, never image bytes or temporary image links.", inputSchema: {}, outputSchema: privateGalleryOutputSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async () => {
     const url = `${publicOrigin}/gallery`;
     return { structuredContent: { url }, content: [{ type: "text", text: `Open your authenticated private photo gallery: ${url}` }] };
   });
 
   const service = serviceOverride ?? getSystemService();
+  async function allActiveProfiles() {
+    const profiles: z.infer<typeof alterViewSchema>[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await service.listAlters(ownerId, { limit: 100, cursor });
+      profiles.push(...page.data);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return profiles;
+  }
+  const catchUp = () => catchUpOverride ?? getCatchUpService();
+  server.registerTool("render_alter_lineup", { title: "Show alter lineup", description: "Use this when the user asks to see the alter lineup, every alter, profile cards, avatars, or profile pictures. It renders every active authorized alter with the selected profile picture when one exists.", inputSchema: {}, outputSchema: lineupStateSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true }, _meta: { ui: { resourceUri: LINEUP_WIDGET_URI }, "openai/outputTemplate": LINEUP_WIDGET_URI, "openai/toolInvocation/invoking": "Loading alter lineup…", "openai/toolInvocation/invoked": "Alter lineup ready." } }, async () => { const [currentFront, profiles] = await Promise.all([service.getCurrentFront(ownerId), allActiveProfiles()]); return { structuredContent: { currentFront, profiles }, content: [{ type: "text", text: `Showing ${profiles.length} active alter profile${profiles.length === 1 ? "" : "s"} in your private lineup.` }], _meta: await companionWidgetMeta(ownerId, publicOrigin, profileRepository) }; });
+  server.registerTool("get_catch_up", { title: "Get current catch-up", description: "Read the catch-up for the user-confirmed current front. The backend computes the recorded catch-up window and includes direct notes, assigned or System-wide todos, decisions, confirmed important threads, and urgent carryover.", inputSchema: {}, outputSchema: { data: catchUpSessionSchema.nullable(), meta: responseMetaSchema }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async () => ({ structuredContent: { data: await catchUp().openForCurrentFront(ownerId), meta: {} }, content: [{ type: "text", text: "Loaded the current catch-up." }] }));
+  server.registerTool("set_catch_up_item_state", { title: "Review catch-up item", description: "Mark a catch-up item reviewed or postpone its review. Existing resolved review states remain supported. This changes only its review state and never closes or edits the underlying note, todo, decision, or thread.", inputSchema: { entryId: uuidSchema, ...setCatchUpItemStateSchema.shape }, outputSchema: { data: catchUpSessionSchema, meta: responseMetaSchema }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ entryId, ...input }) => { const result = await catchUp().setItemState(ownerId, entryId, input, "MCP"); return { structuredContent: { data: result.data, meta: { requestId: input.requestId, replayed: result.replayed } }, content: [{ type: "text", text: `Marked the catch-up item ${input.state.toLowerCase()}. The underlying record is unchanged.` }] }; });
+  server.registerTool("suggest_important_thread", { title: "Suggest important thread", description: "Offer a thread for the user's review at an explicit decision or action moment. Save only the proposed link, approved-summary draft, key decision or action, flagger, and recipients; never save a transcript. The suggestion does not enter catch-up until confirmed.", inputSchema: importantThreadCreateSchema.shape, outputSchema: { data: importantThreadSuggestionViewSchema, meta: responseMetaSchema }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => { const result = await catchUp().suggestThread(ownerId, input, "MCP"); return { structuredContent: { data: result.data, meta: { requestId: input.requestId, replayed: result.replayed } }, content: [{ type: "text", text: "Created a thread suggestion for human confirmation. It is not in catch-up yet." }] }; });
+  server.registerTool("confirm_important_thread", { title: "Confirm important thread", description: "Confirm a specific thread suggestion after the user approves its title, summary, key decision or action, flagger, and recipients.", inputSchema: { threadId: uuidSchema, expectedVersion: z.number().int().positive(), requestId: uuidSchema }, outputSchema: { data: importantThreadConfirmationViewSchema, meta: responseMetaSchema }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ threadId, expectedVersion, requestId }) => { const result = await catchUp().confirmThread(ownerId, threadId, expectedVersion, requestId, "MCP"); return { structuredContent: { data: result.data, meta: { requestId, replayed: result.replayed } }, content: [{ type: "text", text: "Confirmed the important thread. It can appear in the next eligible catch-up." }] }; });
   server.registerTool("prepare_conversation_catch_up", { title: "Prepare conversation catch-up", description: "Use only after the user explicitly asks for a conversation catch-up. Resolve the named profile with list_alters first. This read-only handoff returns user-selected dates or a candidate based on that profile's recorded fronting window; it never proves absence, changes fronting, reads ChatGPT history, or saves a summary.", inputSchema: prepareConversationCatchUpSchema.shape, outputSchema: conversationCatchUpHandoffSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => { const catchUp = ownerId.startsWith("demo:") ? new CatchUpService({} as never) : getCatchUpService(); const data = await catchUp.prepareConversationCatchUp(ownerId, input); return { structuredContent: data, content: [{ type: "text", text: data.status === "READY" ? "Prepared a conversation catch-up handoff for a host with history access." : "Choose a start and end time for this conversation catch-up." }] }; });
   server.registerTool("get_current_front", { title: "Get current front", description: "Use this when the user asks who is fronting right now. It returns only the user-confirmed timestamped current front, or null when none is recorded.", inputSchema: {}, outputSchema: currentFrontResponseSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async () => { const current = await service.getCurrentFront(ownerId); return { structuredContent: { data: current, meta: {} }, content: [{ type: "text", text: current ? `${current.alterName} is the recorded current front.` : "No current front is recorded." }] }; });
   server.registerTool("switch_current_front", { title: "Switch current front", description: "Use this only when the user explicitly says an alter is now fronting. Read get_current_front first, pass its version (or null when empty), and use a requestId so retries return the original handoff.", inputSchema: frontingSwitchSchema.shape, outputSchema: switchFrontResponseSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => { const result = await service.switchCurrentFront(ownerId, input, "MCP"); return { structuredContent: { data: result.data, meta: { requestId: input.requestId, replayed: result.replayed } }, content: [{ type: "text", text: `${result.data.current.alterName} is now the recorded current front.` }] }; });

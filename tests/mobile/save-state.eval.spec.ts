@@ -9,7 +9,7 @@ test("@eval read states do not present an unverified front or empty private reco
   await expect(page.getByText("No confirmed current front is recorded.", { exact: true })).toHaveCount(0);
   harness.readStatus = 200;
   await page.getByRole("button", { name: "Retry catch-up" }).click();
-  await expect(page.getByRole("heading", { name: "Welcome back, Test Robin" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await expect(page.getByText("Current front · confirmed", { exact: true })).toBeVisible();
   await expect(page.locator(".command-avatar")).toHaveText("TR");
 });
@@ -17,7 +17,7 @@ test("@eval read states do not present an unverified front or empty private reco
 test("@eval failed save keeps the entered draft and sends one write", async ({ page, harness }) => {
   harness.writeStatus = 409;
   await page.goto("/notes");
-  const note = page.getByLabel("System-wide note", { exact: true });
+  const note = page.getByLabel("Note", { exact: true });
   await note.fill("Keep this draft after a failed save");
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Record changed");
@@ -41,9 +41,9 @@ test("@eval changing an approved thread field withdraws its stale confirmation",
 test("@eval an authenticated empty catch-up still allows a System-wide note", async ({ page, harness }) => {
   harness.session = null;
   await page.goto("/notes");
-  await expect(page.getByRole("heading", { name: "No catch-up is open" })).toBeVisible();
-  await page.getByLabel("System-wide note", { exact: true }).fill("Synthetic note without a current front");
+  await expect(page.getByRole("heading", { name: "Notes", exact: true })).toBeVisible();
+  await page.getByLabel("Note", { exact: true }).fill("Synthetic note without a current front");
   await page.getByRole("button", { name: "Save note", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("System-wide note saved.");
+  await expect(page.getByRole("status")).toContainText("Note saved to Notes.");
   expect(harness.writes).toHaveLength(1);
 });

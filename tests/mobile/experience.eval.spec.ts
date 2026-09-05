@@ -4,30 +4,32 @@ import { test, expect } from "./fixtures";
 // Do not mark known defects as expected failures: a repair should turn them green.
 test("@eval appearance is accessible and persists after reload", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByLabel("Appearance")).toBeVisible();
-  await page.getByLabel("Appearance").selectOption("light");
+  await page.locator(".app-preferences > summary").click();
+  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.getByLabel("Appearance")).toHaveValue("light");
+  await page.locator(".app-preferences > summary").click();
+  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toHaveValue("light");
 });
 
 test("@eval reflow fits the viewport including enlarged text and long content", async ({ page, harness }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Welcome back, Test Robin/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Catch-up for Test Robin/ })).toBeVisible();
   const baseline = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   await testInfo.attach("baseline-reflow", { body: JSON.stringify(baseline), contentType: "application/json" });
   expect.soft(baseline.scroll, `Normal text: ${JSON.stringify(baseline)}`).toBeLessThanOrEqual(baseline.client + 1);
   harness.session!.items[0].title = "LongUnbrokenRecordTitle".repeat(8);
   await page.reload();
   await expect(page.getByRole("heading", { name: /LongUnbrokenRecordTitle/ })).toBeVisible();
-  await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+  await page.addStyleTag({ content: "html { font-size: 40px !important; }" });
   const overflow = await page.evaluate(() => ({ width: window.innerWidth, client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(overflow.scroll, JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.client + 1);
 });
 
 test("@eval all navigation and action targets are at least 44 by 44 CSS pixels", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Welcome back, Test Robin/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Catch-up for Test Robin/ })).toBeVisible();
   const undersized = await page.getByRole("main").locator("a, button, select, input:not([type=hidden]), textarea").evaluateAll((elements) => elements.flatMap((element) => {
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return [];
@@ -47,10 +49,10 @@ test("@eval signed-out state never claims a confirmed front or empty private inb
 for (const kind of ["note", "todo"]) {
   test(`@eval successful ${kind} save announces success and clears the form`, async ({ page, harness }) => {
     await page.goto(kind === "note" ? "/notes" : "/board");
-    const input = page.getByLabel(kind === "note" ? "System-wide note" : "Title", { exact: true });
+    const input = page.getByLabel(kind === "note" ? "Note" : "Title", { exact: true });
     await input.fill("Synthetic save check");
-    await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save System-wide todo", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText(kind === "note" ? "System-wide note saved." : "Todo saved.");
+    await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save todo", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Board.");
     await expect(input).toHaveValue("");
     expect(harness.writes).toHaveLength(1);
   });

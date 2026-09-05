@@ -4,6 +4,8 @@ export type PrivateImage = {
   id: string;
   storageKey: string;
   contentType: string;
+  isProfilePicture: boolean;
+  createdAt: string;
 };
 
 export type AlterProfile = {
@@ -12,7 +14,9 @@ export type AlterProfile = {
   name: string;
   selfDescribedGender?: string;
   description?: string;
+  profilePicture?: PrivateImage;
   images: PrivateImage[];
+  version: number;
   createdAt: string;
   updatedAt: string;
 };
