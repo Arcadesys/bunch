@@ -10,7 +10,7 @@ const config: McpAuthorizationConfig = {
   jwksUri: new URL("https://tenant.example.auth0.com/.well-known/jwks.json"),
 };
 
-async function fixtureToken(overrides: { audience?: string; scope?: string } = {}) {
+async function fixtureToken(overrides: { audience?: string; scope?: string; expiresIn?: string } = {}) {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const publicJwk = await exportJWK(publicKey);
   const token = await new SignJWT({ scope: overrides.scope ?? COMPANION_SCOPE })
@@ -19,7 +19,7 @@ async function fixtureToken(overrides: { audience?: string; scope?: string } = {
     .setIssuer(config.issuer)
     .setAudience(overrides.audience ?? config.audience)
     .setIssuedAt()
-    .setExpirationTime("5m")
+    .setExpirationTime(overrides.expiresIn ?? "5m")
     .sign(privateKey);
   return { token, getKey: async () => publicKey, publicJwk };
 }
@@ -51,4 +51,12 @@ test("inline image capabilities are owner- and image-scoped", () => {
     if (original === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
     else process.env.MCP_TOKEN_SIGNING_SECRET = original;
   }
+});
+
+
+test("expired access tokens fail and a fresh token retains the same owner", async () => {
+  const expired = await fixtureToken({ expiresIn: "-1s" });
+  await assert.rejects(verifyCompanionAccessToken(expired.token, config, expired.getKey), /exp/);
+  const fresh = await fixtureToken();
+  assert.equal(await verifyCompanionAccessToken(fresh.token, config, fresh.getKey), ownerIdFromAuth0Subject("google-oauth2|immutable-google-subject"));
 });

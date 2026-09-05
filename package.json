@@ -18,7 +18,11 @@
     "record:front": "tsx scripts/record-current-front.ts",
     "record:note": "tsx scripts/save-system-note.ts",
     "verify:hosted-mcp": "tsx scripts/verify-hosted-mcp.ts",
-    "eval:mcp": "node -e \"if (!process.env.TEST_DATABASE_URL) { console.error('TEST_DATABASE_URL is required for MCP evals'); process.exit(1); }\" && node --import tsx --test src/server/arrival-catch-up.eval.test.ts"
+    "eval:mcp": "node -e \"if (!process.env.TEST_DATABASE_URL) { console.error('TEST_DATABASE_URL is required for MCP evals'); process.exit(1); }\" && node --import tsx --test src/server/arrival-catch-up.eval.test.ts",
+    "pilot:admin": "tsx scripts/pilot-admin.ts",
+    "pilot:backup": "tsx scripts/pilot-backup.ts",
+    "eval:pilot": "node -e \"if (!process.env.TEST_DATABASE_URL) { console.error('TEST_DATABASE_URL is required'); process.exit(1); }\" && node --import tsx --test src/server/pilot.integration.test.ts",
+    "plugin:pack": "python3 scripts/package-plugin.py"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.28.0",

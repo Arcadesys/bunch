@@ -1,3 +1,4 @@
+import { getPilotService } from "./pilot-service";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,13 +21,21 @@ export async function savePrivateImage(ownerId: string, file: File): Promise<Sto
   if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.VERCEL) throw new Error("Private Blob storage is not configured.");
   const ownerSegment = createHash("sha256").update(ownerId).digest("hex").slice(0, 24);
   const safeName = basename(file.name).replace(/[^a-zA-Z0-9._-]/g, "_");
-  const blob = await put(`profiles/${ownerSegment}/${randomUUID()}-${safeName}`, file, {
-    access: "private",
-    addRandomSuffix: true,
-    contentType: file.type,
-    cacheControlMaxAge: 0,
-  });
-  return { storageKey: blob.pathname, contentType: blob.contentType };
+  const key = `profiles/${ownerSegment}/${randomUUID()}-${safeName}`;
+  const pilot = getPilotService();
+  await pilot.reserveUpload(ownerId, key, file.size);
+  try {
+    const blob = await put(key, file, { access: "private", addRandomSuffix: false, contentType: file.type, cacheControlMaxAge: 0 });
+    await pilot.pool.query("update pilot_upload set state='STORED' where storage_key=$1", [key]);
+    // Deletion/revocation may have occurred during transfer. Never attach after it.
+    await pilot.assertAccess(ownerId);
+    return { storageKey: blob.pathname, contentType: blob.contentType };
+  } catch(error) {
+    // Preserve the reservation if cleanup fails so deletion/reconciliation can retry.
+    await del([key]);
+    await pilot.pool.query("delete from pilot_upload where storage_key=$1", [key]);
+    throw error;
+  }
 }
 
 async function saveLocalPrivateImage(file: File): Promise<StoredPrivateImage> {
@@ -58,5 +67,7 @@ export async function deletePrivateImages(storageKeys: string[]) {
     }
     return;
   }
+  if (!storageKeys.length) return;
   await del(storageKeys);
+  await getPilotService().pool.query("delete from pilot_upload where storage_key=any($1::text[])", [storageKeys]);
 }
