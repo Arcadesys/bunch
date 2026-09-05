@@ -11,7 +11,7 @@ const themeScript = `(() => {
 })();`;
 
 export const metadata: Metadata = {
-  title: "System — private catch-up command center",
+  title: "DIDdy — your private companion",
   description: "A private, user-confirmed catch-up for notes, todos, decisions, threads, and switch history.",
   robots: { index: false, follow: false },
 };

@@ -163,3 +163,16 @@ test("thread suggestions are retry-safe and remain unconfirmed", async () => {
   assert.equal(retryData.id, firstData.id);
   assert.equal(retry.replayed, true);
 });
+
+test("saved demo threads remain visible independently of catch-up and keep owner boundaries", async () => {
+  const ownerId = `demo:test-${crypto.randomUUID()}`;
+  const service = new CatchUpService({} as never);
+  const created = await service.suggestThread(ownerId, { requestId: crypto.randomUUID(), source: "CODEX", externalThreadId: "saved", url: "https://example.com/thread", title: "Saved without a switch", approvedSummary: "Summary", keyDecisionOrAction: "Action", recipientAlterIds: [] }, "WEB");
+  const saved = created.data as { id: string; version: number };
+  assert.ok((await service.listThreads(ownerId)).every((thread) => !Array.isArray(thread) && typeof thread.id === "string"));
+  assert.ok((await service.listThreads(ownerId)).some((thread) => thread.id === saved.id && thread.status === "SUGGESTED"));
+  assert.ok(!(await service.listThreads(`demo:other-${crypto.randomUUID()}`)).some((thread) => thread.id === saved.id));
+  await service.confirmThread(ownerId, saved.id, saved.version, crypto.randomUUID(), "WEB");
+  assert.ok((await service.listThreads(ownerId)).some((thread) => thread.id === saved.id && thread.status === "CONFIRMED"));
+  await assert.rejects(() => service.confirmThread(ownerId, saved.id, saved.version, crypto.randomUUID(), "WEB"), /Thread changed/);
+});

@@ -8,6 +8,30 @@ import { SystemService } from "@/server/system-service";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationTest = databaseUrl ? test : test.skip;
 
+integrationTest("profile-picture backfill selects only profiles with exactly one image", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  const owner = `test:${randomUUID()}`;
+  try {
+    await pool.query("insert into app_user (id, google_subject) values ($1, $1)", [owner]);
+    const profiles = [randomUUID(), randomUUID(), randomUUID()];
+    for (const [index, id] of profiles.entries()) await pool.query("insert into alter_profile (id, owner_id, name) values ($1, $2, $3)", [id, owner, `Backfill ${index}`]);
+    const images = [randomUUID(), randomUUID(), randomUUID()];
+    await pool.query("insert into private_image (id, owner_id, alter_id, storage_key, content_type) values ($1, $2, $3, $4, 'image/png'), ($5, $2, $6, $7, 'image/png'), ($8, $2, $6, $9, 'image/png')", [images[0], owner, profiles[1], `profiles/test/${images[0]}`, images[1], profiles[2], `profiles/test/${images[1]}`, images[2], `profiles/test/${images[2]}`]);
+    await pool.query(`with single_image_profiles as (
+      select owner_id, alter_id from private_image where owner_id = $1 group by owner_id, alter_id having count(*) = 1
+    ) update private_image image set is_profile_picture = true from single_image_profiles profile
+      where image.owner_id = profile.owner_id and image.alter_id = profile.alter_id`, [owner]);
+    const result = await pool.query("select alter_id, count(*) filter (where is_profile_picture)::int as active from private_image where owner_id = $1 group by alter_id", [owner]);
+    const byProfile = new Map(result.rows.map((row) => [row.alter_id, row.active]));
+    assert.equal(byProfile.get(profiles[1]), 1);
+    assert.equal(byProfile.get(profiles[2]), 0);
+    assert.equal(byProfile.has(profiles[0]), false);
+  } finally {
+    await pool.query("delete from app_user where id = $1", [owner]).catch(() => undefined);
+    await pool.end();
+  }
+});
+
 integrationTest("alter and todo contracts enforce lifecycle, ownership, idempotency, concurrency, and erasure", async () => {
   process.env.ERASURE_TOKEN_SIGNING_SECRET = "integration-test-secret-with-enough-entropy";
   const pool = new Pool({ connectionString: databaseUrl, max: 4 });
@@ -44,6 +68,48 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
     await assert.rejects(() => service.getAlter(ownerA, created.data.id), (error) => error instanceof SystemError && error.code === "NOT_FOUND");
     const restoredAlter = await service.restoreAlter(ownerA, created.data.id, { requestId: requestId(), expectedVersion: archivedAlter.data.version }, "WEB");
     assert.equal(restoredAlter.data.version, 4);
+
+    const firstImageId = randomUUID();
+    const secondImageId = randomUUID();
+    const foreignImageId = randomUUID();
+    await pool.query("insert into private_image (id, owner_id, alter_id, storage_key, content_type, created_at) values ($1, $2, $3, $4, 'image/png', now() - interval '1 minute'), ($5, $2, $3, $6, 'image/png', now())", [firstImageId, ownerA, created.data.id, `profiles/test/${firstImageId}.png`, secondImageId, `profiles/test/${secondImageId}.png`]);
+    await pool.query("insert into private_image (id, owner_id, alter_id, storage_key, content_type) values ($1, $2, $3, $4, 'image/png')", [foreignImageId, ownerB, foreign.data.id, `profiles/test/${foreignImageId}.png`]);
+
+    const pfpRequest = requestId();
+    const firstPfp = await service.setProfilePicture(ownerA, created.data.id, { imageId: firstImageId, expectedVersion: 4, requestId: pfpRequest }, "WEB");
+    assert.equal(firstPfp.data.profilePicture?.id, firstImageId);
+    assert.deepEqual(firstPfp.data.images.map((image) => image.id), [secondImageId, firstImageId]);
+    assert.equal(firstPfp.data.version, 5);
+    const pfpReplay = await service.setProfilePicture(ownerA, created.data.id, { imageId: firstImageId, expectedVersion: 4, requestId: pfpRequest }, "WEB");
+    assert.equal(pfpReplay.replayed, true);
+    assert.deepEqual(pfpReplay.data, firstPfp.data);
+    await assert.rejects(() => service.setProfilePicture(ownerA, created.data.id, { imageId: secondImageId, expectedVersion: 4, requestId: requestId() }, "WEB"), (error) => error instanceof SystemError && error.code === "CONFLICT");
+    assert.equal((await service.getAlter(ownerA, created.data.id)).profilePicture?.id, firstImageId);
+    await assert.rejects(() => service.setProfilePicture(ownerA, created.data.id, { imageId: foreignImageId, expectedVersion: 5, requestId: requestId() }, "WEB"), (error) => error instanceof SystemError && error.code === "NOT_FOUND");
+
+    const secondPfp = await service.setProfilePicture(ownerA, created.data.id, { imageId: secondImageId, expectedVersion: 5, requestId: requestId() }, "MCP");
+    assert.equal(secondPfp.data.profilePicture?.id, secondImageId);
+    const retained = await pool.query("select id, is_profile_picture from private_image where owner_id = $1 and alter_id = $2 order by created_at", [ownerA, created.data.id]);
+    assert.deepEqual(retained.rows.map((row) => ({ id: row.id, active: row.is_profile_picture })), [{ id: firstImageId, active: false }, { id: secondImageId, active: true }]);
+
+    const competing = await Promise.allSettled([
+      service.setProfilePicture(ownerA, created.data.id, { imageId: firstImageId, expectedVersion: 6, requestId: requestId() }, "MCP"),
+      service.setProfilePicture(ownerA, created.data.id, { imageId: firstImageId, expectedVersion: 6, requestId: requestId() }, "WEB"),
+    ]);
+    assert.equal(competing.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(competing.filter((result) => result.status === "rejected" && result.reason instanceof SystemError && result.reason.code === "CONFLICT").length, 1);
+    const activePfpCount = await pool.query("select count(*) from private_image where owner_id = $1 and alter_id = $2 and is_profile_picture = true", [ownerA, created.data.id]);
+    assert.equal(Number(activePfpCount.rows[0].count), 1);
+
+    const attachedImageId = randomUUID();
+    const attachRequest = requestId();
+    const attached = await service.attachAndSetProfilePicture(ownerA, created.data.id, { id: attachedImageId, storageKey: `profiles/test/${attachedImageId}.png`, contentType: "image/png" }, { expectedVersion: 7, requestId: attachRequest }, "SYSTEM");
+    const attachReplay = await service.attachAndSetProfilePicture(ownerA, created.data.id, { id: randomUUID(), storageKey: `profiles/test/${randomUUID()}.png`, contentType: "image/png" }, { expectedVersion: 7, requestId: attachRequest }, "SYSTEM");
+    assert.equal(attached.data.profilePicture?.id, attachedImageId);
+    assert.equal(attachReplay.replayed, true);
+    assert.deepEqual(attachReplay.data, attached.data);
+    const attachedRows = await pool.query("select count(*) from private_image where owner_id = $1 and alter_id = $2", [ownerA, created.data.id]);
+    assert.equal(Number(attachedRows.rows[0].count), 3);
 
     assert.equal(await service.getCurrentFront(ownerA), null);
     const firstFrontRequest = requestId();
@@ -122,7 +188,7 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
     await pool.query("insert into private_image (id, owner_id, alter_id, storage_key, content_type) values ($1, $2, $3, $4, 'image/webp')", [randomUUID(), ownerA, created.data.id, storageKey]);
     preview = await service.previewEraseAlter(ownerA, created.data.id);
     assert.equal(preview.canErase, true);
-    assert.equal(preview.blockers.images, 1);
+    assert.equal(preview.blockers.images, 4);
     assert.ok(preview.previewToken);
 
     const failingService = new SystemService(pool, async () => { throw new Error("Blob unavailable"); });
@@ -132,7 +198,7 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
 
     const erased = await service.eraseAlter(ownerA, created.data.id, { requestId: eraseRequest, expectedVersion: preview.version, previewToken: preview.previewToken! }, "MCP");
     assert.equal(erased.data.erased, true);
-    assert.deepEqual(removedKeys, [storageKey]);
+    assert.deepEqual(removedKeys.sort(), [`profiles/test/${firstImageId}.png`, `profiles/test/${secondImageId}.png`, `profiles/test/${attachedImageId}.png`, storageKey].sort());
     const erasedReplay = await service.eraseAlter(ownerA, created.data.id, { requestId: eraseRequest, expectedVersion: preview.version, previewToken: preview.previewToken! }, "MCP");
     assert.equal(erasedReplay.replayed, true);
 

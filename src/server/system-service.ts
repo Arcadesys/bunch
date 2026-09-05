@@ -9,6 +9,7 @@ import {
   listNotesSchema,
   listTodosSchema,
   noteCreateSchema,
+  setProfilePictureSchema,
   todoCreateSchema,
   todoPatchSchema,
   versionMutationSchema,
@@ -23,6 +24,8 @@ import {
   type NoteCreate,
   type NoteView,
   type RecordSource,
+  type ProfileImageView,
+  type SetProfilePicture,
   type TodoCreate,
   type TodoPatch,
   type TodoView,
@@ -47,6 +50,8 @@ type AlterRow = QueryResultRow & {
   strengths: string[];
   boundaries: string[];
   image_count: string | number;
+  images: Array<{ id: string; contentType: string; isProfilePicture: boolean; createdAt: string }> | null;
+  profile_picture: { id: string; contentType: string; isProfilePicture: boolean; createdAt: string } | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -94,7 +99,13 @@ const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a
   a.communication_guidance, a.strengths, a.boundaries, a.version, a.created_at, a.updated_at, a.archived_at,
   coalesce((select array_agg(aa.alias order by aa.normalized_alias) from alter_alias aa
     where aa.owner_id = a.owner_id and aa.alter_id = a.id), '{}') as aliases,
-  (select count(*) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id) as image_count
+  (select count(*) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id) as image_count,
+  coalesce((select jsonb_agg(jsonb_build_object('id', pi.id, 'contentType', pi.content_type,
+    'isProfilePicture', pi.is_profile_picture, 'createdAt', pi.created_at) order by pi.created_at desc, pi.id desc)
+    from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id), '[]'::jsonb) as images,
+  (select jsonb_build_object('id', pi.id, 'contentType', pi.content_type, 'isProfilePicture', true,
+    'createdAt', pi.created_at) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id
+    and pi.is_profile_picture = true limit 1) as profile_picture
   from alter_profile a`;
 
 const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on, t.priority, t.coverage_id,
@@ -120,6 +131,12 @@ function asIso(value: Date | string) {
 }
 
 function alterFromRow(row: AlterRow): AlterView {
+  const toImage = (image: NonNullable<AlterRow["images"]>[number]): ProfileImageView => ({
+    id: image.id,
+    contentType: image.contentType as ProfileImageView["contentType"],
+    isProfilePicture: image.isProfilePicture,
+    createdAt: asIso(image.createdAt),
+  });
   return {
     id: row.id,
     name: row.name,
@@ -131,6 +148,8 @@ function alterFromRow(row: AlterRow): AlterView {
     strengths: row.strengths ?? [],
     boundaries: row.boundaries ?? [],
     imageCount: Number(row.image_count),
+    profilePicture: row.profile_picture ? toImage(row.profile_picture) : undefined,
+    images: (row.images ?? []).map(toImage),
     version: row.version,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
@@ -265,6 +284,9 @@ export class SystemService {
       return { data: result, replayed: false };
     } catch (error) {
       await client.query("rollback");
+      if (typeof error === "object" && error && "code" in error && error.code === "23505" && "constraint" in error && error.constraint === "private_image_one_profile_picture") {
+        throw new SystemError("CONFLICT", "The profile picture changed during this request.");
+      }
       if (typeof error === "object" && error && "code" in error && error.code === "23505") {
         throw new SystemError("VALIDATION_ERROR", "An alias or identifier is already in use for this owner.");
       }
@@ -467,6 +489,40 @@ export class SystemService {
       await this.activity(client, ownerId, "ALTER", alterId, "UPDATED", source, changed, input.requestId);
       return this.alterById(client, ownerId, alterId);
     });
+  }
+
+  async setProfilePicture(ownerId: string, alterId: string, raw: SetProfilePicture, source: RecordSource) {
+    const input = setProfilePictureSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `set_profile_picture:${alterId}`, async (client) => {
+      return this.promoteProfilePicture(client, ownerId, alterId, input.imageId, input.expectedVersion, input.requestId, source);
+    });
+  }
+
+  async attachAndSetProfilePicture(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, raw: Omit<SetProfilePicture, "imageId">, source: RecordSource) {
+    const input = setProfilePictureSchema.omit({ imageId: true }).parse(raw);
+    return this.mutate(ownerId, input.requestId, `attach_profile_picture:${alterId}`, async (client) => {
+      const current = await this.alterById(client, ownerId, alterId, false);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+      const inserted = await client.query(`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
+        values ($1::uuid, $2, $3::uuid, $4, $5)`, [image.id, ownerId, alterId, image.storageKey, image.contentType]);
+      if (!inserted.rowCount) throw new SystemError("NOT_FOUND", "Alter not found.");
+      return this.promoteProfilePicture(client, ownerId, alterId, image.id, input.expectedVersion, input.requestId, source);
+    });
+  }
+
+  private async promoteProfilePicture(client: PoolClient, ownerId: string, alterId: string, imageId: string, expectedVersion: number, requestId: string, source: RecordSource) {
+    await client.query("select 1 from alter_profile where owner_id = $1 and id = $2::uuid for update", [ownerId, alterId]);
+    const current = await this.alterById(client, ownerId, alterId, false);
+    if (current.version !== expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+    const image = await client.query<{ is_profile_picture: boolean }>("select is_profile_picture from private_image where owner_id = $1 and alter_id = $2::uuid and id = $3::uuid", [ownerId, alterId, imageId]);
+    if (!image.rowCount) throw new SystemError("NOT_FOUND", "Profile image not found.");
+    if (image.rows[0].is_profile_picture) return current;
+    await client.query("update private_image set is_profile_picture = false where owner_id = $1 and alter_id = $2::uuid and is_profile_picture = true", [ownerId, alterId]);
+    await client.query("update private_image set is_profile_picture = true where owner_id = $1 and alter_id = $2::uuid and id = $3::uuid", [ownerId, alterId, imageId]);
+    const updated = await client.query("update alter_profile set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, alterId, expectedVersion]);
+    if (!updated.rowCount) throw new SystemError("CONFLICT", "The alter changed during profile-picture promotion.");
+    await this.activity(client, ownerId, "ALTER", alterId, "PROFILE_PICTURE_SET", source, ["profilePicture", "version"], requestId);
+    return this.alterById(client, ownerId, alterId);
   }
 
   private async setAlterArchive(ownerId: string, alterId: string, raw: { requestId: string; expectedVersion: number }, source: RecordSource, archived: boolean) {

@@ -32,6 +32,9 @@ type EntryRow = QueryResultRow & {
   version: number;
 };
 
+type DemoSavedThread = ImportantThreadCreate & { id: string; status: "SUGGESTED" | "CONFIRMED"; version: number; createdAt: string; updatedAt: string };
+const demoSavedThreads = new Map<string, DemoSavedThread[]>();
+
 const demoAlterId = "11111111-1111-4111-8111-111111111111";
 const demoFrontingId = "22222222-2222-4222-8222-222222222222";
 const demoSessionId = "33333333-3333-4333-8333-333333333333";
@@ -148,7 +151,10 @@ export class CatchUpService {
   }
 
   async listThreads(ownerId: string) {
-    if (ownerId.startsWith("demo:")) return getDemoCatchUpSession(ownerId).items.filter((item) => item.itemType === "THREAD").map((item) => ({ id: item.itemId, source: item.threadSource, url: item.threadUrl, title: item.title, approvedSummary: item.whyItMatters, keyDecisionOrAction: item.nextAction, flaggedBy: item.fromLabel, recipients: [item.toLabel], status: "CONFIRMED", version: 1, updatedAt: item.timestamp }));
+    if (ownerId.startsWith("demo:")) {
+      const saved = (demoSavedThreads.get(ownerId) ?? []).map((thread) => ({ ...thread, recipients: thread.recipientAlterIds.map(() => "Linked profile") }));
+      return [...saved, ...getDemoCatchUpSession(ownerId).items.filter((item) => item.itemType === "THREAD").map((item) => ({ id: item.itemId, source: item.threadSource, url: item.threadUrl, title: item.title, approvedSummary: item.whyItMatters, keyDecisionOrAction: item.nextAction, flaggedBy: item.fromLabel, recipients: [item.toLabel], status: "CONFIRMED", version: 1, updatedAt: item.timestamp }))];
+    }
     const result = await this.pool.query(`select t.id, t.source, t.url, t.title, t.approved_summary as "approvedSummary",
       t.key_decision_or_action as "keyDecisionOrAction", t.status, t.version, t.updated_at as "updatedAt",
       flagger.name as "flaggedBy", coalesce(array_agg(recipient.name order by recipient.name) filter (where recipient.id is not null), '{}') as recipients
@@ -390,7 +396,8 @@ export class CatchUpService {
       const key = `${ownerId}:${input.requestId}`;
       const prior = demoReceipts.get(key);
       if (prior) return { data: prior, replayed: true };
-      const data = { id: randomUUID(), ...input, status: "SUGGESTED" as const, version: 1, createdAt: new Date().toISOString() };
+      const data = { id: randomUUID(), ...input, status: "SUGGESTED" as const, version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      demoSavedThreads.set(ownerId, [structuredClone(data), ...(demoSavedThreads.get(ownerId) ?? [])]);
       demoReceipts.set(key, data);
       return { data, replayed: false };
     }
@@ -423,7 +430,13 @@ export class CatchUpService {
       const key = `${ownerId}:${requestId}`;
       const prior = demoReceipts.get(key);
       if (prior) return { data: prior, replayed: true };
-      const data = { id: threadId, status: "CONFIRMED" as const, version: expectedVersion + 1 };
+      const thread = (demoSavedThreads.get(ownerId) ?? []).find((item) => item.id === threadId);
+      if (!thread) throw new SystemError("NOT_FOUND", "Thread not found.");
+      if (thread.version !== expectedVersion) throw new SystemError("CONFLICT", "Thread changed. Reload before confirming.");
+      thread.status = "CONFIRMED";
+      thread.version += 1;
+      thread.updatedAt = new Date().toISOString();
+      const data = { id: threadId, status: "CONFIRMED" as const, version: thread.version };
       demoReceipts.set(key, data);
       return { data, replayed: false };
     }

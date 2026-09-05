@@ -19,10 +19,12 @@ export function postgresDateOnly(value: unknown): string {
 
 export type ProfileInput = Pick<AlterProfile, "name" | "selfDescribedGender" | "description">;
 
+type ImageAttachment = Omit<PrivateImage, "isProfilePicture" | "createdAt"> & Partial<Pick<PrivateImage, "isProfilePicture" | "createdAt">>;
+
 export interface SystemRepository {
   listProfiles(ownerId: string): Promise<AlterProfile[]>;
   saveProfile(ownerId: string, input: ProfileInput, profileId?: string): Promise<AlterProfile>;
-  attachImage(ownerId: string, alterId: string, image: PrivateImage): Promise<void>;
+  attachImage(ownerId: string, alterId: string, image: ImageAttachment): Promise<void>;
   getImage(ownerId: string, imageId: string): Promise<PrivateImage | null>;
   listAssignments(ownerId: string): Promise<CoverageAssignment[]>;
   createDraft(ownerId: string, input: Omit<CoverageAssignment, "id" | "ownerId" | "createdAt" | "confirmedAt" | "status">): Promise<CoverageAssignment>;
@@ -52,18 +54,19 @@ class MemorySystemRepository implements SystemRepository {
     const now = new Date().toISOString();
     const existing = profileId && this.profiles.find((profile) => profile.id === profileId && profile.ownerId === ownerId);
     if (existing) {
-      Object.assign(existing, input, { updatedAt: now });
+      Object.assign(existing, input, { version: existing.version + 1, updatedAt: now });
       return structuredClone(existing);
     }
-    const profile: AlterProfile = { id: randomUUID(), ownerId, ...input, images: [], createdAt: now, updatedAt: now };
+    const profile: AlterProfile = { id: randomUUID(), ownerId, ...input, images: [], version: 1, createdAt: now, updatedAt: now };
     this.profiles.push(profile);
     return structuredClone(profile);
   }
 
-  async attachImage(ownerId: string, alterId: string, image: PrivateImage) {
+  async attachImage(ownerId: string, alterId: string, image: ImageAttachment) {
     const profile = this.profiles.find((item) => item.id === alterId && item.ownerId === ownerId);
     if (!profile) throw new Error("Profile not found.");
-    profile.images.push(image);
+    profile.images.push({ ...image, isProfilePicture: false, createdAt: image.createdAt ?? new Date().toISOString() });
+    profile.images.sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
     profile.updatedAt = new Date().toISOString();
   }
 
@@ -148,11 +151,14 @@ class NeonSystemRepository implements SystemRepository {
 
   async listProfiles(ownerId: string) {
     const sql = this.sql();
-    const rows = await sql`select a.id, a.owner_id, a.name, a.self_described_gender, a.description, a.created_at, a.updated_at,
-      coalesce(json_agg(json_build_object('id', i.id, 'storageKey', i.storage_key, 'contentType', i.content_type)) filter (where i.id is not null), '[]'::json) as images
-      from alter_profile a left join private_image i on i.alter_id = a.id
+    const rows = await sql`select a.id, a.owner_id, a.name, a.self_described_gender, a.description, a.version, a.created_at, a.updated_at,
+      coalesce(json_agg(json_build_object('id', i.id, 'storageKey', i.storage_key, 'contentType', i.content_type, 'isProfilePicture', i.is_profile_picture, 'createdAt', i.created_at) order by i.created_at desc, i.id desc) filter (where i.id is not null), '[]'::json) as images
+      from alter_profile a left join private_image i on i.owner_id = a.owner_id and i.alter_id = a.id
       where a.owner_id = ${ownerId} and a.archived_at is null group by a.id order by a.created_at asc`;
-    return rows.map((row) => ({ id: String(row.id), ownerId: String(row.owner_id), name: String(row.name), selfDescribedGender: row.self_described_gender ? String(row.self_described_gender) : undefined, description: row.description ? String(row.description) : undefined, images: row.images as PrivateImage[], createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString() }));
+    return rows.map((row) => {
+      const images = (row.images as Array<Record<string, unknown>>).map((image) => ({ id: String(image.id), storageKey: String(image.storageKey), contentType: String(image.contentType), isProfilePicture: Boolean(image.isProfilePicture), createdAt: new Date(String(image.createdAt)).toISOString() }));
+      return { id: String(row.id), ownerId: String(row.owner_id), name: String(row.name), selfDescribedGender: row.self_described_gender ? String(row.self_described_gender) : undefined, description: row.description ? String(row.description) : undefined, profilePicture: images.find((image) => image.isProfilePicture), images, version: Number(row.version), createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString() };
+    });
   }
 
   async saveProfile(ownerId: string, input: ProfileInput, profileId?: string) {
@@ -171,7 +177,7 @@ class NeonSystemRepository implements SystemRepository {
     return profile;
   }
 
-  async attachImage(ownerId: string, alterId: string, image: PrivateImage) {
+  async attachImage(ownerId: string, alterId: string, image: ImageAttachment) {
     await this.ensureOwner(ownerId);
     const sql = this.sql();
     const rows = await sql`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
@@ -181,9 +187,9 @@ class NeonSystemRepository implements SystemRepository {
 
   async getImage(ownerId: string, imageId: string) {
     const sql = this.sql();
-    const rows = await sql`select id, storage_key, content_type from private_image where owner_id = ${ownerId} and id = ${imageId}::uuid limit 1`;
+    const rows = await sql`select id, storage_key, content_type, is_profile_picture, created_at from private_image where owner_id = ${ownerId} and id = ${imageId}::uuid limit 1`;
     const row = rows[0];
-    return row ? { id: String(row.id), storageKey: String(row.storage_key), contentType: String(row.content_type) } : null;
+    return row ? { id: String(row.id), storageKey: String(row.storage_key), contentType: String(row.content_type), isProfilePicture: Boolean(row.is_profile_picture), createdAt: new Date(String(row.created_at)).toISOString() } : null;
   }
 
   async listAssignments(ownerId: string) {

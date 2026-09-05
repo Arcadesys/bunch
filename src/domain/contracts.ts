@@ -84,6 +84,19 @@ export const listNotesSchema = listPageSchema.pick({ cursor: true, limit: true }
   alterId: uuidSchema.optional(),
   actorAlterId: uuidSchema.optional(),
 }).strict();
+
+export const profileImageViewSchema = z.object({
+  id: uuidSchema,
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  isProfilePicture: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+
+export const setProfilePictureSchema = z.object({
+  imageId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+  requestId: uuidSchema,
+}).strict();
 export const listTodosSchema = listPageSchema.extend({
   status: z.array(todoStatusSchema).max(6).optional(),
   assigneeAlterId: uuidSchema.optional(),
@@ -104,6 +117,8 @@ export const alterViewSchema = z.object({
   strengths: z.array(z.string()),
   boundaries: z.array(z.string()),
   imageCount: z.number().int().nonnegative(),
+  profilePicture: profileImageViewSchema.optional(),
+  images: z.array(profileImageViewSchema),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -170,6 +185,8 @@ export type TodoView = z.infer<typeof todoViewSchema>;
 export type NoteView = z.infer<typeof noteViewSchema>;
 export type FrontingSwitch = z.infer<typeof frontingSwitchSchema>;
 export type FrontingSessionView = z.infer<typeof frontingSessionViewSchema>;
+export type ProfileImageView = z.infer<typeof profileImageViewSchema>;
+export type SetProfilePicture = z.infer<typeof setProfilePictureSchema>;
 export type TodoStatus = z.infer<typeof todoStatusSchema>;
 export type TodoPriority = z.infer<typeof todoPrioritySchema>;
 export type RecordSource = z.infer<typeof recordSourceSchema>;

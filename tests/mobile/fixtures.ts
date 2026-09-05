@@ -24,7 +24,9 @@ export const fixtureSession: CatchUpSession = {
 };
 
 type Write = { method: string; path: string; body: Record<string, unknown>; requestId: string | undefined };
+type StoredRecord = { id: string; version: number; updatedAt: string; createdAt: string; [key: string]: unknown };
 type Harness = {
+  saved: Record<string, StoredRecord[]>;
   session: CatchUpSession | null; readStatus: number; writeStatus: number; writes: Write[]; unexpected: string[];
   currentFront: FrontingSessionView | null; profiles: { id: string; name: string }[];
   switchReadStatus: number; switchDelay: number; loseSwitchResponse: boolean; switchCount: number;
@@ -33,7 +35,13 @@ type Harness = {
 
 export const test = base.extend<{ harness: Harness }>({
   harness: [async ({ context }, use) => {
+    const stamp = "2026-09-04T12:00:00.000Z";
     const harness: Harness = {
+      saved: {
+        todos: [{ id: "40000000-0000-4000-8000-000000000002", title: "Fixture todo", status: "BLOCKED", priority: "NORMAL", assigneeAlterIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
+        notes: [{ id: "40000000-0000-4000-8000-000000000001", body: "Fixture note", version: 1, updatedAt: stamp, createdAt: stamp }],
+        "important-threads": [{ id: "40000000-0000-4000-8000-000000000004", title: "Fixture thread", url: "https://example.invalid/approved-thread", approvedSummary: "Synthetic saved summary", keyDecisionOrAction: "Review this record", recipients: [], status: "CONFIRMED", version: 1, updatedAt: stamp, createdAt: stamp }],
+      },
       session: structuredClone(fixtureSession), readStatus: 200, writeStatus: 200, writes: [], unexpected: [],
       currentFront: { id: "60000000-0000-4000-8000-000000000001", alterId: fixtureSession.alterId, alterName: fixtureSession.alterName, startedAt: fixtureSession.startedAt, version: 1 },
       profiles: [{ id: fixtureSession.alterId, name: "Test Robin" }, { id: "20000000-0000-4000-8000-000000000002", name: "Test Finch" }],
@@ -59,7 +67,12 @@ export const test = base.extend<{ harness: Harness }>({
         const next = offset + harness.profilePageSize;
         return route.fulfill({ json: { data: harness.profiles.slice(offset, next), meta: next < harness.profiles.length ? { nextCursor: String(next) } : {} } });
       }
-      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes|todos|fronting\/switch|important-threads(?:\/[^/]+\/confirm)?)$/;
+      const recordKind = url.pathname.split("/")[3];
+      if (harness.saved[recordKind] && request.method() === "GET") {
+        if (harness.readStatus !== 200) return reply(null, harness.readStatus);
+        return route.fulfill({ json: { data: harness.saved[recordKind], meta: {} } });
+      }
+      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes|todos(?:\/[^/]+)?|fronting\/switch|important-threads(?:\/[^/]+\/confirm)?)$/;
       if (!allowed.test(url.pathname) || !["POST", "PATCH"].includes(request.method())) {
         harness.unexpected.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({ status: 501, json: { error: { message: "Unmocked API blocked by test harness." } } });
@@ -84,6 +97,21 @@ export const test = base.extend<{ harness: Harness }>({
         harness.switchCount += 1;
         if (harness.loseSwitchResponse) { harness.loseSwitchResponse = false; return route.abort("failed"); }
         return reply(result);
+      }
+      if (harness.saved[recordKind]) {
+        const records = harness.saved[recordKind];
+        if (request.method() === "PATCH" || url.pathname.endsWith("/confirm")) {
+          const record = records.find((item) => item.id === url.pathname.split("/")[4]);
+          if (!record) return reply(null, 404);
+          if (record.version !== body.expectedVersion) return reply(null, 409);
+          Object.assign(record, { status: body.status ?? "CONFIRMED", version: record.version + 1 });
+          return reply(record);
+        }
+        const id = `50000000-0000-4000-8000-${String(records.length + 1).padStart(12, "0")}`;
+        const record: StoredRecord = { ...body, id, version: 1, updatedAt: stamp, createdAt: stamp };
+        if (recordKind === "important-threads") Object.assign(record, { status: "SUGGESTED", recipients: (body.recipientAlterIds as string[]).map((id) => harness.profiles.find((profile) => profile.id === id)?.name ?? id) });
+        records.unshift(record);
+        return reply(record);
       }
       if (request.method() === "PATCH" && harness.session) {
         const item = harness.session.items.find((candidate) => url.pathname.endsWith(candidate.entryId));
