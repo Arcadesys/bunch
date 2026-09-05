@@ -36,3 +36,36 @@ test("DIDdy presence tools carry explicit kinds, versions, and retry metadata", 
     assert.deepEqual(calls, [["test:presence", { requestId, alterId }, "MCP"], ["test:presence", { requestId, episodeId, expectedVersion: 1 }, "MCP"]]);
   } finally { await client.close(); await server.close(); }
 });
+
+
+test("confirmed arrivals direct ChatGPT to the exact catch-up, while clears and retries do not repeat it", async () => {
+  const alterId = "11111111-1111-4111-8111-111111111111";
+  const id = "22222222-2222-4222-8222-222222222222";
+  const requestId = "33333333-3333-4333-8333-333333333333";
+  const startedAt = "2026-09-05T12:00:00.000Z";
+  const period = { id, alterId, alterName: "Fixture", kind: "FRONTING", origin: "EXPLICIT", startedAt, version: 1 };
+  let replayed = false;
+  const service = {
+    startFrontingEpisode: async () => ({ data: period, replayed }),
+    setSystemHost: async (_owner: string, input: { alterId: string | null }) => ({ data: { id, alterId: input.alterId, alterName: input.alterId ? "Fixture" : null, version: 1, recordedAt: startedAt }, replayed }),
+    switchCurrentFront: async () => ({ data: { current: { id, alterId, alterName: "Fixture", startedAt, version: 1 }, previous: null }, replayed }),
+  } as unknown as SystemService;
+  const server = createMcpServer("test:arrival", service);
+  const client = new Client({ name: "arrival-test", version: "1" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b); await client.connect(a);
+  try {
+    const start = await client.callTool({ name: "start_fronting_episode", arguments: { requestId, alterId } });
+    assert.equal(start.isError, undefined);
+    assert.match(JSON.stringify(start.content), new RegExp(`periodId ${id}`));
+    assert.match(JSON.stringify(start.content), /Generate the returned conversation catch-up in ChatGPT now/);
+    const host = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId, expectedVersion: null } });
+    assert.match(JSON.stringify(host.content), /hosting.startedAt equals 2026-09-05T12:00:00.000Z/);
+    const cleared = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId: null, expectedVersion: 1 } });
+    assert.doesNotMatch(JSON.stringify(cleared.content), /prepare_conversation_catch_up/);
+    replayed = true;
+    const replay = await client.callTool({ name: "start_fronting_episode", arguments: { requestId, alterId } });
+    assert.match(JSON.stringify(replay.content), /do not generate a duplicate summary/);
+    assert.doesNotMatch(JSON.stringify(replay.content), /Call prepare_conversation_catch_up now/);
+  } finally { await client.close(); await server.close(); }
+});

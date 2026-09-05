@@ -66,6 +66,8 @@ integration(
       assert.equal(handoff.window?.provenance, "RECORDED_PRESENCE_WINDOW");
       assert.equal(handoff.source?.kind, "FRONTING");
       assert.equal(handoff.window?.startAt, "2026-08-02T00:00:00.000Z");
+      assert.equal(handoff.elapsedSeconds, (Date.parse(front.data.startedAt) - Date.parse("2026-08-02T00:00:00Z")) / 1000);
+      assert.equal(hosting.startedAt, host.data.recordedAt, "host arrival can be matched to its mutation receipt");
       assert.equal(
         (
           await catchUp.prepareConversationCatchUp(owner, {
@@ -123,6 +125,9 @@ integration(
         "WEB",
       );
       assert.equal(await catchUp.openForPresence(owner, hosting.id), null);
+      const delayed = await catchUp.prepareConversationCatchUp(owner, { alterId: a.id, periodId: hosting.id, timeZone: "UTC" });
+      assert.equal(delayed.window?.endAt, hosting.startedAt, "closed arrival keeps original cutoff");
+      assert.equal(delayed.window?.startAt, "2026-08-03T00:00:00.000Z");
       assert.equal(
         (await catchUp.openForPresence(owner))?.id,
         frontCatch.id,

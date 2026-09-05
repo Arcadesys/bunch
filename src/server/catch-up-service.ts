@@ -22,6 +22,15 @@ import { getDatabasePool } from "@/db/client";
 import { postgresDateOnly } from "@/server/repository";
 import { SystemError } from "@/server/system-error";
 
+// Use recorded instants, including offset/DST differences; retries never use wall-clock now.
+function conversationHandoff(raw: unknown): ConversationCatchUpHandoff {
+  const result = conversationCatchUpHandoffSchema.parse(raw);
+  if (result.status === "READY" && result.window) {
+    result.elapsedSeconds = (Date.parse(result.window.endAt) - Date.parse(result.window.startAt)) / 1000;
+  }
+  return conversationCatchUpHandoffSchema.parse(result);
+}
+
 type Candidate = Omit<CatchUpItem, "entryId" | "reviewState" | "deferUntil" | "version">;
 type EntryRow = QueryResultRow & {
   id: string;
@@ -186,15 +195,15 @@ export class CatchUpService {
     const input = prepareConversationCatchUpSchema.parse(raw);
     const instructions = [
       "This handoff does not give System access to ChatGPT conversation history.",
-      "A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
+      "Generate the catch-up now in ChatGPT: show the window and elapsedSeconds as a readable duration, then summarize what happened. A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
       "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
       "Keep conversation findings separate from current authenticated facts and real-world completion. Do not persist raw transcripts or generated chat summaries in System.",
     ];
     if (ownerId.startsWith("demo:")) {
       if (input.alterId !== demoAlterId) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
-      if (input.startAt && input.endAt) return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: demoAlterId, alterName: "Mouse Arcade", historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
+      if (input.startAt && input.endAt) return conversationHandoff({ status: "READY", alterId: demoAlterId, alterName: "Mouse Arcade", historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
       const session = getDemoCatchUpSession(ownerId);
-      return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: demoAlterId, alterName: session.alterName, historyAccess: "HOST_REQUIRED", window: { startAt: session.windowStart!, endAt: session.windowEnd, timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: demoFrontingId, catchUpSessionId: session.id }, instructions });
+      return conversationHandoff({ status: "READY", alterId: demoAlterId, alterName: session.alterName, historyAccess: "HOST_REQUIRED", window: { startAt: session.windowStart!, endAt: session.windowEnd, timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: demoFrontingId, catchUpSessionId: session.id }, instructions });
     }
 
     const client = await this.pool.connect();
@@ -202,33 +211,33 @@ export class CatchUpService {
       const alter = await client.query<{ id: string; name: string }>("select id, name from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null", [ownerId, input.alterId]);
       if (!alter.rows[0]) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
       const profile = alter.rows[0];
-      if (input.startAt && input.endAt) return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
+      if (input.startAt && input.endAt) return conversationHandoff({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
 
-      const typed = await client.query<{id:string; kind:"HOSTING"|"FRONTING"; started_at:Date|string}>(`select id,kind,started_at from presence_period
-        where owner_id=$1 and alter_id=$2::uuid and ended_at is null and ($3::uuid is null or id=$3::uuid)
+      const typed = input.frontingSessionId ? { rows: [] } : await client.query<{id:string; kind:"HOSTING"|"FRONTING"; started_at:Date|string}>(`select id,kind,started_at from presence_period
+        where owner_id=$1 and alter_id=$2::uuid and (($3::uuid is null and ended_at is null) or id=$3::uuid)
         order by started_at desc limit 2`, [ownerId,profile.id,input.periodId??null]);
       if (input.periodId || typed.rows.length) {
-        if (typed.rows.length !== 1) return conversationCatchUpHandoffSchema.parse({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"Choose one recorded hosting or fronting periodId, or explicit startAt and endAt. No unique period was selected."]});
+        if (typed.rows.length !== 1) return conversationHandoff({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"Choose one recorded hosting or fronting periodId, or explicit startAt and endAt. No unique period was selected."]});
         const period=typed.rows[0];
-        const prior=await client.query<{ended_at:Date|string}>(`select ended_at from presence_period where owner_id=$1 and alter_id=$2::uuid and kind=$3::presence_kind and ended_at<=$4::timestamptz order by ended_at desc limit 1`,[ownerId,profile.id,period.kind,period.started_at]);
+        const prior=await client.query<{ended_at:Date|string}>(`select ended_at from presence_period where owner_id=$1 and alter_id=$2::uuid and kind=$3::presence_kind and id<>$5::uuid and ended_at<=$4::timestamptz order by ended_at desc limit 1`,[ownerId,profile.id,period.kind,period.started_at,period.id]);
         const source={presencePeriodId:period.id,kind:period.kind};
-        if(!prior.rows[0] || !isValidWindow(prior.rows[0].ended_at, period.started_at))return conversationCatchUpHandoffSchema.parse({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,source,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"No earlier recorded end for this experience kind is available. Choose explicit dates."]});
-        return conversationCatchUpHandoffSchema.parse({status:"READY",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",source,window:{startAt:iso(prior.rows[0].ended_at),endAt:iso(period.started_at),timeZone:input.timeZone,provenance:"RECORDED_PRESENCE_WINDOW"},instructions});
+        if(!prior.rows[0] || !isValidWindow(prior.rows[0].ended_at, period.started_at))return conversationHandoff({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,source,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"No earlier recorded end for this experience kind is available. Choose explicit dates."]});
+        return conversationHandoff({status:"READY",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",source,window:{startAt:iso(prior.rows[0].ended_at),endAt:iso(period.started_at),timeZone:input.timeZone,provenance:"RECORDED_PRESENCE_WINDOW"},instructions});
       }
 
-      const current = await client.query<{ id: string; started_at: Date | string }>("select id, started_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and ended_at is null", [ownerId, profile.id]);
-      if (!current.rows[0]) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", instructions: [...instructions, "No recorded current fronting window is available for this profile. Ask the user to choose startAt and endAt."] });
+      const current = await client.query<{ id: string; started_at: Date | string }>("select id, started_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and (($3::uuid is null and ended_at is null) or id=$3::uuid)", [ownerId, profile.id, input.frontingSessionId ?? null]);
+      if (!current.rows[0]) return conversationHandoff({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", instructions: [...instructions, "No recorded current fronting window is available for this profile. Ask the user to choose startAt and endAt."] });
       const front = current.rows[0];
       const persisted = await client.query<{ id: string; window_start: Date | string | null; window_end: Date | string }>("select id, window_start, window_end from catch_up_session where owner_id = $1 and fronting_session_id = $2::uuid", [ownerId, front.id]);
       const stored = persisted.rows[0];
       if (stored?.window_start) {
-        if (!isValidWindow(stored.window_start, stored.window_end)) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
-        return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(stored.window_start), endAt: iso(stored.window_end), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions });
+        if (!isValidWindow(stored.window_start, stored.window_end)) return conversationHandoff({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
+        return conversationHandoff({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(stored.window_start), endAt: iso(stored.window_end), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id, catchUpSessionId: stored.id }, instructions });
       }
       const previous = await client.query<{ ended_at: Date | string }>("select ended_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and id <> $3::uuid and ended_at is not null and ended_at <= $4::timestamptz order by ended_at desc limit 1", [ownerId, profile.id, front.id, front.started_at]);
-      if (!previous.rows[0]) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "No earlier recorded fronting end is available for this profile. Ask the user to choose startAt and endAt."] });
-      if (!isValidWindow(previous.rows[0].ended_at, front.started_at)) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
-      return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(previous.rows[0].ended_at), endAt: iso(front.started_at), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id }, instructions });
+      if (!previous.rows[0]) return conversationHandoff({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "No earlier recorded fronting end is available for this profile. Ask the user to choose startAt and endAt."] });
+      if (!isValidWindow(previous.rows[0].ended_at, front.started_at)) return conversationHandoff({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", source: { frontingSessionId: front.id }, instructions: [...instructions, "The recorded fronting window is malformed. Ask the user to choose startAt and endAt."] });
+      return conversationHandoff({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(previous.rows[0].ended_at), endAt: iso(front.started_at), timeZone: input.timeZone, provenance: "RECORDED_FRONTING_WINDOW" }, source: { frontingSessionId: front.id }, instructions });
     } finally { client.release(); }
   }
 

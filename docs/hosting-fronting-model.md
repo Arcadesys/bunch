@@ -66,3 +66,14 @@ Kept fixes from verification: corrected the lineup response to include its decla
 Hosted migration and production deployment are not part of this PR operation. Apply migrations 0005–0007 before deploying the new server. No hosting/fronting state was changed in the live system.
 
 Final integration verdict: **Keep**. All 108 browser checks passed against the production build at 320px, 390px, and desktop. The phone first-screen acceptance check still passes, including the first catch-up item. Inspected the final phone screenshot. All 51 server checks passed without skips; lint, both typechecks, build, and whitespace checks passed.
+
+
+## Automatic ChatGPT catch-up after an arrival
+
+A confirmed arrival through DIDdy now directs ChatGPT to prepare and generate a conversation summary without requiring a separate catch-up request. “Last switch” means the incoming alter's previous recorded departure of the same experience kind. The end is the new arrival timestamp. Hosting and fronting histories remain independent; this window never establishes absence from another experience.
+
+The handoff returns `elapsedSeconds`, calculated from the recorded instants. Exact period/session IDs preserve the arrival cutoff even after that period ends. Missing prior history returns `NEEDS_DATES`. Host reaffirmations, clearing hosting, episode ends, and completed retries do not request another summary.
+
+ChatGPT must read available messages, report topics, decisions, open matters and coverage gaps, and show the window and duration. DIDdy does not receive ChatGPT history or persist generated summaries. This is a ChatGPT MCP follow-up; a website mutation cannot independently start a ChatGPT conversation. Runtime history retrieval and generation depend on the connected host's capabilities.
+
+Verification for this follow-up: duration and DST checks, pinned source selection, mutation follow-up instructions, retry/clear exclusions, and database-backed hosting timestamp matching. No additional migration or production record change is needed.

@@ -52,11 +52,15 @@ const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value,
 
 export const prepareConversationCatchUpSchema = z.object({
   periodId: uuidSchema.optional(),
+  frontingSessionId: uuidSchema.optional(),
   alterId: uuidSchema,
   startAt: isoTimestampSchema.optional(),
   endAt: isoTimestampSchema.optional(),
   timeZone: ianaTimeZoneSchema,
 }).strict().superRefine((value, context) => {
+  if (value.periodId && value.frontingSessionId) {
+    context.addIssue({ code: "custom", path: ["periodId"], message: "Choose one presence period or legacy session." });
+  }
   if (Boolean(value.startAt) !== Boolean(value.endAt)) {
     context.addIssue({ code: "custom", path: [value.startAt ? "endAt" : "startAt"], message: "Provide both startAt and endAt, or neither." });
   }
@@ -70,6 +74,7 @@ export const conversationCatchUpHandoffSchema = z.object({
   alterId: uuidSchema,
   alterName: z.string(),
   historyAccess: z.literal("HOST_REQUIRED"),
+  elapsedSeconds: z.number().nonnegative().optional(),
   window: z.object({
     startAt: isoTimestampSchema,
     endAt: isoTimestampSchema,

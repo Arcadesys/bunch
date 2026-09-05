@@ -3,14 +3,15 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "@/server/mcp-server";
-import type { CatchUpService } from "@/server/catch-up-service";
+import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
 
 test("MCP descriptors expose exact schemas and safety annotations", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const service = { getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
     getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
-  const catchUp = { openForPresence: async () => null } as unknown as CatchUpService;
+  const catchUp = new CatchUpService({} as never);
+  catchUp.openForPresence = async () => null;
   const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
@@ -28,6 +29,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
+    assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
     assert.equal((handoff.structuredContent as { historyAccess?: string }).historyAccess, "HOST_REQUIRED");
     assert.equal((handoff.structuredContent as { window?: { provenance?: string } }).window?.provenance, "USER_SELECTED");
     assert.ok(byName.get("open_private_photo_gallery")?.outputSchema?.properties?.url, "gallery fallback must return a URL");

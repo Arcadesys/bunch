@@ -46,6 +46,7 @@ test("conversation catch-up accepts an explicit corrected Chicago window without
     timeZone: "America/Chicago",
     provenance: "USER_SELECTED",
   });
+  assert.equal(handoff.elapsedSeconds, 72900);
   assert.equal(handoff.historyAccess, "HOST_REQUIRED");
   assert.match(handoff.instructions.join(" "), /cannot retrieve other conversations/i);
 });
@@ -62,6 +63,7 @@ test("explicit DST offsets are authoritative while timezone is display context",
   const { service, calls } = queryFixture([[{ id: profileId, name: "Mouse Arcade" }]]);
   const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, startAt: "2026-03-08T01:30:00-06:00", endAt: "2026-03-08T03:30:00-05:00", timeZone: "America/Chicago" });
   assert.deepEqual(handoff.window, { startAt: "2026-03-08T07:30:00.000Z", endAt: "2026-03-08T08:30:00.000Z", timeZone: "America/Chicago", provenance: "USER_SELECTED" });
+  assert.equal(handoff.elapsedSeconds, 3600, "DST duration uses actual instants");
   assert.equal(calls.length, 1, "explicit correction validates the owner-scoped profile but does not consult history");
   assert.ok(calls.every(({ sql }) => !/insert|update|delete|begin/i.test(sql)), "read-only handoff must not write");
 });
@@ -175,4 +177,33 @@ test("saved demo threads remain visible independently of catch-up and keep owner
   await service.confirmThread(ownerId, saved.id, saved.version, crypto.randomUUID(), "WEB");
   assert.ok((await service.listThreads(ownerId)).some((thread) => thread.id === saved.id && thread.status === "CONFIRMED"));
   await assert.rejects(() => service.confirmThread(ownerId, saved.id, saved.version, crypto.randomUUID(), "WEB"), /Thread changed/);
+});
+
+
+test("selected arrival remains pinned after it ends and keeps hosting/fronting separate", async () => {
+  for (const kind of ["HOSTING", "FRONTING"]) {
+    const { service, calls } = queryFixture([
+      [{ id: profileId, name: "Fixture" }],
+      [{ id: frontingId, kind, started_at: "2026-09-05T12:00:00Z" }],
+      [{ ended_at: "2026-09-03T09:30:00Z" }],
+    ]);
+    const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, periodId: frontingId, timeZone: "UTC" });
+    assert.equal(handoff.elapsedSeconds, 181800);
+    assert.equal(handoff.window?.endAt, "2026-09-05T12:00:00.000Z");
+    assert.equal(calls[1].values?.[2], frontingId);
+    assert.match(calls[1].sql, /or id=\$3::uuid/);
+    assert.equal(calls[2].values?.[2], kind);
+  }
+});
+
+test("legacy arrival selection skips overlapping typed periods and remains owner scoped", async () => {
+  const { service, calls } = queryFixture([
+    [{ id: profileId, name: "Fixture" }],
+    [{ id: frontingId, started_at: "2026-09-05T12:00:00Z" }], [],
+    [{ ended_at: "2026-09-05T10:00:00Z" }],
+  ]);
+  const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, frontingSessionId: frontingId, timeZone: "UTC" });
+  assert.equal(handoff.elapsedSeconds, 7200);
+  assert.deepEqual(calls[1].values, ["owner:one", profileId, frontingId]);
+  assert.equal(prepareConversationCatchUpSchema.safeParse({ alterId: profileId, periodId: frontingId, frontingSessionId: frontingId, timeZone: "UTC" }).success, false);
 });
