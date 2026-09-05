@@ -77,3 +77,21 @@ The handoff returns `elapsedSeconds`, calculated from the recorded instants. Exa
 ChatGPT must read available messages, report topics, decisions, open matters and coverage gaps, and show the window and duration. DIDdy does not receive ChatGPT history or persist generated summaries. This is a ChatGPT MCP follow-up; a website mutation cannot independently start a ChatGPT conversation. Runtime history retrieval and generation depend on the connected host's capabilities.
 
 Verification for this follow-up: duration and DST checks, pinned source selection, mutation follow-up instructions, retry/clear exclusions, and database-backed hosting timestamp matching. No additional migration or production record change is needed.
+
+## Repeatable evals — 2026-09-05
+
+Run `TEST_DATABASE_URL=<disposable migrated PostgreSQL URL> npm run eval:mcp` for five synthetic scenarios through the real MCP transport and services. The command requires a database and fails rather than silently skipping when it is absent. The same suite runs in the existing CI server-test step.
+
+| Scenario | Result |
+| --- | --- |
+| Returning front overlaps hosting and uses its own prior departure | Pass |
+| Hosting uses hosting history, not the fronting departure | Pass |
+| Retry and subsequent end preserve the original arrival cutoff | Pass |
+| First arrival requests dates without inventing a duration | Pass |
+| Handoff discloses host access, rejects another owner's profile, and creates no catch-up session | Pass |
+
+`MOBILE_TEST_SERVER=production npm run eval:mobile`: 63 passed across 320px, 390px, and desktop. These include explicit experience changes, confirmation/cancellation, failed saves, stale versions, overlapping episodes, readable first-screen content, large-text reflow, and target sizes.
+
+Full local verification: 60 server checks passed without skips, production build passed, lint passed, application/browser typechecks passed, and whitespace checks passed. No application implementation changes were needed during this eval pass.
+
+These are deterministic protocol and browser acceptance evals. They verify the data and instructions provided to ChatGPT, not model compliance, summary factuality, or live cross-conversation retrieval. Live ChatGPT acceptance still requires a host with the relevant history capabilities. No private user records or conversation transcripts were used.
