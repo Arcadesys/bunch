@@ -1348,3 +1348,7 @@ input:not([type="checkbox"]):not([type="hidden"]), textarea, select { min-width:
 .pilot-page input[type=checkbox] { flex: 0 0 48px; width: 48px; height: 48px; }
 .pilot-page :focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
 .pilot-notice { border: 2px solid currentColor; padding: 1rem; }
+.pilot-page button { background: var(--accent); color: var(--accent-ink); border: 2px solid var(--accent); border-radius: .35rem; font-weight: 700; }
+.pilot-page button:disabled { background: var(--wash); color: var(--muted); border-color: var(--line); border-style: dashed; cursor: wait; }
+.pilot-page input:not([type=checkbox]) { background: var(--surface); color: var(--ink); border: 2px solid var(--line); }
+.pilot-page a { color: var(--accent); }
