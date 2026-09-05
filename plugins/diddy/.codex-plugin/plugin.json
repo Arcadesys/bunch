@@ -1,0 +1,25 @@
+{
+  "name": "diddy",
+  "version": "0.1.0",
+  "description": "Private, invite-only hosting, fronting, notes and catch-up for your system.",
+  "author": {
+    "name": "Arcadesys"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DIDdy",
+    "shortDescription": "Your private system companion.",
+    "longDescription": "Connect your own invited account. Track hosting and overlapping fronting periods, keep notes and tasks, and prepare conversation catch-up without inferring absence.",
+    "developerName": "Arcadesys",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Show my recorded hosting and fronting.",
+      "Help me catch up using available conversations.",
+      "Show my private notes."
+    ],
+    "logo": "./assets/plural-rings.svg",
+    "composerIcon": "./assets/plural-rings.svg"
+  },
+  "mcpServers": "./.mcp.json"
+}

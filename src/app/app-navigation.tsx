@@ -21,7 +21,7 @@ export function AppNavigation({ current }: { current?: AppPage }) {
     </nav>
     <details className="app-preferences">
       <summary aria-label="Appearance and sign-in options">Options</summary>
-      <div className="app-preferences-content"><ThemeControl /><a className="command-account" href="/auth/login">Sign in with Google</a></div>
+      <div className="app-preferences-content"><ThemeControl /><Link className="command-account" href="/account">Account & privacy</Link><Link className="command-account" href="/connect">Connect clients</Link><a className="command-account" href="/auth/login">Sign in with Google</a></div>
     </details>
   </header>;
 }

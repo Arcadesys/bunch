@@ -1,5 +1,6 @@
 import {
   boolean,
+  bigint,
   check,
   date,
   foreignKey,
@@ -326,3 +327,25 @@ export const systemHost = pgTable("system_host", {
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_host_owner_alter_fk" }).onDelete("restrict"),
   check("system_host_positive_version", sql`${table.version} > 0`),
 ]);
+
+
+export const pilotPolicy = pgTable("pilot_policy", {
+  id: boolean("id").primaryKey().default(true), gateEnabled: boolean("gate_enabled").notNull().default(false),
+  friendsEnabled: boolean("friends_enabled").notNull().default(false), invitationsOpen: boolean("invitations_open").notNull().default(false),
+  uploadsEnabled: boolean("uploads_enabled").notNull().default(false), maxFriends: integer("max_friends").notNull().default(2),
+  capacityVerifiedAt: timestamp("capacity_verified_at",{withTimezone:true}), recoveryVerifiedAt: timestamp("recovery_verified_at",{withTimezone:true}), evidence: text("evidence"),
+}, t=>[check("pilot_policy_singleton",sql`${t.id}`),check("pilot_capacity_range",sql`${t.maxFriends} between 0 and 20`)]);
+export const pilotAccount = pgTable("pilot_account", {
+  ownerId:text("owner_id").primaryKey(), role:text("role").notNull(), state:text("state").notNull().default("ACTIVE"),
+  displayName:text("display_name").notNull().default("My system"),quotaBytes:bigint("quota_bytes",{mode:"number"}).notNull().default(52428800),
+  privacyAcceptedAt:timestamp("privacy_accepted_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),deletedAt:timestamp("deleted_at",{withTimezone:true}),
+},t=>[uniqueIndex("pilot_one_operator").on(t.role).where(sql`${t.role}='OPERATOR'`)]);
+export const pilotInvitation=pgTable("pilot_invitation",{
+  id:uuid("id").primaryKey().defaultRandom(),tokenHash:text("token_hash").notNull().unique(),email:text("email").notNull(),
+  expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(),revokedAt:timestamp("revoked_at",{withTimezone:true}),
+  acceptedBy:text("accepted_by").references(()=>pilotAccount.ownerId),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const pilotUpload=pgTable("pilot_upload",{
+  storageKey:text("storage_key").primaryKey(),ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bytes:bigint("bytes",{mode:"number"}).notNull(),state:text("state").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>[index("pilot_upload_owner").on(t.ownerId)]);
+export const pilotRate=pgTable("pilot_rate",{ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bucket:text("bucket").notNull(),windowStart:timestamp("window_start",{withTimezone:true}).notNull(),count:integer("count").notNull()},t=>[primaryKey({columns:[t.ownerId,t.bucket]})]);

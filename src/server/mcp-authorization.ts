@@ -1,3 +1,4 @@
+import { getPilotService } from "./pilot-service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
@@ -92,7 +93,9 @@ export async function verifyCompanionAccessToken(
 export async function requireCompanionAccessToken(request: Request): Promise<string> {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) throw new Error("A valid System authorization is required.");
-  return verifyCompanionAccessToken(authorization.slice(7));
+  const ownerId = await verifyCompanionAccessToken(authorization.slice(7));
+  await getPilotService().assertAccess(ownerId, "mcp");
+  return ownerId;
 }
 
 export function issueImageUploadCapability(ownerId: string, alterId: string) {

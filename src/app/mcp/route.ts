@@ -1,3 +1,4 @@
+import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
@@ -12,7 +13,7 @@ async function rpcMethod(request: Request) {
   if (!request.headers.get("content-type")?.includes("application/json")) return undefined;
   try {
     const body = await request.clone().json() as { method?: unknown };
-    return typeof body.method === "string" ? body.method : undefined;
+    return typeof body.method === "string" && ["initialize","notifications/initialized","tools/list","tools/call","resources/list","resources/read","ping"].includes(body.method) ? body.method : "other";
   } catch {
     return undefined;
   }
@@ -30,10 +31,10 @@ async function handle(request: Request) {
     return addOAuthSecuritySchemes(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unauthorized";
-    console.warn("[mcp] rejected request", { httpMethod: request.method, rpcMethod: method, reason: message });
+    console.warn("[mcp] rejected request", { httpMethod: request.method, rpcMethod: method, reason: error instanceof SystemError ? error.code : "REQUEST_REJECTED" });
     let challenge = `Bearer scope="${COMPANION_SCOPE}"`;
     try { challenge = mcpWwwAuthenticate("invalid_token"); } catch { /* configuration error remains unauthorized */ }
-    return Response.json({ error: message }, { status: 401, headers: { "WWW-Authenticate": challenge } });
+    return Response.json({ error: message }, { status: error instanceof SystemError && error.code === "RATE_LIMITED" ? 429 : error instanceof SystemError && error.code === "FORBIDDEN" ? 403 : 401, headers: { "WWW-Authenticate": challenge } });
   }
 }
 

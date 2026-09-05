@@ -1,3 +1,4 @@
+import { requireSameOrigin } from "@/server/http-api";
 import { NextResponse } from "next/server";
 import { suggestCoverage } from "@/domain/coverage";
 import { requireOwnerId } from "@/server/auth";
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const ownerId = await requireOwnerId(request);
     const body = await request.json();
     if (body.action === "saveProfile") {

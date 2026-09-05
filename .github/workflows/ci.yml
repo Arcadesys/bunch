@@ -39,7 +39,19 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck:browser
       - run: npm test
+      - run: python3 scripts/test-pilot-recovery.py
       - run: npm run build
       - run: npm run test:browser
         env:
           MOBILE_TEST_SERVER: production
+
+      - name: Package portable plugin
+        id: package
+        run: |
+          archive=$(npm run --silent plugin:pack)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diddy-plugin
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error

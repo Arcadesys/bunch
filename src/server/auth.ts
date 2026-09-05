@@ -1,3 +1,4 @@
+import { getPilotService, type PilotIdentity } from "./pilot-service";
 import { getAuth0Client, isAuth0Configured } from "@/lib/auth0";
 
 export function ownerIdFromAuth0Subject(subject: string) {
@@ -9,7 +10,11 @@ export function ownerIdFromAuth0Subject(subject: string) {
 export async function requireOwnerId(request?: Request): Promise<string> {
   if (isAuth0Configured()) {
     const session = await getAuth0Client().getSession();
-    if (session?.user.sub) return ownerIdFromAuth0Subject(session.user.sub);
+    if (session?.user.sub) {
+      const ownerId = ownerIdFromAuth0Subject(session.user.sub);
+      await getPilotService().assertAccess(ownerId, request?.url.includes("/images") ? "image" : "web");
+      return ownerId;
+    }
   }
 
   // Local-only walkthrough mode. It is rejected unless deliberately enabled.
@@ -17,4 +22,12 @@ export async function requireOwnerId(request?: Request): Promise<string> {
     return "demo:local-user";
   }
   throw new Error("Sign in with Google to access private System records.");
+}
+
+
+// Identity-only access is reserved for joining and account recovery/export/deletion.
+export async function requirePilotIdentity(): Promise<PilotIdentity> {
+  const session = await getAuth0Client().getSession();
+  if (!session?.user.sub) throw new Error("Sign in with Google to manage your DIDdy account.");
+  return { ownerId: ownerIdFromAuth0Subject(session.user.sub), email: typeof session.user.email === "string" ? session.user.email : "", emailVerified: session.user.email_verified === true };
 }

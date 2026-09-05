@@ -35,11 +35,11 @@ export async function apiResponse(run: () => Promise<Response>) {
   try { return await run(); } catch (raw) {
     const error = normalizeSystemError(raw);
     if (!(error instanceof SystemError)) {
-      console.error(error);
+      console.error("[api] request failed", { code: "INTERNAL_ERROR" });
       return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } }, { status: 500 });
     }
-    const status = { VALIDATION_ERROR: 400, NOT_FOUND: 404, CONFLICT: 409, ERASURE_BLOCKED: 409, UNAUTHORIZED: 401 }[error.code];
-    return NextResponse.json({ error: { code: error.code, message: error.userMessage, details: error.details } }, { status });
+    const status = { VALIDATION_ERROR: 400, NOT_FOUND: 404, CONFLICT: 409, ERASURE_BLOCKED: 409, UNAUTHORIZED: 401, FORBIDDEN: 403, RATE_LIMITED: 429, QUOTA_EXCEEDED: 413 }[error.code];
+    return NextResponse.json({ error: { code: error.code, message: error.userMessage, details: error.details } }, { status, headers: error.code === "RATE_LIMITED" ? {"Retry-After":"60"} : undefined });
   }
 }
 
