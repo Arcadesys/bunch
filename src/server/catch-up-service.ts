@@ -1,3 +1,4 @@
+import { uuidSchema } from "@/domain/contracts";
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import {
@@ -203,6 +204,18 @@ export class CatchUpService {
       const profile = alter.rows[0];
       if (input.startAt && input.endAt) return conversationCatchUpHandoffSchema.parse({ status: "READY", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", window: { startAt: iso(input.startAt), endAt: iso(input.endAt), timeZone: input.timeZone, provenance: "USER_SELECTED" }, instructions });
 
+      const typed = await client.query<{id:string; kind:"HOSTING"|"FRONTING"; started_at:Date|string}>(`select id,kind,started_at from presence_period
+        where owner_id=$1 and alter_id=$2::uuid and ended_at is null and ($3::uuid is null or id=$3::uuid)
+        order by started_at desc limit 2`, [ownerId,profile.id,input.periodId??null]);
+      if (input.periodId || typed.rows.length) {
+        if (typed.rows.length !== 1) return conversationCatchUpHandoffSchema.parse({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"Choose one recorded hosting or fronting periodId, or explicit startAt and endAt. No unique period was selected."]});
+        const period=typed.rows[0];
+        const prior=await client.query<{ended_at:Date|string}>(`select ended_at from presence_period where owner_id=$1 and alter_id=$2::uuid and kind=$3::presence_kind and ended_at<=$4::timestamptz order by ended_at desc limit 1`,[ownerId,profile.id,period.kind,period.started_at]);
+        const source={presencePeriodId:period.id,kind:period.kind};
+        if(!prior.rows[0] || !isValidWindow(prior.rows[0].ended_at, period.started_at))return conversationCatchUpHandoffSchema.parse({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,source,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"No earlier recorded end for this experience kind is available. Choose explicit dates."]});
+        return conversationCatchUpHandoffSchema.parse({status:"READY",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",source,window:{startAt:iso(prior.rows[0].ended_at),endAt:iso(period.started_at),timeZone:input.timeZone,provenance:"RECORDED_PRESENCE_WINDOW"},instructions});
+      }
+
       const current = await client.query<{ id: string; started_at: Date | string }>("select id, started_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and ended_at is null", [ownerId, profile.id]);
       if (!current.rows[0]) return conversationCatchUpHandoffSchema.parse({ status: "NEEDS_DATES", alterId: profile.id, alterName: profile.name, historyAccess: "HOST_REQUIRED", instructions: [...instructions, "No recorded current fronting window is available for this profile. Ask the user to choose startAt and endAt."] });
       const front = current.rows[0];
@@ -220,26 +233,47 @@ export class CatchUpService {
   }
 
   async openForCurrentFront(ownerId: string): Promise<CatchUpSession | null> {
+    return this.openForSource(ownerId);
+  }
+
+  async openForPresence(ownerId: string, periodId?: string): Promise<CatchUpSession | null> {
+    if (periodId) uuidSchema.parse(periodId);
+    return this.openForSource(ownerId, periodId, true);
+  }
+
+  private async openForSource(ownerId: string, periodId?: string, usePresence = false): Promise<CatchUpSession | null> {
     if (ownerId.startsWith("demo:")) return getDemoCatchUpSession(ownerId);
     const client = await this.pool.connect();
     try {
       await client.query("begin");
-      const current = await client.query<{ id: string; alter_id: string; alter_name: string; started_at: Date | string }>(`select fs.id, fs.alter_id, a.name as alter_name, fs.started_at
-        from fronting_session fs join alter_profile a on a.owner_id = fs.owner_id and a.id = fs.alter_id
-        where fs.owner_id = $1 and fs.ended_at is null for update of fs`, [ownerId]);
+      const current = usePresence
+        ? await client.query<{ id: string; alter_id: string; alter_name: string; started_at: Date | string; kind?: string }>(`select p.id, p.alter_id, a.name as alter_name, p.started_at, p.kind
+            from presence_period p join alter_profile a on a.owner_id=p.owner_id and a.id=p.alter_id
+            where p.owner_id=$1 and p.ended_at is null and ($2::uuid is null or p.id=$2::uuid)
+            order by p.started_at desc limit 2 for update of p`, [ownerId, periodId ?? null])
+        : await client.query<{ id: string; alter_id: string; alter_name: string; started_at: Date | string; kind?: string }>(`select fs.id, fs.alter_id, a.name as alter_name, fs.started_at
+            from fronting_session fs join alter_profile a on a.owner_id=fs.owner_id and a.id=fs.alter_id
+            where fs.owner_id=$1 and fs.ended_at is null for update of fs`, [ownerId]);
+      if (usePresence && current.rows.length > 1) {
+        await client.query("commit");
+        return null; // Caller must choose a period; do not guess a recipient.
+      }
       if (!current.rows[0]) {
         await client.query("commit");
         return null;
       }
       const front = current.rows[0];
-      const previous = await client.query<{ ended_at: Date | string }>(`select ended_at from fronting_session
+      const sourceTable = usePresence ? "presence_period" : "fronting_session";
+      const sourceColumn = usePresence ? "presence_period_id" : "fronting_session_id";
+      const previous = await client.query<{ ended_at: Date | string }>(`select ended_at from ${sourceTable}
         where owner_id = $1 and alter_id = $2::uuid and id <> $3::uuid and ended_at is not null and ended_at <= $4::timestamptz
-        order by ended_at desc limit 1`, [ownerId, front.alter_id, front.id, front.started_at]);
+        ${usePresence ? "and kind = $5::presence_kind" : ""}
+        order by ended_at desc limit 1`, [ownerId, front.alter_id, front.id, front.started_at, ...(usePresence ? [front.kind] : [])]);
       const windowStart = previous.rows[0]?.ended_at ?? null;
       const inserted = await client.query<{ id: string }>(`insert into catch_up_session
-        (owner_id, fronting_session_id, alter_id, window_start, window_end, first_time)
+        (owner_id, ${sourceColumn}, alter_id, window_start, window_end, first_time)
         values ($1, $2::uuid, $3::uuid, $4::timestamptz, $5::timestamptz, $6)
-        on conflict (owner_id, fronting_session_id) do update set updated_at = catch_up_session.updated_at
+        on conflict (owner_id, ${sourceColumn}) do update set updated_at = catch_up_session.updated_at
         returning id`, [ownerId, front.id, front.alter_id, windowStart, front.started_at, !windowStart]);
       const sessionId = inserted.rows[0].id;
       const candidates = await this.loadCandidates(client, ownerId, front.alter_id, windowStart, front.started_at);
@@ -320,14 +354,14 @@ export class CatchUpService {
 
     const items: Candidate[] = [];
     for (const row of notes.rows) items.push({ itemType: "NOTE", itemId: row.id, title: String(row.body).split("\n")[0].slice(0, 120), whyItMatters: "A direct note was left for this alter or for the System.", fromLabel: row.actor_name, toLabel: row.recipient_name ?? "System-wide", timestamp: iso(row.created_at), nextAction: "Read the note and decide whether it needs follow-up." });
-    for (const row of todos.rows) items.push({ itemType: "TODO", itemId: row.id, title: row.title, whyItMatters: row.status === "BLOCKED" || row.priority === "HIGH" ? "This urgent carryover still needs attention." : "This todo changed while this alter was out.", fromLabel: "System", toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: [row.status, row.priority].filter(Boolean).join(" · "), dueOn: row.due_on ? postgresDateOnly(row.due_on) : undefined, nextAction: row.details || "Choose the next action for this todo." });
+    for (const row of todos.rows) items.push({ itemType: "TODO", itemId: row.id, title: row.title, whyItMatters: row.status === "BLOCKED" || row.priority === "HIGH" ? "This urgent carryover still needs attention." : "This todo changed during this recorded catch-up window.", fromLabel: "System", toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: [row.status, row.priority].filter(Boolean).join(" · "), dueOn: row.due_on ? postgresDateOnly(row.due_on) : undefined, nextAction: row.details || "Choose the next action for this todo." });
     for (const row of decisions.rows) items.push({ itemType: "DECISION", itemId: row.id, title: row.title, whyItMatters: row.decision, fromLabel: row.actor_name, toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: "Decision record", nextAction: row.next_action });
     for (const row of threads.rows) items.push({ itemType: "THREAD", itemId: row.id, title: row.title, whyItMatters: row.approved_summary, fromLabel: row.flagger_name, toLabel: row.recipient_names, timestamp: iso(row.confirmed_at), statusLabel: "Confirmed thread", nextAction: row.key_decision_or_action, threadSource: row.source, threadUrl: row.url });
     return items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
   private async hydrate(client: PoolClient, ownerId: string, sessionId: string, alterName: string, startedAt: Date | string, candidates?: Candidate[]) {
-    const session = await client.query<{ id: string; alter_id: string; window_start: Date | string | null; window_end: Date | string; first_time: boolean }>("select id, alter_id, window_start, window_end, first_time from catch_up_session where owner_id = $1 and id = $2::uuid", [ownerId, sessionId]);
+    const session = await client.query<{ id: string; alter_id: string; window_start: Date | string | null; window_end: Date | string; first_time: boolean; presence_period_id: string | null; kind: "HOSTING" | "FRONTING" | null }>("select cs.id, cs.alter_id, cs.window_start, cs.window_end, cs.first_time, cs.presence_period_id, p.kind from catch_up_session cs left join presence_period p on p.owner_id=cs.owner_id and p.id=cs.presence_period_id where cs.owner_id = $1 and cs.id = $2::uuid", [ownerId, sessionId]);
     const row = session.rows[0];
     if (!row) throw new SystemError("NOT_FOUND", "Catch-up session not found.");
     const entries = await client.query<EntryRow>("select id, item_type, item_id, review_state, defer_until, defer_until_next_switch, version from catch_up_entry where owner_id = $1 and session_id = $2::uuid order by created_at", [ownerId, sessionId]);
@@ -338,7 +372,7 @@ export class CatchUpService {
       return candidate ? [{ ...candidate, entryId: entry.id, reviewState: entry.review_state, deferUntil: entry.defer_until ? iso(entry.defer_until) : undefined, deferUntilNextSwitch: entry.defer_until_next_switch || undefined, version: entry.version }] : [];
     });
     const reviewedCount = items.filter((item) => item.reviewState !== "NEW").length;
-    return catchUpSessionSchema.parse({ id: row.id, alterId: row.alter_id, alterName, startedAt: iso(startedAt), windowStart: row.window_start ? iso(row.window_start) : undefined, windowEnd: iso(row.window_end), firstTime: row.first_time, items, reviewedCount, totalCount: items.length, stateVersion: entries.rows.reduce((sum, entry) => sum + entry.version, 0) });
+    return catchUpSessionSchema.parse({ presencePeriodId: row.presence_period_id ?? undefined, sourceKind: row.kind ?? "LEGACY_FRONT", id: row.id, alterId: row.alter_id, alterName, startedAt: iso(startedAt), windowStart: row.window_start ? iso(row.window_start) : undefined, windowEnd: iso(row.window_end), firstTime: row.first_time, items, reviewedCount, totalCount: items.length, stateVersion: entries.rows.reduce((sum, entry) => sum + entry.version, 0) });
   }
 
   async setItemState(ownerId: string, entryId: string, raw: SetCatchUpItemState, source: RecordSource) {
@@ -374,9 +408,10 @@ export class CatchUpService {
         defer_until = $4::timestamptz, defer_until_next_switch = $5, version = version + 1, updated_at = now()
         where owner_id = $1 and id = $2::uuid and version = $6 returning session_id`, [ownerId, entryId, input.state, input.state === "DEFERRED" ? input.deferUntil : null, input.state === "DEFERRED" && input.deferUntilNextSwitch === true, input.expectedVersion]);
       if (!updated.rows[0]) throw new SystemError("CONFLICT", "The catch-up item changed since it was read.");
-      const context = await client.query<{ alter_name: string; started_at: Date | string }>(`select a.name as alter_name, fs.started_at from catch_up_session cs
+      const context = await client.query<{ alter_name: string; started_at: Date | string }>(`select a.name as alter_name, coalesce(p.started_at, fs.started_at) as started_at from catch_up_session cs
         join alter_profile a on a.owner_id = cs.owner_id and a.id = cs.alter_id
-        join fronting_session fs on fs.owner_id = cs.owner_id and fs.id = cs.fronting_session_id
+        left join fronting_session fs on fs.owner_id = cs.owner_id and fs.id = cs.fronting_session_id
+        left join presence_period p on p.owner_id = cs.owner_id and p.id = cs.presence_period_id
         where cs.owner_id = $1 and cs.id = $2::uuid`, [ownerId, updated.rows[0].session_id]);
       const data = await this.hydrate(client, ownerId, updated.rows[0].session_id, context.rows[0].alter_name, context.rows[0].started_at);
       await client.query("insert into mutation_receipt (owner_id, request_id, operation, result) values ($1, $2::uuid, $3, $4::jsonb)", [ownerId, input.requestId, operation, JSON.stringify(data)]);

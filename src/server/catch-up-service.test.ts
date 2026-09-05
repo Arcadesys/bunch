@@ -22,7 +22,7 @@ function queryFixture(rows: unknown[][]) {
 
 function recordedRows(options: { persisted?: { id: string; window_start: string | null; window_end: string }; previous?: string | null; current?: boolean } = {}) {
   const current = options.current ?? true;
-  const rows: unknown[][] = [[{ id: profileId, name: "Mouse Arcade" }]];
+  const rows: unknown[][] = [[{ id: profileId, name: "Mouse Arcade" }], []];
   if (!current) return rows.concat([[]]);
   rows.push([{ id: frontingId, started_at: "2026-09-04T15:15:00.000Z" }]);
   rows.push(options.persisted ? [options.persisted] : []);
@@ -84,7 +84,7 @@ test("recorded previous session is used only for the named current profile", asy
   const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, timeZone: "America/Chicago" });
   assert.deepEqual(handoff.window, { startAt: "2026-09-03T19:00:00.000Z", endAt: "2026-09-04T15:15:00.000Z", timeZone: "America/Chicago", provenance: "RECORDED_FRONTING_WINDOW" });
   assert.equal(calls[1].values?.[1], profileId);
-  assert.equal(calls[3].values?.[1], profileId);
+  assert.equal(calls[4].values?.[1], profileId);
 });
 
 test("unknown, non-current, and malformed recorded history require selected dates", async () => {

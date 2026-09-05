@@ -27,6 +27,8 @@ export const catchUpItemSchema = z.object({
 });
 
 export const catchUpSessionSchema = z.object({
+  presencePeriodId: uuidSchema.optional(),
+  sourceKind: z.enum(["HOSTING", "FRONTING", "LEGACY_FRONT"]).optional(),
   id: uuidSchema,
   alterId: uuidSchema,
   alterName: z.string(),
@@ -49,6 +51,7 @@ const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value,
 });
 
 export const prepareConversationCatchUpSchema = z.object({
+  periodId: uuidSchema.optional(),
   alterId: uuidSchema,
   startAt: isoTimestampSchema.optional(),
   endAt: isoTimestampSchema.optional(),
@@ -71,9 +74,9 @@ export const conversationCatchUpHandoffSchema = z.object({
     startAt: isoTimestampSchema,
     endAt: isoTimestampSchema,
     timeZone: z.string(),
-    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW"]),
+    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW", "RECORDED_PRESENCE_WINDOW"]),
   }).optional(),
-  source: z.object({ frontingSessionId: uuidSchema, catchUpSessionId: uuidSchema.optional() }).optional(),
+  source: z.object({ presencePeriodId: uuidSchema.optional(), kind: z.enum(["HOSTING","FRONTING"]).optional(), frontingSessionId: uuidSchema.optional(), catchUpSessionId: uuidSchema.optional() }).optional(),
   instructions: z.array(z.string()).min(1),
 });
 

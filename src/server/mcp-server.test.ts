@@ -8,8 +8,9 @@ import type { SystemService } from "@/server/system-service";
 
 test("MCP descriptors expose exact schemas and safety annotations", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const service = { getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
-  const catchUp = { openForCurrentFront: async () => null } as unknown as CatchUpService;
+  const service = { getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
+    getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
+  const catchUp = { openForPresence: async () => null } as unknown as CatchUpService;
   const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
@@ -43,9 +44,9 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const catchUpResult = await client.callTool({ name: "get_catch_up", arguments: {} });
     assert.deepEqual(catchUpResult.structuredContent, { data: null, meta: {} });
     const renderedCatchUp = await client.callTool({ name: "render_system_companion", arguments: {} });
-    assert.deepEqual(renderedCatchUp.structuredContent, { catchUp: null });
+    assert.deepEqual(renderedCatchUp.structuredContent, { catchUp: null, presence:{hosting:null,fronting:[],legacyCurrentFront:null} });
     const lineup = await client.callTool({ name: "render_alter_lineup", arguments: {} });
-    assert.deepEqual(lineup.structuredContent, { currentFront: null, profiles: [] });
+    assert.deepEqual(lineup.structuredContent, { currentFront: null, profiles: [], presence:{hosting:null,fronting:[],legacyCurrentFront:null} });
     assert.deepEqual(lineup._meta, { privateImages: [] });
     assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v2.html");
     const resources = await client.listResources();
@@ -78,7 +79,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const lineupResource = await client.readResource({ uri: "ui://system-arcades-me.vercel.app/alter-lineup-v2.html" });
     const lineupHtml = "text" in lineupResource.contents[0] ? lineupResource.contents[0].text : "";
     assert.match(lineupHtml, /isProfilePicture/);
-    assert.match(lineupHtml, /RECORDED FRONT/);
+    assert.match(lineupHtml, /HOSTING/);
     for (const cachedHtml of legacyHtml) {
       assert.match(cachedHtml, /Private picture gallery/);
       assert.match(cachedHtml, /id="local-image"/);
@@ -98,7 +99,8 @@ test("lineup keeps private image capabilities in widget metadata only", async ()
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "widget-metadata-test-secret-only";
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const service = { getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
+  const service = { getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
+    getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const server = createMcpServer("demo:image-metadata", service, undefined, { listProfiles: async () => [{
     id: "11111111-1111-4111-8111-111111111111", ownerId: "demo:image-metadata", name: "Example", version: 1,
     createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z",
@@ -127,6 +129,7 @@ test("lineup follows pagination to include every active profile", async () => {
   const calls: Array<{ limit?: number; cursor?: string }> = [];
   const profile = (id: string, name: string) => ({ id, name, aliases: [], strengths: [], boundaries: [], images: [], imageCount: 0, version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" });
   const service = {
+    getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
     getCurrentFront: async () => null,
     listAlters: async (_ownerId: string, input: { limit?: number; cursor?: string }) => {
       calls.push(input);

@@ -1,2 +1,2 @@
-import { CatchUpCommandCenter } from "../catch-up-command-center";
-export default function HistoryPage() { return <CatchUpCommandCenter initialView="HISTORY" />; }
+import { FrontingTimeline } from "./fronting-timeline";
+export default function HistoryPage() { return <FrontingTimeline />; }

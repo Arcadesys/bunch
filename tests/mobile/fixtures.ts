@@ -1,3 +1,5 @@
+import type { PresencePeriod } from "../../src/domain/presence";
+import type { SystemHostView } from "../../src/domain/host";
 import { test as base, expect } from "@playwright/test";
 import type { CatchUpSession } from "../../src/domain/catch-up";
 import type { FrontingSessionView } from "../../src/domain/contracts";
@@ -26,6 +28,8 @@ export const fixtureSession: CatchUpSession = {
 type Write = { method: string; path: string; body: Record<string, unknown>; requestId: string | undefined };
 type StoredRecord = { id: string; version: number; updatedAt: string; createdAt: string; [key: string]: unknown };
 type Harness = {
+  host: SystemHostView | null;
+  presence: {hosting: PresencePeriod | null; fronting: PresencePeriod[]};
   saved: Record<string, StoredRecord[]>;
   session: CatchUpSession | null; readStatus: number; writeStatus: number; writes: Write[]; unexpected: string[];
   currentFront: FrontingSessionView | null; profiles: { id: string; name: string }[];
@@ -37,6 +41,7 @@ export const test = base.extend<{ harness: Harness }>({
   harness: [async ({ context }, use) => {
     const stamp = "2026-09-04T12:00:00.000Z";
     const harness: Harness = {
+      host:null, presence:{hosting:null,fronting:[{id:"60000000-0000-4000-8000-000000000001",alterId:fixtureSession.alterId,alterName:fixtureSession.alterName,startedAt:stamp,version:1,kind:"FRONTING",origin:"EXPLICIT"}]},
       saved: {
         todos: [{ id: "40000000-0000-4000-8000-000000000002", title: "Fixture todo", status: "BLOCKED", priority: "NORMAL", assigneeAlterIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
         notes: [{ id: "40000000-0000-4000-8000-000000000001", body: "Fixture note", version: 1, updatedAt: stamp, createdAt: stamp }],
@@ -58,7 +63,13 @@ export const test = base.extend<{ harness: Harness }>({
       }
       if (!url.pathname.startsWith("/api/")) return route.continue();
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
-      if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") return reply(harness.session, harness.readStatus);
+      if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") {
+        const selected=url.searchParams.get("periodId");
+        if(selected){const p=[harness.presence.hosting,...harness.presence.fronting].find(p=>p?.id===selected);if(!p)return reply(null);harness.session={...structuredClone(fixtureSession),presencePeriodId:p.id,sourceKind:p.kind,alterId:p.alterId,alterName:p.alterName};}
+        return reply(harness.session,harness.readStatus);
+      }
+      if(url.pathname === "/api/v1/presence/current" && request.method()==="GET")return reply(harness.presence,harness.switchReadStatus);
+      if(url.pathname === "/api/v1/hosting/current" && request.method()==="GET")return reply(harness.host,harness.switchReadStatus);
       if (url.pathname === "/api/v1/fronting/current" && request.method() === "GET") return reply(harness.currentFront, harness.switchReadStatus);
       if (url.pathname === "/api/v1/alters" && request.method() === "GET") {
         harness.profileReads += 1;
@@ -67,12 +78,13 @@ export const test = base.extend<{ harness: Harness }>({
         const next = offset + harness.profilePageSize;
         return route.fulfill({ json: { data: harness.profiles.slice(offset, next), meta: next < harness.profiles.length ? { nextCursor: String(next) } : {} } });
       }
+      if(url.pathname.startsWith("/api/v1/alters/") && request.method()==="GET") return reply(harness.profiles.find(p=>p.id===url.pathname.split("/")[4]));
       const recordKind = url.pathname.split("/")[3];
       if (harness.saved[recordKind] && request.method() === "GET") {
         if (harness.readStatus !== 200) return reply(null, harness.readStatus);
         return route.fulfill({ json: { data: harness.saved[recordKind], meta: {} } });
       }
-      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes|todos(?:\/[^/]+)?|fronting\/switch|important-threads(?:\/[^/]+\/confirm)?)$/;
+      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes|todos(?:\/[^/]+)?|fronting\/switch|hosting\/current|presence\/fronting\/(start|end)|important-threads(?:\/[^/]+\/confirm)?)$/;
       if (!allowed.test(url.pathname) || !["POST", "PATCH"].includes(request.method())) {
         harness.unexpected.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({ status: 501, json: { error: { message: "Unmocked API blocked by test harness." } } });
@@ -80,6 +92,30 @@ export const test = base.extend<{ harness: Harness }>({
       const body = request.postDataJSON();
       harness.writes.push({ method: request.method(), path: url.pathname, body, requestId: request.headers()["idempotency-key"] });
       if (harness.writeStatus !== 200) return reply(null, harness.writeStatus);
+      if(url.pathname.startsWith("/api/v1/presence/fronting/")||url.pathname==="/api/v1/hosting/current"){
+        const key=request.headers()["idempotency-key"];
+        if(switchReceipts.has(key))return reply(switchReceipts.get(key));
+        if(harness.switchDelay)await new Promise(resolve=>setTimeout(resolve,harness.switchDelay));
+        let result: unknown;
+        if(url.pathname.endsWith("/end")){
+          const p=harness.presence.fronting.find(p=>p.id===body.episodeId);
+          if(!p||p.version!==body.expectedVersion)return reply(null,409);
+          result={...p,endedAt:stamp,version:p.version+1};harness.presence.fronting=harness.presence.fronting.filter(p=>p.id!==body.episodeId);
+        }else if(url.pathname.endsWith("/start")){
+          const p=harness.profiles.find(p=>p.id===body.alterId);if(!p)return reply(null,404);
+          if(harness.presence.fronting.some(p=>p.alterId===body.alterId))return reply(null,409);
+          const episode:PresencePeriod={id:crypto.randomUUID(),alterId:p.id,alterName:p.name,startedAt:stamp,version:1,kind:"FRONTING",origin:"EXPLICIT"};
+          harness.presence.fronting.push(episode);result=episode;
+        }else{
+          if(body.expectedVersion!==(harness.host?.version??null))return reply(null,409);
+          const p=harness.profiles.find(p=>p.id===body.alterId);
+          harness.host={id:harness.host?.id??crypto.randomUUID(),alterId:p?.id??null,alterName:p?.name??null,recordedAt:stamp,version:(harness.host?.version??0)+1};
+          harness.presence.hosting=p?{id:crypto.randomUUID(),alterId:p.id,alterName:p.name,startedAt:stamp,version:1,kind:"HOSTING",origin:"EXPLICIT"}:null;result=harness.host;
+        }
+        switchReceipts.set(key,result);harness.switchCount++;
+        if(harness.loseSwitchResponse){harness.loseSwitchResponse=false;return route.abort("failed");}
+        return reply(result);
+      }
       if (url.pathname === "/api/v1/fronting/switch") {
         const key = request.headers()["idempotency-key"];
         if (!key) return reply(null, 400);

@@ -1305,3 +1305,33 @@ input[type="checkbox"] { width: 28px; height: 28px; min-height: 28px; flex: 0 0 
 .form-stack, .upload-form, .profile-disclosure, label { min-width: 0; }
 input:not([type="checkbox"]):not([type="hidden"]), textarea, select { min-width: 0; max-width: 100%; width: 100%; }
 .profile-disclosure summary, .profile-summary, .profile-disclosure .button { overflow-wrap: anywhere; }
+
+.current-front-summary { display: flex; align-items: center; gap: 24px; padding-block: 24px; border-bottom: 4px solid var(--line); margin-bottom: 28px; }
+.current-front-summary h2 { font-size: clamp(1.8rem, 4vw, 3rem); margin: 0; overflow-wrap: anywhere; }
+.current-front-summary p { line-height: 1.5; }
+.current-front-summary a { color: var(--ink); text-decoration: underline; font-weight: 700; }
+.current-front-summary button { display: block; margin-top: 16px; }
+.current-front-portrait { width: 192px; height: 192px; object-fit: contain; flex: 0 0 auto; border: 3px solid var(--accent); }
+.catch-up-hero { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 600px) {
+  .current-front-summary { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .current-front-portrait { width: 160px; height: 160px; }
+  .catch-up-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Recorded fronting history: readable without color or hover. */
+.fronting-history { max-width: 60rem; margin: 0 auto; padding: clamp(1rem, 4vw, 3rem); }
+.fronting-history h1 { font-size: clamp(1.7rem, 5vw, 2.6rem); }
+.fronting-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1.5rem 0; }
+.fronting-filters label { display: grid; gap: .5rem; min-width: 0; }
+.fronting-filters input { width: 100%; min-width: 0; font: inherit; padding: .65rem; }
+.fronting-history button { min-height: 48px; font: inherit; padding: .65rem 1rem; }
+.fronting-records { list-style: none; padding: 0 0 0 1rem; border-left: 4px solid var(--accent); }
+.fronting-records li { position: relative; margin: 1.25rem 0; padding: 1rem; background: var(--surface); border: 2px solid var(--line); border-radius: .6rem; overflow-wrap: anywhere; }
+.fronting-records li::before { content: ""; position: absolute; left: -1.6rem; top: 1.4rem; width: .8rem; height: .8rem; background: var(--ink); border: 2px solid var(--paper); border-radius: 50%; }
+.fronting-records h2 { margin: 0 0 .75rem; font-size: 1.4rem; }
+.fronting-records p { margin: .5rem 0; }
+@media (max-width: 480px) { .fronting-filters label, .fronting-filters button { width: 100%; } }
+.presence-overview > summary { min-height: 44px; padding: 8px 12px; border: 2px solid var(--line); cursor: pointer; font-weight: 800; }
+.presence-overview .presence-card { margin-block: 1rem; padding-block: .5rem; border-top: 2px solid var(--line); }
+.presence-card img { object-fit: cover; border: 2px solid var(--line); }

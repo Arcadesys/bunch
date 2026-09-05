@@ -245,10 +245,36 @@ export const systemDecisionRecipient = pgTable("system_decision_recipient", {
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_decision_recipient_alter_fk" }).onDelete("restrict"),
 ]);
 
+export const presenceKind = pgEnum("presence_kind", ["HOSTING", "FRONTING"]);
+// Hosting periods are maintained atomically by the system_host_record_period trigger.
+// Fronting episodes overlap hosting and each other, and close only explicitly.
+export const presencePeriod = pgTable("presence_period", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id").notNull(),
+  kind: presenceKind("kind").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().default(sql`date_trunc('milliseconds', clock_timestamp())`),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
+  origin: text("origin").notNull().default("EXPLICIT"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  unique("presence_period_owner_id_id_key").on(table.ownerId, table.id),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "presence_period_owner_alter_fk" }).onDelete("cascade"),
+  uniqueIndex("presence_period_one_host").on(table.ownerId).where(sql`${table.kind} = 'HOSTING' and ${table.endedAt} is null`),
+  uniqueIndex("presence_period_one_episode_per_alter").on(table.ownerId, table.alterId).where(sql`${table.kind} = 'FRONTING' and ${table.endedAt} is null`),
+  index("presence_period_owner_started").on(table.ownerId, table.startedAt, table.id),
+  check("presence_period_positive_version", sql`${table.version} > 0`),
+  check("presence_period_valid_range", sql`${table.endedAt} is null or ${table.endedAt} >= ${table.startedAt}`),
+  check("presence_period_origin", sql`${table.origin} in ('EXPLICIT', 'SYSTEM_HOST_SNAPSHOT')`),
+]);
+
 export const catchUpSession = pgTable("catch_up_session", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
-  frontingSessionId: uuid("fronting_session_id").notNull(),
+  frontingSessionId: uuid("fronting_session_id"),
+  presencePeriodId: uuid("presence_period_id"),
   alterId: uuid("alter_id").notNull(),
   windowStart: timestamp("window_start", { withTimezone: true }),
   windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
@@ -257,6 +283,9 @@ export const catchUpSession = pgTable("catch_up_session", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   unique("catch_up_session_owner_id_id_key").on(table.ownerId, table.id),
+  unique("catch_up_session_owner_presence_key").on(table.ownerId, table.presencePeriodId),
+  foreignKey({ columns: [table.ownerId, table.presencePeriodId], foreignColumns: [presencePeriod.ownerId, presencePeriod.id], name: "catch_up_session_owner_presence_fk" }).onDelete("cascade"),
+  check("catch_up_session_one_source", sql`(${table.frontingSessionId} is not null)::int + (${table.presencePeriodId} is not null)::int = 1`),
   unique("catch_up_session_owner_front_key").on(table.ownerId, table.frontingSessionId),
   foreignKey({ columns: [table.ownerId, table.frontingSessionId], foreignColumns: [frontingSession.ownerId, frontingSession.id], name: "catch_up_session_owner_front_fk" }).onDelete("cascade"),
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "catch_up_session_owner_alter_fk" }).onDelete("cascade"),
@@ -284,3 +313,16 @@ export const catchUpEntry = pgTable("catch_up_entry", {
 
 export type AlterProfileRow = typeof alterProfile.$inferSelect;
 export type SystemTodoRow = typeof systemTodo.$inferSelect;
+
+// Host is an explicit System role, independent of fronting and coverage.
+export const systemHost = pgTable("system_host", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id"),
+  version: integer("version").notNull().default(1),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("system_host_one_per_owner").on(table.ownerId),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_host_owner_alter_fk" }).onDelete("restrict"),
+  check("system_host_positive_version", sql`${table.version} > 0`),
+]);

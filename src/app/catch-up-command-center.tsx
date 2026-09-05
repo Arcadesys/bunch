@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } f
 import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/catch-up";
 import { AppNavigation } from "./app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
+import { CurrentFrontSummary } from "./current-front-summary";
 import { FrontSwitchPanel } from "./front-switch-panel";
 
 export type CommandView = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY";
@@ -45,8 +46,8 @@ class CatchUpReadError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-async function requestCatchUp() {
-  const response = await fetch("/api/v1/catch-up/current", { headers: { "x-system-demo": "local" }, cache: "no-store" });
+async function requestCatchUp(periodId?: string) {
+  const response = await fetch(`/api/v1/catch-up/current${periodId ? `?periodId=${encodeURIComponent(periodId)}` : ""}`, { headers: { "x-system-demo": "local" }, cache: "no-store" });
   const payload = await response.json();
   if (!response.ok) throw new CatchUpReadError(payload.error?.message ?? "Unable to load catch-up.", response.status);
   return payload.data as CatchUpSession | null;
@@ -65,6 +66,8 @@ export function CatchUpCommandCenter({ initialView = "CATCH_UP" }: { initialView
 }
 
 function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
+  const [frontRefresh,setFrontRefresh] = useState(0);
+  const selectedPeriod = useRef<string | undefined>(undefined);
   const [session, setSession] = useState<CatchUpSession | null>(null);
   const [notice, setNotice] = useState("");
   const [loadState, setLoadState] = useState<CatchUpLoadState>("loading");
@@ -79,11 +82,11 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     setLoadState("ready");
   };
 
-  const loadCatchUp = () => {
+  const loadCatchUp = (periodId = selectedPeriod.current) => {
     const generation = ++loadGeneration.current;
     setLoadState("loading");
     setNotice("");
-    return requestCatchUp().then((data) => {
+    return requestCatchUp(periodId).then((data) => {
       if (generation !== loadGeneration.current) return;
       setCatchUpFromServer(data);
       setNotice(data ? "" : "No catch-up is open.");
@@ -113,6 +116,17 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     return () => { active = false; };
   }, []);
 
+  const choosePeriod = (periodId: string) => {
+    selectedPeriod.current = periodId;
+    void loadCatchUp(periodId);
+  };
+  const presenceChanged = (periodId?: string) => {
+    setFrontRefresh(v => v + 1);
+    selectedPeriod.current = periodId;
+    if (periodId) void loadCatchUp(periodId);
+    else setCatchUpFromServer(null);
+  };
+
   const primaryItems = useMemo(() => {
     if (!session) return [];
     return session.items.filter((item) => item.itemType !== "THREAD");
@@ -138,7 +152,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     });
   }
 
-  const title = initialView === "CATCH_UP" ? "Needs your eyes" : "Switch timeline";
+  const title = initialView === "CATCH_UP" ? "Needs your eyes" : "Recorded period timeline";
   const description = "The confirmed switch record for this catch-up window.";
 
   return <main className="command-shell">
@@ -146,7 +160,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     <section className="command-main">
       <section className="command-hero" aria-labelledby="welcome-heading">
         <div className="command-avatar" aria-hidden="true">{session && loadState === "ready" ? initials(session.alterName) : "?"}</div>
-        <div><p className="command-kicker">{loadState === "ready" && session ? "Current front · confirmed" : loadState === "ready" ? "No current front recorded" : loadState === "loading" ? "Current front · checking record" : "Current front unavailable"}</p><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "ready" ? "No catch-up is open" : loadState === "loading" ? "Loading catch-up" : loadState === "unauthorized" ? "Sign in to view your catch-up" : "Catch-up could not be read"}</h1>{loadState === "ready" && session ? <details className="catch-up-window"><summary>Catch-up dates</summary><p className="command-window">{session.firstTime ? "First catch-up · all unreviewed addressed items plus urgent System-wide carryover" : `Recorded window: ${formatTimestamp(session.windowStart)} to ${formatTimestamp(session.windowEnd)}`}</p></details> : <p className="command-window">{loadState === "ready" && session ? session.firstTime ? "First catch-up · all unreviewed addressed items plus urgent System-wide carryover" : `Recorded window: ${formatTimestamp(session.windowStart)} to ${formatTimestamp(session.windowEnd)}` : loadState === "ready" ? "Record a current front to open a catch-up." : loadState === "loading" ? "Reading your private catch-up." : loadState === "unauthorized" ? "Private records stay unavailable until you sign in." : "Your existing drafts are unchanged. Try the read again."}</p>}</div>
+        <div><p className="command-kicker">{loadState === "ready" && session ? "Catch-up · recorded window" : loadState === "ready" ? "Catch-up · choose a period" : loadState === "loading" ? "Catch-up · loading" : "Catch-up unavailable"}</p><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "ready" ? "No catch-up is open" : loadState === "loading" ? "Loading catch-up" : loadState === "unauthorized" ? "Sign in to view your catch-up" : "Catch-up could not be read"}</h1><CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} /></div>
         {loadState === "ready" && session ? <div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div> : null}
       </section>
       <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
@@ -159,7 +173,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
         {initialView === "CATCH_UP" ? <SwitchTimeline session={session} compact /> : null}
       </>) : null}
     </section>
-    <aside className="command-actions" aria-labelledby="actions-heading"><h2 id="actions-heading">Quick actions</h2><Link href="/notes" className="command-action"><Icon name="note" /><span><strong>Leave a note</strong><small>For an alter or System-wide</small></span><Icon name="arrow" /></Link><Link href="/board" className="command-action"><Icon name="board" /><span><strong>Add a todo</strong><small>Assign it and set urgency</small></span><Icon name="arrow" /></Link><Link href="/threads" className="command-action"><Icon name="thread" /><span><strong>Save current thread</strong><small>Review before confirmation</small></span><Icon name="arrow" /></Link><FrontSwitchPanel onConfirmed={setCatchUpFromServer} onNotice={setNotice} /></aside>
+    <aside className="command-actions" aria-labelledby="actions-heading"><h2 id="actions-heading">Quick actions</h2><Link href="/notes" className="command-action"><Icon name="note" /><span><strong>Leave a note</strong><small>For an alter or System-wide</small></span><Icon name="arrow" /></Link><Link href="/board" className="command-action"><Icon name="board" /><span><strong>Add a todo</strong><small>Assign it and set urgency</small></span><Icon name="arrow" /></Link><Link href="/threads" className="command-action"><Icon name="thread" /><span><strong>Save current thread</strong><small>Review before confirmation</small></span><Icon name="arrow" /></Link><FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} /></aside>
   </main>;
 }
 
@@ -227,15 +241,15 @@ function CatchUpRow({ item, disabled, onState }: { item: CatchUpItem; disabled: 
   const reviewed = item.reviewState !== "NEW";
   return <article className={`command-row ${reviewed ? "is-reviewed" : ""}`}>
     <div className={`command-type type-${item.itemType.toLowerCase()}`}><Icon name={item.itemType === "TODO" ? "board" : item.itemType === "NOTE" ? "note" : item.itemType === "THREAD" ? "thread" : "history"} /><span>{item.itemType === "THREAD" && item.threadSource ? item.threadSource : item.itemType}</span></div>
-    <div className="command-row-content"><h3>{item.title}</h3><p className="command-row-meta">From {item.fromLabel} · To {item.toLabel} · {formatTimestamp(item.timestamp)}</p>{item.statusLabel || item.dueOn ? <p className="command-row-status">{item.statusLabel}{item.dueOn ? ` · Due ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${item.dueOn}T12:00:00`))}` : ""}</p> : null}<p className="command-why">{item.whyItMatters}</p><p className="command-next"><strong>Next:</strong> {item.nextAction}</p>{item.threadUrl ? <a className="command-thread-link" href={item.threadUrl} target="_blank" rel="noreferrer">Open approved thread link <Icon name="arrow" /></a> : null}<p className="command-state">{reviewLabels[item.reviewState]}{item.deferUntilNextSwitch ? " · Returns next switch" : item.deferUntil ? ` · Returns ${formatTimestamp(item.deferUntil)}` : ""}</p>
-      {showDefer ? <div className="command-defer"><label>Return time<select value={choice} onChange={(event) => setChoice(event.target.value)}><option value="TODAY">Later today</option><option value="TOMORROW">Tomorrow</option><option value="NEXT_SWITCH">Next switch</option><option value="CUSTOM">Custom</option></select></label>{choice === "CUSTOM" ? <label>Custom time<input type="datetime-local" value={custom} onChange={(event) => setCustom(event.target.value)} /></label> : null}<button className="command-button" disabled={disabled} onClick={() => onState(item, "DEFERRED", { choice, custom })}>Confirm defer</button></div> : null}
+    <div className="command-row-content"><h3>{item.title}</h3><p className="command-row-meta">From {item.fromLabel} · To {item.toLabel} · {formatTimestamp(item.timestamp)}</p>{item.statusLabel || item.dueOn ? <p className="command-row-status">{item.statusLabel}{item.dueOn ? ` · Due ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${item.dueOn}T12:00:00`))}` : ""}</p> : null}<p className="command-why">{item.whyItMatters}</p><p className="command-next"><strong>Next:</strong> {item.nextAction}</p>{item.threadUrl ? <a className="command-thread-link" href={item.threadUrl} target="_blank" rel="noreferrer">Open approved thread link <Icon name="arrow" /></a> : null}<p className="command-state">{reviewLabels[item.reviewState]}{item.deferUntilNextSwitch ? " · Returns at next recorded period" : item.deferUntil ? ` · Returns ${formatTimestamp(item.deferUntil)}` : ""}</p>
+      {showDefer ? <div className="command-defer"><label>Return time<select value={choice} onChange={(event) => setChoice(event.target.value)}><option value="TODAY">Later today</option><option value="TOMORROW">Tomorrow</option><option value="NEXT_SWITCH">Next recorded period</option><option value="CUSTOM">Custom</option></select></label>{choice === "CUSTOM" ? <label>Custom time<input type="datetime-local" value={custom} onChange={(event) => setCustom(event.target.value)} /></label> : null}<button className="command-button" disabled={disabled} onClick={() => onState(item, "DEFERRED", { choice, custom })}>Confirm defer</button></div> : null}
       <p>Reviewing this item does not complete or change the original record.</p><div className="command-row-actions"><button className="command-button" disabled={disabled} onClick={() => onState(item, "ACKNOWLEDGED")}>Mark reviewed</button><button className="command-button secondary" disabled={disabled} onClick={() => setShowDefer((value) => !value)}>Review later</button></div>
     </div>
   </article>;
 }
 
 function SwitchTimeline({ session, compact = false }: { session: CatchUpSession | null; compact?: boolean }) {
-  return <section id="switch-timeline" className={`command-section command-timeline ${compact ? "is-compact" : ""}`} aria-labelledby="timeline-heading"><div className="command-section-heading"><div><h2 id="timeline-heading">Switch timeline</h2><p>Confirmed records only. Catch-up does not infer who was fronting.</p></div></div>{session ? <ol><li><span className="timeline-dot" /><div><strong>{session.alterName} recorded as current front</strong><span>{formatTimestamp(session.windowEnd)} · Catch-up opened</span></div></li>{session.windowStart ? <li><span className="timeline-dot" /><div><strong>Previous recorded front ended for {session.alterName}</strong><span>{formatTimestamp(session.windowStart)} · Catch-up window begins</span></div></li> : null}</ol> : <p className="command-empty">No confirmed current front is recorded.</p>}</section>;
+  return <section id="switch-timeline" className={`command-section command-timeline ${compact ? "is-compact" : ""}`} aria-labelledby="timeline-heading"><div className="command-section-heading"><div><h2 id="timeline-heading">Recorded period timeline</h2><p>Recorded period boundaries only. Catch-up does not establish absence.</p></div></div>{session ? <ol><li><span className="timeline-dot" /><div><strong>{session.alterName} · {session.sourceKind === "HOSTING" ? "hosting" : session.sourceKind === "FRONTING" ? "fronting episode" : "legacy record"}</strong><span>{formatTimestamp(session.windowEnd)} · Catch-up opened</span></div></li>{session.windowStart ? <li><span className="timeline-dot" /><div><strong>Previous recorded period of this kind ended for {session.alterName}</strong><span>{formatTimestamp(session.windowStart)} · Catch-up window begins</span></div></li> : null}</ol> : <p className="command-empty">Choose a recorded period for catch-up.</p>}</section>;
 }
 
 type RecordView = "BOARD" | "NOTES" | "THREADS";
