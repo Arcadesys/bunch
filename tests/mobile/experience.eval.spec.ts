@@ -41,7 +41,7 @@ test("@eval all navigation and action targets are at least 44 by 44 CSS pixels",
 test("@eval signed-out state never claims a confirmed front or empty private inbox", async ({ page, harness }) => {
   harness.readStatus = 401;
   await page.goto("/");
-  await expect(page.getByRole("status")).toContainText("Sign in");
+  await expect(page.locator(".command-notice")).toContainText("Sign in");
   await expect(page.getByText("Current front · confirmed", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Nothing in this view needs your eyes.", { exact: true })).toHaveCount(0);
 });
@@ -52,7 +52,7 @@ for (const kind of ["note", "todo"]) {
     const input = page.getByLabel(kind === "note" ? "Note" : "Title", { exact: true });
     await input.fill("Synthetic save check");
     await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save todo", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Board.");
+    await expect(page.locator(".command-notice")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Board.");
     await expect(input).toHaveValue("");
     expect(harness.writes).toHaveLength(1);
   });
@@ -60,8 +60,8 @@ for (const kind of ["note", "todo"]) {
 
 test("@eval switch-front action opens a selectable confirmation flow", async ({ page, harness }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Switch front", exact: true }).click();
+  await page.getByRole("button", { name: "Update hosting or fronting", exact: true }).click();
   expect(harness.writes).toHaveLength(0);
   await expect(page.getByRole("combobox", { name: /front|alter|profile/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /confirm.*front|confirm.*switch/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /confirm change/i })).toBeVisible();
 });

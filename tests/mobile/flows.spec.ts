@@ -11,7 +11,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Mark reviewed" }).click();
   await expect(row.locator(".command-state")).toHaveText("Reviewed");
-  await expect(page.getByRole("status")).toContainText("underlying note is unchanged");
+  await expect(page.locator(".command-notice")).toContainText("underlying note is unchanged");
   expect(harness.writes[0].body).toEqual({ expectedVersion: 1, state: "ACKNOWLEDGED" });
   expect(harness.writes[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
   expect(harness.session?.items[1].statusLabel).toBe("BLOCKED");
@@ -25,31 +25,31 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
 
 test("defer is opt-in and next switch is an explicit return choice", async ({ page, harness }) => {
   await page.goto("/");
-  const row = page.getByRole("article").first();
+  const row = page.locator("article.command-row").first();
   await row.getByRole("button", { name: "Review later", exact: true }).click();
   expect(harness.writes).toHaveLength(0);
   await row.getByLabel("Return time").selectOption("NEXT_SWITCH");
   await row.getByRole("button", { name: "Confirm defer" }).click();
-  await expect(row.locator(".command-state")).toContainText("Returns next switch");
+  await expect(row.locator(".command-state")).toContainText("Returns at next recorded period");
   expect(harness.writes[0].body).toEqual({ expectedVersion: 1, state: "DEFERRED", deferUntilNextSwitch: true });
 });
 
 test("missing custom defer time sends no write", async ({ page, harness }) => {
   await page.goto("/");
-  const row = page.getByRole("article").first();
+  const row = page.locator("article.command-row").first();
   await row.getByRole("button", { name: "Review later", exact: true }).click();
   await row.getByLabel("Return time").selectOption("CUSTOM");
   await row.getByRole("button", { name: "Confirm defer" }).click();
-  await expect(page.getByRole("status")).toHaveText("Choose a custom return time.");
+  await expect(page.locator(".command-notice")).toHaveText("Choose a custom return time.");
   expect(harness.writes).toHaveLength(0);
 });
 
 test("stale write is announced without false success or optimistic state", async ({ page, harness }) => {
   harness.writeStatus = 409;
   await page.goto("/");
-  const row = page.getByRole("article").first();
+  const row = page.locator("article.command-row").first();
   await row.getByRole("button", { name: "Mark reviewed", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Record changed");
+  await expect(page.locator(".command-notice")).toContainText("Record changed");
   await expect(row.locator(".command-state")).toHaveText("Not reviewed");
   await expect(row.getByRole("button", { name: "Mark reviewed", exact: true })).toBeEnabled();
 });
@@ -73,11 +73,11 @@ test("thread suggestion requires a separate confirmation and excludes transcript
   await page.getByLabel("Approved summary").fill("Approved summary only.");
   await page.getByLabel("Key decision or action").fill("Review the bounded change.");
   await page.getByRole("button", { name: "Save suggestion" }).click();
-  await expect(page.getByRole("status")).toContainText("Thread suggestion saved");
+  await expect(page.locator(".command-notice")).toContainText("Thread suggestion saved");
   expect(harness.writes).toHaveLength(1);
   expect(Object.keys(harness.writes[0].body).sort()).toEqual(["approvedSummary", "externalThreadId", "keyDecisionOrAction", "recipientAlterIds", "source", "title", "url"]);
   await page.getByRole("button", { name: "Confirm important thread" }).click();
-  await expect(page.getByRole("status")).toContainText("Important thread confirmed");
+  await expect(page.locator(".command-notice")).toContainText("Important thread confirmed");
   expect(harness.writes).toHaveLength(2);
   expect(harness.writes[1].path).toMatch(/\/confirm$/);
 });
@@ -86,9 +86,9 @@ test("first-time and empty catch-up states render without writes", async ({ page
   harness.session!.firstTime = true;
   await page.goto("/");
   await page.locator(".catch-up-window > summary").click();
-  await expect(page.getByText(/First catch-up · all unreviewed/)).toBeVisible();
+  await expect(page.getByText(/First catch-up for this experience/)).toBeVisible();
   harness.session = null;
   await page.reload();
-  await expect(page.getByRole("status")).toHaveText("No catch-up is open.");
+  await expect(page.locator(".command-notice")).toHaveText("No catch-up is open.");
   expect(harness.writes).toHaveLength(0);
 });

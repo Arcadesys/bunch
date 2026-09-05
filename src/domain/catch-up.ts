@@ -27,6 +27,8 @@ export const catchUpItemSchema = z.object({
 });
 
 export const catchUpSessionSchema = z.object({
+  presencePeriodId: uuidSchema.optional(),
+  sourceKind: z.enum(["HOSTING", "FRONTING", "LEGACY_FRONT"]).optional(),
   id: uuidSchema,
   alterId: uuidSchema,
   alterName: z.string(),
@@ -49,11 +51,16 @@ const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value,
 });
 
 export const prepareConversationCatchUpSchema = z.object({
+  periodId: uuidSchema.optional(),
+  frontingSessionId: uuidSchema.optional(),
   alterId: uuidSchema,
   startAt: isoTimestampSchema.optional(),
   endAt: isoTimestampSchema.optional(),
   timeZone: ianaTimeZoneSchema,
 }).strict().superRefine((value, context) => {
+  if (value.periodId && value.frontingSessionId) {
+    context.addIssue({ code: "custom", path: ["periodId"], message: "Choose one presence period or legacy session." });
+  }
   if (Boolean(value.startAt) !== Boolean(value.endAt)) {
     context.addIssue({ code: "custom", path: [value.startAt ? "endAt" : "startAt"], message: "Provide both startAt and endAt, or neither." });
   }
@@ -67,13 +74,14 @@ export const conversationCatchUpHandoffSchema = z.object({
   alterId: uuidSchema,
   alterName: z.string(),
   historyAccess: z.literal("HOST_REQUIRED"),
+  elapsedSeconds: z.number().nonnegative().optional(),
   window: z.object({
     startAt: isoTimestampSchema,
     endAt: isoTimestampSchema,
     timeZone: z.string(),
-    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW"]),
+    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW", "RECORDED_PRESENCE_WINDOW"]),
   }).optional(),
-  source: z.object({ frontingSessionId: uuidSchema, catchUpSessionId: uuidSchema.optional() }).optional(),
+  source: z.object({ presencePeriodId: uuidSchema.optional(), kind: z.enum(["HOSTING","FRONTING"]).optional(), frontingSessionId: uuidSchema.optional(), catchUpSessionId: uuidSchema.optional() }).optional(),
   instructions: z.array(z.string()).min(1),
 });
 

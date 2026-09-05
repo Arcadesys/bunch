@@ -1,3 +1,6 @@
+import { startFrontingEpisodeSchema, endFrontingEpisodeSchema, type StartFrontingEpisode, type EndFrontingEpisode, type PresencePeriod } from "@/domain/presence";
+import { frontingHistoryQuerySchema, type FrontingHistoryQuery, type FrontingHistoryResponse } from "@/domain/fronting-history";
+import { setSystemHostSchema, type SetSystemHost, type SystemHostView } from "@/domain/host";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import {
@@ -36,7 +39,7 @@ import { SystemError } from "@/server/system-error";
 
 type MutationResult<T> = { data: T; replayed: boolean };
 type Page<T> = { data: T[]; nextCursor?: string };
-type ErasureCounts = { todos: number; notes: number; coverage: number; images: number };
+type ErasureCounts = { host: number; todos: number; notes: number; coverage: number; images: number };
 type ErasurePreview = { alterId: string; version: number; blockers: ErasureCounts; canErase: boolean; previewToken?: string; expiresAt?: string };
 
 type AlterRow = QueryResultRow & {
@@ -296,6 +299,38 @@ export class SystemService {
     }
   }
 
+  private async readSystemHost(client: PoolClient, ownerId: string): Promise<SystemHostView | null> {
+    const result = await client.query(`select h.id, h.alter_id, a.name as alter_name, h.version, h.recorded_at
+      from system_host h left join alter_profile a on a.owner_id = h.owner_id and a.id = h.alter_id
+      where h.owner_id = $1`, [ownerId]);
+    const row = result.rows[0];
+    return row ? { id: row.id, alterId: row.alter_id, alterName: row.alter_name, version: row.version, recordedAt: new Date(row.recorded_at).toISOString() } : null;
+  }
+
+  async getSystemHost(ownerId: string) {
+    const client = await this.pool.connect();
+    try { return await this.readSystemHost(client, ownerId); } finally { client.release(); }
+  }
+
+  async setSystemHost(ownerId: string, raw: SetSystemHost, source: RecordSource) {
+    const input = setSystemHostSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "set_system_host", async (client) => {
+      // Lock the owner even before the first host row exists.
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const previous = await this.readSystemHost(client, ownerId);
+      if ((previous?.version ?? null) !== input.expectedVersion) throw new SystemError("CONFLICT", "The host record changed. Read it again before updating.");
+      if (input.alterId) {
+        const profile = await client.query("select id from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null for update", [ownerId, input.alterId]);
+        if (!profile.rowCount) throw new SystemError("VALIDATION_ERROR", "The host must be an active profile belonging to this System.");
+      }
+      await client.query(`insert into system_host (owner_id, alter_id, recorded_at) values ($1, $2::uuid, date_trunc('milliseconds', clock_timestamp()))
+        on conflict (owner_id) do update set alter_id = excluded.alter_id, version = system_host.version + 1, recorded_at = excluded.recorded_at`, [ownerId, input.alterId]);
+      const current = (await this.readSystemHost(client, ownerId))!;
+      await this.activity(client, ownerId, "HOST", current.id, input.alterId ? "SET" : "CLEARED", source, ["alterId"], input.requestId, previous?.alterId ?? undefined, input.alterId ?? undefined);
+      return current;
+    });
+  }
+
   private async alterById(client: PoolClient, ownerId: string, alterId: string, includeArchived = true) {
     const row = await client.query<AlterRow>(`${alterSelect} where a.owner_id = $1 and a.id = $2::uuid ${includeArchived ? "" : "and a.archived_at is null"}`, [ownerId, alterId]);
     if (!row.rows[0]) throw new SystemError("NOT_FOUND", "Alter not found.");
@@ -358,6 +393,94 @@ export class SystemService {
   async getCurrentFront(ownerId: string) {
     const client = await this.pool.connect();
     try { return await this.currentFront(client, ownerId); } finally { client.release(); }
+  }
+
+  private async presenceById(client: PoolClient, ownerId: string, id: string): Promise<PresencePeriod> {
+    const result = await client.query(`select p.*, a.name as alter_name from presence_period p
+      join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+      where p.owner_id = $1 and p.id = $2::uuid`, [ownerId, id]);
+    const row = result.rows[0];
+    if (!row) throw new SystemError("NOT_FOUND", "Recorded period not found.");
+    return { ...frontingFromRow(row), kind: row.kind, origin: row.origin };
+  }
+
+  async getCurrentPresence(ownerId: string) {
+    const client = await this.pool.connect();
+    try {
+      // Both kinds and the compatibility record come from one consistent snapshot.
+      await client.query("begin isolation level repeatable read read only");
+      const rows = await client.query(`select p.*, a.name as alter_name from presence_period p
+        join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+        where p.owner_id = $1 and p.ended_at is null order by p.started_at, p.id`, [ownerId]);
+      const periods: PresencePeriod[] = rows.rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+      const legacyCurrentFront = await this.currentFront(client, ownerId);
+      await client.query("commit");
+      return { hosting: periods.find(p => p.kind === "HOSTING") ?? null,
+        fronting: periods.filter(p => p.kind === "FRONTING"), legacyCurrentFront };
+    } catch (error) { await client.query("rollback"); throw error; }
+    finally { client.release(); }
+  }
+
+  async startFrontingEpisode(ownerId: string, raw: StartFrontingEpisode, source: RecordSource) {
+    const input = startFrontingEpisodeSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "start_fronting_episode", async client => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const profile = await client.query("select id from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null for update", [ownerId, input.alterId]);
+      if (!profile.rowCount) throw new SystemError("NOT_FOUND", "The alter was not found or is archived.");
+      const active = await client.query("select id from presence_period where owner_id = $1 and alter_id = $2::uuid and kind = 'FRONTING' and ended_at is null", [ownerId, input.alterId]);
+      if (active.rowCount) throw new SystemError("CONFLICT", "This alter already has an open fronting episode. Read current presence first.");
+      const inserted = await client.query("insert into presence_period(owner_id, alter_id, kind) values ($1, $2::uuid, 'FRONTING') returning id", [ownerId, input.alterId]);
+      const result = await this.presenceById(client, ownerId, inserted.rows[0].id);
+      await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "STARTED", source, ["alterId", "startedAt"], input.requestId);
+      return result;
+    });
+  }
+
+  async endFrontingEpisode(ownerId: string, raw: EndFrontingEpisode, source: RecordSource) {
+    const input = endFrontingEpisodeSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "end_fronting_episode", async client => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const current = await this.presenceById(client, ownerId, input.episodeId);
+      if (current.kind !== "FRONTING") throw new SystemError("VALIDATION_ERROR", "Use set_system_host to end a hosting period.");
+      if (current.version !== input.expectedVersion || current.endedAt) throw new SystemError("CONFLICT", "The episode changed or already ended. Read current presence again.");
+      const updated = await client.query(`update presence_period set ended_at = date_trunc('milliseconds', clock_timestamp()),
+        version = version + 1, updated_at = clock_timestamp() where owner_id = $1 and id = $2::uuid
+        and version = $3 and ended_at is null and kind = 'FRONTING'`, [ownerId, input.episodeId, input.expectedVersion]);
+      if (!updated.rowCount) throw new SystemError("CONFLICT", "The episode changed while ending it. Read current presence again.");
+      const result = await this.presenceById(client, ownerId, input.episodeId);
+      await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "ENDED", source, ["endedAt", "version"], input.requestId);
+      return result;
+    });
+  }
+
+  async listFrontingHistory(ownerId: string, raw: FrontingHistoryQuery): Promise<FrontingHistoryResponse> {
+    const input = frontingHistoryQuerySchema.parse(raw);
+    if (input.from && input.to && Date.parse(input.from) >= Date.parse(input.to)) {
+      throw new SystemError("VALIDATION_ERROR", "The end must be after the start.");
+    }
+    const result = await this.pool.query(`with periods as (
+      select id, owner_id, alter_id, started_at, ended_at, version, kind::text, origin
+        from presence_period where owner_id = $1
+      union all
+      select id, owner_id, alter_id, started_at, ended_at, version, 'LEGACY_FRONT', 'LEGACY_RECORD'
+        from fronting_session where owner_id = $1
+    ) select p.*, a.name as alter_name,
+      to_char(p.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_started_at
+      from periods p join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+      where ($2::timestamptz is null or p.ended_at is null or p.ended_at > $2)
+        and ($3::timestamptz is null or p.started_at < $3)
+        and ($4::uuid is null or p.alter_id = $4)
+        and ($5::timestamptz is null or (p.started_at, p.id, p.kind) < ($5::timestamptz, $6::uuid, $7::text))
+        and ($8::text is null or p.kind = $8)
+      order by p.started_at desc, p.id desc, p.kind desc limit $9`,
+    [ownerId, input.from ?? null, input.to ?? null, input.alterId ?? null,
+      input.before?.startedAt ?? null, input.before?.id ?? null, input.before?.kind ?? null,
+      input.kind ?? null, input.limit + 1]);
+    const rows = result.rows.slice(0, input.limit);
+    const data = rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+    const last = rows.at(-1);
+    return { data, meta: { recordedOnly: true, ...(result.rows.length > input.limit && last
+      ? { nextCursor: { startedAt: last.cursor_started_at, id: last.id, kind: last.kind } } : {}) } };
   }
 
   async switchCurrentFront(ownerId: string, raw: FrontingSwitch, source: RecordSource) {
@@ -541,13 +664,14 @@ export class SystemService {
   restoreAlter(ownerId: string, alterId: string, input: { requestId: string; expectedVersion: number }, source: RecordSource) { return this.setAlterArchive(ownerId, alterId, input, source, false); }
 
   private async blockerCounts(client: PoolClient, ownerId: string, alterId: string): Promise<ErasureCounts> {
-    const result = await client.query<{ todos: string; notes: string; coverage: string; images: string }>(`select
+    const result = await client.query<{ host: string; todos: string; notes: string; coverage: string; images: string }>(`select
+      (select count(*) from system_host where owner_id = $1 and alter_id = $2::uuid) as host,
       (select count(*) from todo_assignee where owner_id = $1 and alter_id = $2::uuid) as todos,
       (select count(*) from system_note where owner_id = $1 and alter_id = $2::uuid) as notes,
       (select count(*) from coverage_assignment where owner_id = $1 and alter_id = $2::uuid) as coverage,
       (select count(*) from private_image where owner_id = $1 and alter_id = $2::uuid) as images`, [ownerId, alterId]);
     const row = result.rows[0];
-    return { todos: Number(row.todos), notes: Number(row.notes), coverage: Number(row.coverage), images: Number(row.images) };
+    return { host: Number(row.host), todos: Number(row.todos), notes: Number(row.notes), coverage: Number(row.coverage), images: Number(row.images) };
   }
 
   async previewEraseAlter(ownerId: string, alterId: string): Promise<ErasurePreview> {
@@ -555,7 +679,7 @@ export class SystemService {
     try {
       const alter = await this.alterById(client, ownerId, alterId);
       const blockers = await this.blockerCounts(client, ownerId, alterId);
-      const canErase = blockers.todos + blockers.notes + blockers.coverage === 0;
+      const canErase = blockers.host + blockers.todos + blockers.notes + blockers.coverage === 0;
       if (!canErase) return { alterId, version: alter.version, blockers, canErase };
       const expiresAt = Date.now() + 10 * 60 * 1000;
       return { alterId, version: alter.version, blockers, canErase, expiresAt: new Date(expiresAt).toISOString(), previewToken: issuePreviewToken({ ownerId, alterId, version: alter.version, blockers, expiresAt }) };
@@ -567,10 +691,11 @@ export class SystemService {
     const token = readPreviewToken(input.previewToken);
     if (token.ownerId !== ownerId || token.alterId !== alterId || token.version !== input.expectedVersion || token.expiresAt < Date.now()) throw new SystemError("CONFLICT", "The erasure preview is stale. Request a fresh preview.");
     return this.mutate(ownerId, input.requestId, `erase_alter:${alterId}`, async (client) => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
       const current = await this.alterById(client, ownerId, alterId);
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since the erasure preview.", { currentVersion: current.version });
       const blockers = await this.blockerCounts(client, ownerId, alterId);
-      if (blockers.todos + blockers.notes + blockers.coverage > 0) throw new SystemError("ERASURE_BLOCKED", "Resolve todo, note, and coverage references before erasing this alter.", { blockers });
+      if (blockers.host + blockers.todos + blockers.notes + blockers.coverage > 0) throw new SystemError("ERASURE_BLOCKED", "Clear or reassign the host and resolve todo, note, and coverage references before erasing this alter.", { blockers });
       const images = await client.query<{ storage_key: string }>("select storage_key from private_image where owner_id = $1 and alter_id = $2::uuid", [ownerId, alterId]);
       await this.removePrivateImages(images.rows.map((row) => row.storage_key));
       await client.query("update activity_event set actor_alter_id = null where owner_id = $1 and actor_alter_id = $2::uuid", [ownerId, alterId]);

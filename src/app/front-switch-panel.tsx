@@ -1,19 +1,29 @@
 "use client";
-
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { CatchUpSession } from "@/domain/catch-up";
-import type { FrontingSessionView } from "@/domain/contracts";
-
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { PresencePeriod } from "@/domain/presence";
+import type { SystemHostView } from "@/domain/host";
 type Profile = { id: string; name: string };
-type SwitchAttempt = {
+type Action = "HOST" | "START" | "CLEAR" | "END";
+type Attempt = {
   requestId: string;
-  body: { alterId: string; expectedCurrentVersion: number | null; expectedCurrentSessionId: string | null };
+  url: string;
+  body: Record<string, unknown>;
+  action: Action;
 };
-
-async function read<T>(url: string, signal: AbortSignal): Promise<{ data: T; meta?: { nextCursor?: string } }> {
-  const response = await fetch(url, { cache: "no-store", signal, headers: { "x-system-demo": "local" } });
+async function read<T>(
+  url: string,
+  signal: AbortSignal,
+): Promise<{ data: T; meta?: { nextCursor?: string } }> {
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal,
+    headers: { "x-system-demo": "local" },
+  });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error?.message ?? "Unable to read private records.");
+  if (!response.ok)
+    throw new Error(
+      payload.error?.message ?? "Unable to read private records.",
+    );
   return payload;
 }
 
@@ -22,134 +32,271 @@ async function allProfiles(signal: AbortSignal) {
   let cursor: string | undefined;
   const seen = new Set<string>();
   do {
-    const page = await read<Profile[]>(`/api/v1/alters?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, signal);
+    const page = await read<Profile[]>(
+      `/api/v1/alters?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      signal,
+    );
     profiles.push(...page.data);
     cursor = page.meta?.nextCursor;
-    if (cursor && seen.has(cursor)) throw new Error("Unable to finish loading profiles. Try again.");
+    if (cursor && seen.has(cursor))
+      throw new Error("Unable to finish loading profiles. Try again.");
     if (cursor) seen.add(cursor);
   } while (cursor);
   return profiles;
 }
 
-export function FrontSwitchPanel({ onConfirmed, onNotice }: {
-  onConfirmed: (session: CatchUpSession | null) => void;
+export function FrontSwitchPanel({
+  onConfirmed,
+  onNotice,
+}: {
+  onConfirmed: (periodId?: string) => void;
   onNotice: (notice: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false),
+    [busy, setBusy] = useState(false),
+    [ready, setReady] = useState(false);
+  const [uncertain, setUncertain] = useState(false),
+    [reload, setReload] = useState(0);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [current, setCurrent] = useState<FrontingSessionView | null>(null);
-  const [selected, setSelected] = useState("");
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [uncertain, setUncertain] = useState(false);
-  const [loadKey, setLoadKey] = useState(0);
-  const attempt = useRef<SwitchAttempt | null>(null);
-  const submitting = useRef(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
+  const [host, setHost] = useState<SystemHostView | null>(null);
+  const [presence, setPresence] = useState<{
+    hosting: PresencePeriod | null;
+    fronting: PresencePeriod[];
+  }>({ hosting: null, fronting: [] });
+  const [action, setAction] = useState<Action>("START"),
+    [selected, setSelected] = useState(""),
+    [message, setMessage] = useState("");
+  const attempt = useRef<Attempt | null>(null),
+    submitting = useRef(false);
+  const trigger = useRef<HTMLButtonElement>(null),
+    heading = useRef<HTMLHeadingElement>(null);
   const restoreFocus = useRef(false);
-
   useEffect(() => {
     if (!open) {
       if (restoreFocus.current) trigger.current?.focus();
       restoreFocus.current = false;
       return;
     }
-    const controller = new AbortController();
     heading.current?.focus();
+    const controller = new AbortController();
     void Promise.all([
-      read<FrontingSessionView | null>("/api/v1/fronting/current", controller.signal),
       allProfiles(controller.signal),
-    ]).then(([front, available]) => {
-      if (controller.signal.aborted) return;
-      setCurrent(front.data);
-      setProfiles(available);
-      setReady(true);
-      setMessage(available.length ? "Choose who is fronting, then explicitly confirm." : "No profiles are available. Add a profile before switching.");
-    }).catch((error) => {
-      if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "Unable to load switch controls.");
-    });
+      read<SystemHostView | null>("/api/v1/hosting/current", controller.signal),
+      read<typeof presence>("/api/v1/presence/current", controller.signal),
+    ])
+      .then(([ps, h, p]) => {
+        if (!controller.signal.aborted) {
+          setProfiles(ps);
+          setHost(h.data);
+          setPresence(p.data);
+          setReady(true);
+          setMessage(
+            "Choose the experience and explicitly confirm the change.",
+          );
+        }
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted)
+          setMessage(e.message || "Unable to load records.");
+      });
     return () => controller.abort();
-  }, [open, loadKey]);
-
-  function start() {
-    setReady(false);
-    setSelected("");
-    setMessage("Loading confirmed front and profiles…");
-    setOpen(true);
-  }
-
+  }, [open, reload]);
   function close() {
     restoreFocus.current = true;
     setOpen(false);
   }
-
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || !ready || !selected) return;
-    submitting.current = true;
-    setBusy(true);
+    if (submitting.current || !ready) return;
+    const episode = presence.fronting.find((p) => p.id === selected);
+    if (
+      !attempt.current &&
+      ((action !== "CLEAR" && !selected) || (action === "END" && !episode))
+    )
+      return;
     const pending = attempt.current ?? {
       requestId: crypto.randomUUID(),
-      body: { alterId: selected, expectedCurrentVersion: current?.version ?? null, expectedCurrentSessionId: current?.id ?? null },
+      action,
+      url:
+        action === "HOST" || action === "CLEAR"
+          ? "/api/v1/hosting/current"
+          : `/api/v1/presence/fronting/${action === "START" ? "start" : "end"}`,
+      body:
+        action === "HOST" || action === "CLEAR"
+          ? {
+              alterId: action === "CLEAR" ? null : selected,
+              expectedVersion: host?.version ?? null,
+            }
+          : action === "START"
+            ? { alterId: selected }
+            : { episodeId: selected, expectedVersion: episode!.version },
     };
     attempt.current = pending;
-    setMessage("Recording your confirmed switch…");
+    submitting.current = true;
+    setBusy(true);
+    setMessage("Recording your confirmed change…");
     try {
-      const response = await fetch("/api/v1/fronting/switch", {
+      const response = await fetch(pending.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": pending.requestId, "x-system-demo": "local" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": pending.requestId,
+        },
         body: JSON.stringify(pending.body),
       });
       const payload = await response.json();
       if (!response.ok) {
-        if (response.status < 500) {
-          attempt.current = null;
-          setUncertain(false);
-          if (response.status === 409) {
-            setReady(false);
-            setSelected("");
-            setMessage("The front changed. Reload current front, choose again, and confirm.");
-          } else {
-            if (response.status === 401) setReady(false);
-            setMessage(payload.error?.message ?? "Unable to record this switch.");
-          }
-          return;
-        }
-        throw new Error("Uncertain response");
+        if (response.status >= 500) throw new Error("Uncertain response");
+        attempt.current = null;
+        setUncertain(false);
+        setReady(false);
+        setSelected("");
+        setMessage(
+          response.status === 409
+            ? "The record changed. Reload, choose again, and confirm."
+            : (payload.error?.message ?? "Unable to record change."),
+        );
+        return;
       }
-      // This response is authoritative; opening/choosing never changes the front.
-      onConfirmed(payload.data.catchUp ?? null);
-      onNotice(`${payload.data.current.alterName} is now the recorded current front.`);
       attempt.current = null;
       setUncertain(false);
+      // Catch-up reads are separate: a read failure must never replay this write.
+      let periodId: string | undefined;
+      if (pending.action === "START") periodId = payload.data.id;
+      if (pending.action === "HOST") {
+        try {
+          const p = await read<typeof presence>(
+            "/api/v1/presence/current",
+            new AbortController().signal,
+          );
+          periodId = p.data.hosting?.id;
+        } catch {
+          /* The confirmed host is saved; refresh can recover its catch-up. */
+        }
+      }
+      onConfirmed(periodId);
+      onNotice(
+        pending.action === "HOST"
+          ? "Hosting recorded. Fronting episodes continue independently."
+          : pending.action === "CLEAR"
+            ? "Hosting ended. Fronting episodes continue independently."
+            : pending.action === "START"
+              ? "Fronting episode recorded. Hosting is unchanged."
+              : "Fronting episode ended. Hosting and other episodes are unchanged.",
+      );
       close();
     } catch {
       setUncertain(true);
-      setMessage("The switch may have been recorded, but confirmation was not received. Retry this same switch safely; do not submit a different switch yet.");
+      setMessage(
+        "The change may be saved. Retry the same confirmed change safely before choosing another.",
+      );
     } finally {
       submitting.current = false;
       setBusy(false);
     }
   }
-
-  return <div className="command-switch">
-    <button ref={trigger} type="button" className="command-action" aria-expanded={open} aria-controls="front-switch-form" onClick={start} disabled={open}>Switch front</button>
-    {open ? <section id="front-switch-form" className="command-create" aria-labelledby="front-switch-heading">
-      <h2 id="front-switch-heading" ref={heading} tabIndex={-1}>Confirm front switch</h2>
-      <p aria-live="polite">{message}</p>
-      {ready ? <>
-        <p>{current ? `Recorded current front: ${current.alterName}` : "No current front is recorded."}</p>
-        <form onSubmit={confirm} className="form-stack">
-          <label>Who is fronting now?<select required value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy || uncertain}>
-            <option value="">Choose a profile</option>
-            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-          </select></label>
-          <button className="command-button" disabled={busy || !selected}>{uncertain ? "Retry confirmed switch" : "Confirm front switch"}</button>
-        </form>
-      </> : <button type="button" className="command-button secondary" onClick={() => { setMessage("Loading confirmed front and profiles…"); setLoadKey((key) => key + 1); }}>Reload current front</button>}
-      <button type="button" className="command-button secondary" onClick={close} disabled={busy || uncertain}>Cancel</button>
-    </section> : null}
-  </div>;
+  const choices =
+    action === "END"
+      ? presence.fronting.map((p) => ({ id: p.id, name: p.alterName }))
+      : profiles;
+  return (
+    <div className="command-switch">
+      <button
+        ref={trigger}
+        className="command-action"
+        aria-expanded={open}
+        onClick={() => {
+          setReady(false);
+          setSelected("");
+          setMessage("Loading recorded hosting and fronting…");
+          setOpen(true);
+        }}
+        disabled={open}
+      >
+        Update hosting or fronting
+      </button>
+      {open ? (
+        <section
+          className="command-create"
+          aria-labelledby="presence-change-heading"
+        >
+          <h2 id="presence-change-heading" ref={heading} tabIndex={-1}>
+            Confirm hosting or fronting
+          </h2>
+          <p role="status">{message}</p>
+          {ready ? (
+            <form className="form-stack" onSubmit={confirm}>
+              <label>
+                Experience change
+                <select
+                  value={action}
+                  disabled={busy || uncertain}
+                  onChange={(e) => {
+                    setAction(e.target.value as Action);
+                    setSelected("");
+                  }}
+                >
+                  <option value="START">Start fronting episode</option>
+                  <option value="END">End fronting episode</option>
+                  <option value="HOST">Start hosting</option>
+                  <option value="CLEAR">End hosting</option>
+                </select>
+              </label>
+              <p>
+                {action === "HOST" || action === "CLEAR"
+                  ? `Hosting: ${host?.alterName ?? "not recorded"}. The host is responsible for everything otherwise unclaimed.`
+                  : "Fronting episodes can overlap hosting and end independently."}
+              </p>
+              {action !== "CLEAR" ? (
+                <label>
+                  {action === "END" ? "Episode to end" : "Profile"}
+                  <select
+                    aria-label={action === "END" ? "Episode to end" : "Profile"}
+                    required
+                    value={selected}
+                    disabled={busy || uncertain}
+                    onChange={(e) => setSelected(e.target.value)}
+                  >
+                    <option value="">
+                      Choose a{" "}
+                      {action === "END" ? "recorded episode" : "profile"}
+                    </option>
+                    {choices.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <button
+                className="command-button"
+                disabled={
+                  busy ||
+                  (action !== "CLEAR" && !selected) ||
+                  (action === "CLEAR" && !host?.alterId)
+                }
+              >
+                {uncertain ? "Retry confirmed change" : "Confirm change"}
+              </button>
+            </form>
+          ) : (
+            <button
+              className="command-button secondary"
+              onClick={() => setReload((v) => v + 1)}
+            >
+              Reload hosting and fronting
+            </button>
+          )}
+          <button
+            className="command-button secondary"
+            onClick={close}
+            disabled={busy || uncertain}
+          >
+            Cancel
+          </button>
+        </section>
+      ) : null}
+    </div>
+  );
 }
