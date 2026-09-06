@@ -4,6 +4,7 @@ import { ThemeControl } from "../theme-control";
 export default function OptionsPage() {
   return <main className="shell"><AppNavigation current="OPTIONS" /><header className="command-hero"><p className="command-kicker">Your private companion</p><h1>Options</h1><p>Saved records, appearance, and account access.</p></header>
     <div className="options-grid">{[
+      ["/install", "Install on your phone", "Add Bunch to your home screen. iPhone and Android instructions."],
       ["/account", "Account & privacy", "Privacy, retention, and account controls."],
       ["/connect", "Connect clients", "Connect ChatGPT and other companions."],
       ["/board", "Board", "Assigned and System-wide todos."],

@@ -1453,6 +1453,7 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
 :target { scroll-margin-top: 1rem; outline: 3px solid var(--focus); }
 @media (max-width: 700px) {
   .shell, .command-shell, .command-app { padding: .6rem; }
+  .app-navigation .command-topnav { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr)); }
   .options-grid, .profile-list { grid-template-columns: minmax(0, 1fr); }
   .panel, .return-review, .presence-panel, .command-row, .fronting-records li { padding: .8rem; }
   .app-navigation .command-topnav a { padding: .3rem .45rem; font-size: .9rem; }
@@ -1470,6 +1471,12 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
 
 .gallery-share-list li > div { min-width: 0; width: 100%; display: grid; gap: 12px; }
 .gallery-share-list input { width: 100%; min-width: 0; }
+.install-page li { margin-bottom: 1rem; padding-left: .2rem; }
+.install-page ol { padding-left: 1.4rem; }
+.install-help-link { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+.install-page { overflow-wrap: anywhere; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+.install-page .command-hero { padding-block: .5rem; }
+.install-page > .app-navigation { margin-bottom: .75rem; }
 @media (max-width: 600px) {
   .pilot-page:has(.gallery-share-controls) { padding: 12px; }
   .pilot-page .gallery-share-controls { padding: 12px; }
