@@ -51,6 +51,7 @@ jobs:
           name: diddy-browser-evidence
           path: |
             test-results/playwright
+            test-results/results.json
             playwright-report
           if-no-files-found: warn
           retention-days: 7

@@ -17,7 +17,7 @@ export default defineConfig({
   reporter: isCi
     ? [
         ["list"],
-        ["json", { outputFile: "playwright-report/results.json" }],
+        ["json", { outputFile: "test-results/results.json" }],
         ["html", { outputFolder: "playwright-report", open: "never" }],
       ]
     : "list",
