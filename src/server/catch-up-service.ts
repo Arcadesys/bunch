@@ -251,6 +251,18 @@ export class CatchUpService {
     return this.openForSource(ownerId, periodId, true);
   }
 
+  async openForEpisode(ownerId: string, periodId: string): Promise<CatchUpSession | null> {
+    uuidSchema.parse(periodId);
+    const client = await this.pool.connect();
+    try {
+      const row = (await client.query(`select cs.id,cs.window_end,a.name from catch_up_session cs
+        join alter_profile a on a.owner_id=cs.owner_id and a.id=cs.alter_id
+        where cs.owner_id=$1 and cs.presence_period_id=$2`,[ownerId,periodId])).rows[0];
+      if (row) return await this.hydrate(client,ownerId,row.id,row.name,row.window_end);
+    } finally { client.release(); }
+    return this.openForPresence(ownerId,periodId);
+  }
+
   async openForCurrentFronter(ownerId: string, periodId?: string): Promise<CatchUpSession | null> {
     if (periodId) uuidSchema.parse(periodId);
     return this.openForSource(ownerId, periodId, true, true);
@@ -345,7 +357,7 @@ export class CatchUpService {
         where t.owner_id = $1 and t.archived_at is null and t.status not in ('DONE', 'CANCELLED')
           and (ta.alter_id is null or ta.alter_id = $2::uuid)
           and (t.updated_at <= $4::timestamptz and ($3::timestamptz is null or t.updated_at >= $3::timestamptz)
-            or t.status = 'BLOCKED' or t.priority = 'HIGH' or (t.due_on is not null and t.due_on <= $4::date))
+            or t.created_at <= $4::timestamptz)
         group by t.id`, [ownerId, alterId, since, until]);
     const decisions = await client.query(`select d.id, d.title, d.decision, d.next_action, d.updated_at,
           coalesce(actor.name, 'System') as actor_name,
@@ -370,7 +382,7 @@ export class CatchUpService {
 
     const items: Candidate[] = [];
     for (const row of notes.rows) items.push({ itemType: "NOTE", itemId: row.id, title: String(row.body).split("\n")[0].slice(0, 120), whyItMatters: String(row.body), fromLabel: row.actor_name, toLabel: row.recipient_name ?? "System-wide", timestamp: iso(row.created_at), nextAction: "Read the note and decide whether it needs follow-up." });
-    for (const row of todos.rows) items.push({ itemType: "TODO", itemId: row.id, title: row.title, whyItMatters: row.status === "BLOCKED" || row.priority === "HIGH" ? "This urgent carryover still needs attention." : "This todo changed during this recorded catch-up window.", fromLabel: "System", toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: [row.status, row.priority].filter(Boolean).join(" · "), dueOn: row.due_on ? postgresDateOnly(row.due_on) : undefined, nextAction: row.details || "Choose the next action for this todo." });
+    for (const row of todos.rows) items.push({ itemType: "TODO", itemId: row.id, title: row.title, whyItMatters: row.status === "BLOCKED" || row.priority === "HIGH" ? "This urgent carryover still needs attention." : "This open todo still needs attention.", fromLabel: "System", toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: [row.status, row.priority].filter(Boolean).join(" · "), dueOn: row.due_on ? postgresDateOnly(row.due_on) : undefined, nextAction: row.details || "Choose the next action for this todo." });
     for (const row of decisions.rows) items.push({ itemType: "DECISION", itemId: row.id, title: row.title, whyItMatters: row.decision, fromLabel: row.actor_name, toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: "Decision record", nextAction: row.next_action });
     for (const row of threads.rows) items.push({ itemType: "THREAD", itemId: row.id, title: row.title, whyItMatters: row.approved_summary, fromLabel: row.flagger_name, toLabel: row.recipient_names, timestamp: iso(row.confirmed_at), statusLabel: "Confirmed thread", nextAction: row.key_decision_or_action, threadSource: row.source, threadUrl: row.url });
     return items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));

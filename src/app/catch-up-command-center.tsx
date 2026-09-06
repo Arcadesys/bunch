@@ -290,7 +290,17 @@ function SavedRecords({ view }: { view: RecordView }) {
   useEffect(() => {
     let active = true;
     const current = ++generation.current;
-    readPage<SavedRecord>(recordEndpoints[view]).then((page) => {
+    readPage<SavedRecord>(recordEndpoints[view]).then(async (page) => {
+      const target = window.location.hash.startsWith("#record-") ? window.location.hash.slice(8) : undefined;
+      const collected = [...page.data];
+      let next = page.meta.nextCursor;
+      const seen = new Set<string>();
+      while (active && current === generation.current && target && !collected.some(record => record.id === target) && next && !seen.has(next)) {
+        seen.add(next);
+        const more = await readPage<SavedRecord>(`${recordEndpoints[view]}?cursor=${encodeURIComponent(next)}`);
+        collected.push(...more.data); next = more.meta.nextCursor;
+      }
+      page = { data: collected, meta: { nextCursor: next } };
       if (!active || current !== generation.current) return;
       setRecords(page.data); setCursor(page.meta.nextCursor); setState("ready"); setRefreshing(false);
     }).catch((error: unknown) => {
@@ -304,7 +314,7 @@ function SavedRecords({ view }: { view: RecordView }) {
 
   useEffect(() => {
     let active = true;
-  async function loadProfiles() {
+    async function loadProfiles() {
       const collected: AlterView[] = [];
       let next: string | undefined;
       do {

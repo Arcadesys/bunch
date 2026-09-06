@@ -32,6 +32,8 @@ integration("episode review: four-month MCP return, retry, ownership and indepen
     const previousEnd = new Date(); previousEnd.setMonth(previousEnd.getMonth()-4);
     await pool.query("insert into presence_period(owner_id,alter_id,kind,started_at,ended_at) values($1,$2,'FRONTING',$3::timestamptz-interval '1 day',$3)",[owner,person.id,previousEnd]);
     await pool.query("insert into system_note(owner_id,alter_id,body) select $1,$2,'Synthetic interval record ' || n from generate_series(1,125) n",[owner,person.id]);
+    const carry = (await system.createTodo(owner,{requestId:randomUUID(),title:"Synthetic older carryover",status:"INBOX",assigneeAlterIds:[person.id]},"WEB")).data;
+    await pool.query("update system_todo set created_at=$2::timestamptz-interval '1 month',updated_at=$2::timestamptz-interval '1 month' where id=$1",[carry.id,previousEnd]);
     const args = {requestId:randomUUID(),alterId:person.id};
     const started = await client.callTool({name:"start_fronting_episode",arguments:args});
     assert.ok(!started.isError, JSON.stringify(started));
@@ -43,8 +45,9 @@ integration("episode review: four-month MCP return, retry, ownership and indepen
     const pageTwo = await catchups.readEpisodeRecords(owner,session.id,pageOne.nextCursor!,50);
     const pageThree = await catchups.readEpisodeRecords(owner,session.id,pageTwo.nextCursor!,50);
     assert.equal(pageThree.nextCursor,null);
-    assert.equal(new Set([...pageOne.items,...pageTwo.items,...pageThree.items].map(item=>item.entryId)).size,125);
+    assert.equal(new Set([...pageOne.items,...pageTwo.items,...pageThree.items].map(item=>item.entryId)).size,126);
     assert.equal(pageThree.windowStart,session.windowStart);
+    assert.ok(session.items.some(item=>item.itemId===carry.id));
     const repeated = await client.callTool({name:"start_fronting_episode",arguments:args});
     assert.ok(!repeated.isError); assert.equal((await catchups.openForCurrentFronter(owner))?.id,session.id);
     const before = await system.getCurrentPresence(owner);
@@ -71,10 +74,14 @@ integration("episode review: four-month MCP return, retry, ownership and indepen
     assert.equal((await summaries.forSession(owner,firstSession.id)).review!.startAt,null);
     assert.equal((await system.getCurrentPresence(owner)).fronting.length,2);
     assert.equal((await catchups.openForCurrentFronter(owner))?.alterId,first.id);
+    const firstEpisode = (await system.getCurrentPresence(owner)).fronting.find(p=>p.alterId===person.id)!;
+    await system.endFrontingEpisode(owner,{requestId:randomUUID(),episodeId:firstEpisode.id,expectedVersion:firstEpisode.version},"WEB");
+    const replayAfterEnd = await client.callTool({name:"start_fronting_episode",arguments:args});
+    assert.ok(!replayAfterEnd.isError);
+    assert.equal((replayAfterEnd.structuredContent as {catchUp:{id:string}}).catchUp.id,session.id);
+    assert.equal((await system.getCurrentPresence(owner)).fronting.length,1);
   } finally {
     await client.close(); await server.close();
-    await pool.query("select set_config('app.pilot_purge',$1,false)",[owner]);
-    await pool.query("delete from app_user where id=any($1::text[])",[[owner,other]]);
     await pool.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end();
   }
 });

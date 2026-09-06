@@ -233,7 +233,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     const result = await service.startFrontingEpisode(ownerId, input, "MCP");
     let arrivalCatchUp = null;
     let catchUpStatus = "AVAILABLE";
-    try { arrivalCatchUp = await catchUp().openForPresence(ownerId, result.data.id); }
+    try { arrivalCatchUp = await catchUp().openForEpisode(ownerId, result.data.id); catchUpStatus = arrivalCatchUp ? (arrivalCatchUp.windowStart ? "RECORDED_WINDOW" : "BOUNDARY_UNKNOWN") : "NO_SESSION"; }
     catch { catchUpStatus = "RETRY_GET_CATCH_UP"; }
 
     return { structuredContent: { data: result.data, catchUp: arrivalCatchUp, catchUpStatus, meta: { requestId: input.requestId, replayed: result.replayed } }, content: [{ type: "text", text: `Recorded the fronting episode; hosting and other episodes continue unchanged. ${result.replayed ? "This is a replay; do not generate a duplicate summary." : `Call prepare_conversation_catch_up now with alterId ${result.data.alterId}, periodId ${result.data.id}, and the known IANA time zone (UTC if unknown). Generate the returned conversation catch-up in ChatGPT now. For fronting episodes, read get_episode_review and save_episode_review_v1 against the returned catch-up session. State coverage gaps when memory is unavailable.`}` }] };
