@@ -53,7 +53,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const lineup = await client.callTool({ name: "render_alter_lineup", arguments: {} });
     assert.deepEqual(lineup.structuredContent, { currentFront: null, profiles: [], presence:{hosting:null,fronting:[],legacyCurrentFront:null} });
     assert.deepEqual(lineup._meta, { privateImages: [] });
-    assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v2.html");
+    assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v3.html");
     const resources = await client.listResources();
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v13.html");
     assert.ok(widget, "the v13 companion widget must be registered");
@@ -81,10 +81,16 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.match(html, /Mark reviewed/);
     assert.doesNotMatch(html, />Finish review</);
     assert.match(html, /set_catch_up_item_state/);
-    const lineupResource = await client.readResource({ uri: "ui://system-arcades-me.vercel.app/alter-lineup-v2.html" });
+    const lineupResource = await client.readResource({ uri: "ui://system-arcades-me.vercel.app/alter-lineup-v3.html" });
     const lineupHtml = "text" in lineupResource.contents[0] ? lineupResource.contents[0].text : "";
     assert.match(lineupHtml, /isProfilePicture/);
     assert.match(lineupHtml, /HOSTING/);
+    for (const version of [1, 2]) {
+      const cached = await client.readResource({ uri: `ui://system-arcades-me.vercel.app/alter-lineup-v${version}.html` });
+      assert.ok("text" in cached.contents[0]);
+      assert.equal(cached.contents[0].text, lineupHtml);
+    }
+    assert.match(JSON.stringify(lineup.content), /Display is not confirmed/);
     for (const cachedHtml of legacyHtml) {
       assert.match(cachedHtml, /Private picture gallery/);
       assert.match(cachedHtml, /id="local-image"/);
