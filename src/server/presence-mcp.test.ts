@@ -30,7 +30,7 @@ test("DIDdy presence tools carry explicit kinds, versions, and retry metadata", 
     assert.deepEqual((await client.callTool({ name: "get_current_presence", arguments: {} })).structuredContent,
       { data: { hosting: null, fronting: [episode], legacyCurrentFront: null }, meta: {} });
     assert.deepEqual((await client.callTool({ name: "start_fronting_episode", arguments: { requestId, alterId } })).structuredContent,
-      { data: episode, meta: { requestId, replayed: true } });
+      { data: episode, catchUp: null, catchUpStatus: "RETRY_GET_CATCH_UP", meta: { requestId, replayed: true } });
     const end = await client.callTool({ name: "end_fronting_episode", arguments: { requestId, episodeId, expectedVersion: 1 } });
     assert.equal((end.structuredContent as {data: {version: number}}).data.version, 2);
     assert.deepEqual(calls, [["test:presence", { requestId, alterId }, "MCP"], ["test:presence", { requestId, episodeId, expectedVersion: 1 }, "MCP"]]);

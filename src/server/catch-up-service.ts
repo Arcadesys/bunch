@@ -197,7 +197,8 @@ export class CatchUpService {
       "This handoff does not give System access to ChatGPT conversation history.",
       "Generate the catch-up now in ChatGPT: show the window and elapsedSeconds as a readable duration, then summarize what happened. A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
       "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
-      "Keep conversation findings separate from current authenticated facts and real-world completion. After generating the summary, call save_conversation_catch_up with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
+      "For a FRONTING period, get_catch_up with periodId returns the session. Read every page with get_episode_records, then get_episode_review for its revision. Save using save_episode_review_v1 with that exact session and recipient, even when the previous end is unknown. Distinguish MEMORY and CONVERSATION references from DIDDY records; label missing context. Do not require invented dates. Other legacy catch-ups retain the original save operation.",
+      "Keep conversation findings separate from current authenticated facts and real-world completion. For legacy or separately selected windows only, call save_conversation_catch_up with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
     ];
     if (ownerId.startsWith("demo:")) {
       if (input.alterId !== demoAlterId) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
@@ -250,7 +251,12 @@ export class CatchUpService {
     return this.openForSource(ownerId, periodId, true);
   }
 
-  private async openForSource(ownerId: string, periodId?: string, usePresence = false): Promise<CatchUpSession | null> {
+  async openForCurrentFronter(ownerId: string, periodId?: string): Promise<CatchUpSession | null> {
+    if (periodId) uuidSchema.parse(periodId);
+    return this.openForSource(ownerId, periodId, true, true);
+  }
+
+  private async openForSource(ownerId: string, periodId?: string, usePresence = false, frontingOnly = false): Promise<CatchUpSession | null> {
     if (ownerId.startsWith("demo:")) return getDemoCatchUpSession(ownerId);
     const client = await this.pool.connect();
     try {
@@ -259,7 +265,8 @@ export class CatchUpService {
         ? await client.query<{ id: string; alter_id: string; alter_name: string; started_at: Date | string; kind?: string }>(`select p.id, p.alter_id, a.name as alter_name, p.started_at, p.kind
             from presence_period p join alter_profile a on a.owner_id=p.owner_id and a.id=p.alter_id
             where p.owner_id=$1 and p.ended_at is null and ($2::uuid is null or p.id=$2::uuid)
-            order by p.started_at desc limit 2 for update of p`, [ownerId, periodId ?? null])
+            ${frontingOnly ? "and p.kind='FRONTING'" : ""}
+            order by p.started_at desc, p.id desc limit ${frontingOnly ? 1 : 2} for update of p`, [ownerId, periodId ?? null])
         : await client.query<{ id: string; alter_id: string; alter_name: string; started_at: Date | string; kind?: string }>(`select fs.id, fs.alter_id, a.name as alter_name, fs.started_at
             from fronting_session fs join alter_profile a on a.owner_id=fs.owner_id and a.id=fs.alter_id
             where fs.owner_id=$1 and fs.ended_at is null for update of fs`, [ownerId]);
@@ -362,7 +369,7 @@ export class CatchUpService {
         group by t.id, flagger.name`, [ownerId, alterId, since, until]);
 
     const items: Candidate[] = [];
-    for (const row of notes.rows) items.push({ itemType: "NOTE", itemId: row.id, title: String(row.body).split("\n")[0].slice(0, 120), whyItMatters: "A direct note was left for this alter or for the System.", fromLabel: row.actor_name, toLabel: row.recipient_name ?? "System-wide", timestamp: iso(row.created_at), nextAction: "Read the note and decide whether it needs follow-up." });
+    for (const row of notes.rows) items.push({ itemType: "NOTE", itemId: row.id, title: String(row.body).split("\n")[0].slice(0, 120), whyItMatters: String(row.body), fromLabel: row.actor_name, toLabel: row.recipient_name ?? "System-wide", timestamp: iso(row.created_at), nextAction: "Read the note and decide whether it needs follow-up." });
     for (const row of todos.rows) items.push({ itemType: "TODO", itemId: row.id, title: row.title, whyItMatters: row.status === "BLOCKED" || row.priority === "HIGH" ? "This urgent carryover still needs attention." : "This todo changed during this recorded catch-up window.", fromLabel: "System", toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: [row.status, row.priority].filter(Boolean).join(" · "), dueOn: row.due_on ? postgresDateOnly(row.due_on) : undefined, nextAction: row.details || "Choose the next action for this todo." });
     for (const row of decisions.rows) items.push({ itemType: "DECISION", itemId: row.id, title: row.title, whyItMatters: row.decision, fromLabel: row.actor_name, toLabel: row.recipient_names, timestamp: iso(row.updated_at), statusLabel: "Decision record", nextAction: row.next_action });
     for (const row of threads.rows) items.push({ itemType: "THREAD", itemId: row.id, title: row.title, whyItMatters: row.approved_summary, fromLabel: row.flagger_name, toLabel: row.recipient_names, timestamp: iso(row.confirmed_at), statusLabel: "Confirmed thread", nextAction: row.key_decision_or_action, threadSource: row.source, threadUrl: row.url });
@@ -382,6 +389,21 @@ export class CatchUpService {
     });
     const reviewedCount = items.filter((item) => item.reviewState !== "NEW").length;
     return catchUpSessionSchema.parse({ presencePeriodId: row.presence_period_id ?? undefined, sourceKind: row.kind ?? "LEGACY_FRONT", id: row.id, alterId: row.alter_id, alterName, startedAt: iso(startedAt), windowStart: row.window_start ? iso(row.window_start) : undefined, windowEnd: iso(row.window_end), firstTime: row.first_time, items, reviewedCount, totalCount: items.length, stateVersion: entries.rows.reduce((sum, entry) => sum + entry.version, 0) });
+  }
+
+  async readEpisodeRecords(ownerId: string, sessionId: string, after?: string, limit = 50) {
+    uuidSchema.parse(sessionId); if (after) uuidSchema.parse(after);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new SystemError("VALIDATION_ERROR", "limit must be 1 through 100.");
+    const client = await this.pool.connect();
+    try {
+      const row = (await client.query(`select a.name,cs.window_end from catch_up_session cs join alter_profile a on a.owner_id=cs.owner_id and a.id=cs.alter_id where cs.owner_id=$1 and cs.id=$2`,[ownerId,sessionId])).rows[0];
+      if (!row) throw new SystemError("NOT_FOUND", "Catch-up session not found.");
+      const session = await this.hydrate(client,ownerId,sessionId,row.name,row.window_end);
+      const remaining = session.items.filter(item => !after || item.entryId > after).sort((a,b)=>a.entryId.localeCompare(b.entryId));
+      const items = remaining.slice(0,limit);
+      return { ...session, items, nextCursor: remaining.length > limit ? items.at(-1)!.entryId : null,
+        coverage: session.windowStart ? "Recorded interval; unrecorded activity and unavailable memory are coverage gaps." : "Previous fronting end unknown. Available history only; no absence duration can be established." };
+    } finally { client.release(); }
   }
 
   async setItemState(ownerId: string, entryId: string, raw: SetCatchUpItemState, source: RecordSource) {
