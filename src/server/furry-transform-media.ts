@@ -20,7 +20,8 @@ export async function materializeAuthorizedReferenceMedia(media: AuthorizedRefer
     const paths: string[] = [];
     for (const item of media) {
       const url = new URL(item.src);
-      if (url.origin !== origin || !url.pathname.startsWith("/api/system/images/inline/") || !url.searchParams.has("cap")) throw new Error("Reference media must be an authorized DIDdy image URL.");
+      const localTestOrigin = process.env.NODE_ENV === "test" && url.protocol === "http:" && url.hostname === "127.0.0.1";
+      if ((url.protocol !== "https:" && !localTestOrigin) || url.origin !== origin || !url.pathname.startsWith("/api/system/images/inline/") || !url.searchParams.has("cap")) throw new Error("Reference media must be an authorized DIDdy image URL.");
       const extension = allowedTypes.get(item.contentType);
       if (!extension) throw new Error("Unsupported reference image type.");
       const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(15_000) });

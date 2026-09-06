@@ -4,9 +4,10 @@ type Request = { uploadEndpoint: string; uploadCapability: string; alterId: stri
 const maxBytes = 5 * 1024 * 1024;
 
 async function main() {
-  const input = JSON.parse(await readFile(0, "utf8")) as Request;
+  const input = JSON.parse(await readFile("/dev/stdin", "utf8")) as Request;
   const endpoint = new URL(input.uploadEndpoint);
-  if (endpoint.protocol !== "https:" || endpoint.pathname !== "/api/mcp-image-upload") throw new Error("Invalid private upload endpoint.");
+  const localTestEndpoint = process.env.NODE_ENV === "test" && endpoint.protocol === "http:" && endpoint.hostname === "127.0.0.1";
+  if ((endpoint.protocol !== "https:" && !localTestEndpoint) || endpoint.pathname !== "/api/mcp-image-upload") throw new Error("Invalid private upload endpoint.");
   if (!input.alterId || !input.uploadCapability || !input.filename) throw new Error("Invalid private save request.");
   const info = await stat(input.path);
   if (!info.isFile() || info.size > maxBytes) throw new Error("Result image must be a file of 5 MB or less.");
@@ -20,4 +21,4 @@ async function main() {
   process.stdout.write('{"stored":true,"profilePictureChanged":false}\n');
 }
 
-void main().catch(() => { process.stderr.write("Private gallery save failed.\n"); process.exitCode = 1; });
+void main().catch((error) => { process.stderr.write(`Private gallery save failed: ${error instanceof Error ? error.message : "unknown"}\n`); process.exitCode = 1; });

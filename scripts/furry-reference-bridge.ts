@@ -13,7 +13,7 @@ function isBridgeDirectory(directory: string) {
 }
 
 async function main() {
-  const input = JSON.parse(await readFile(0, "utf8")) as MaterializeRequest | CleanupRequest;
+  const input = JSON.parse(await readFile("/dev/stdin", "utf8")) as MaterializeRequest | CleanupRequest;
   if (input.action === "materialize") {
     const result = await materializeAuthorizedReferenceMedia(input.referenceMedia, input.publicOrigin);
     // Deliberately emit local paths only. The incoming capabilities never appear in stdout.
@@ -29,4 +29,4 @@ async function main() {
   throw new Error("Invalid bridge request.");
 }
 
-void main().catch(() => { process.stderr.write("Furry reference bridge failed.\n"); process.exitCode = 1; });
+void main().catch((error) => { process.stderr.write(`Furry reference bridge failed: ${error instanceof Error ? error.message : "unknown"}\n`); process.exitCode = 1; });
