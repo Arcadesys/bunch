@@ -10,5 +10,5 @@ export const config = {
   // These widget endpoints authenticate each request with a narrow, short-lived
   // capability. They cannot rely on an Auth0 browser cookie because the
   // ChatGPT iframe is on a different origin.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|api/system/images/inline/|api/mcp-image-upload).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|api/system/images/inline/|api/mcp-image-upload|api/public/gallery/|gallery/share/).*)"],
 };

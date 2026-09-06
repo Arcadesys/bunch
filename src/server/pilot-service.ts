@@ -34,6 +34,7 @@ const unavailable = () =>
     "This account does not have active DIDdy access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "gallery_share",
   "conversation_summary",
   "catch_up_entry",
   "catch_up_session",
@@ -242,7 +243,7 @@ export class PilotService {
         throw unavailable();
       const data: Record<string, unknown[]> = {};
       for (const table of OWNER_TABLES) {
-        if (table === "mutation_receipt") continue; // Internal retry payloads are not user records.
+        if (table === "mutation_receipt" || table === "gallery_share") continue; // Internal retry payloads and bearer-token hashes are not user records.
         const rows = (
           await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;

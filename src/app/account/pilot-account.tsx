@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
+import { GalleryShareControls } from "./gallery-share-controls";
 
 type Account = {
   state: string;
@@ -253,6 +254,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
                   <p>
                     <a href="/profiles">Add or manage alter profiles</a>
                   </p>
+                  <GalleryShareControls />
                 </>
               )}
               {["ACTIVE", "REVOKED"].includes(account.state) && (
