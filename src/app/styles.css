@@ -385,6 +385,35 @@ textarea:focus-visible {
   background: var(--wash);
 }
 
+.shared-gallery-shell { max-width: 1100px; }
+.shared-gallery-intro, .shared-gallery-welcome, .shared-gallery-person, .gallery-share-controls { max-width: 48rem; border: 4px solid var(--line); background: var(--surface); padding: clamp(18px, 4vw, 32px); margin: 28px 0; }
+.shared-gallery-intro { border-left: 12px solid var(--accent); }
+.shared-gallery-expiry { font-weight: 800; }
+.shared-gallery-welcome ul { font-weight: 800; }
+.shared-gallery-nav { border-block: 4px solid var(--line); padding: 22px 0; margin: 28px 0; }
+.shared-gallery-nav p { font-weight: 900; margin-top: 0; }
+.shared-gallery-nav div { display: flex; flex-wrap: wrap; gap: 14px; }
+.shared-gallery-nav .button { min-width: min(16rem, 100%); }
+.shared-gallery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 20px; }
+.shared-gallery-image-button { appearance: none; width: 100%; border: 4px solid var(--line); background: var(--paper); color: var(--ink); padding: 12px; font: inherit; font-weight: 900; text-align: left; cursor: pointer; }
+.shared-gallery-image-button img { display: block; width: 100%; height: auto; background: var(--wash); margin-bottom: 12px; }
+.shared-gallery-image-button:focus-visible, .shared-gallery-dialog button:focus-visible, .gallery-share-controls a:focus-visible { outline: 5px solid var(--focus); outline-offset: 4px; }
+.shared-gallery-image-button:hover { background: var(--wash); }
+.shared-gallery-dialog { color: var(--ink); background: var(--surface); border: 5px solid var(--line); max-width: min(94vw, 980px); padding: 18px; }
+.shared-gallery-dialog::backdrop { background: rgb(0 0 0 / 0.82); }
+.shared-gallery-dialog img { display: block; width: auto; height: auto; max-width: 100%; max-height: 72vh; margin-bottom: 18px; }
+.gallery-share-controls { display: grid; gap: 16px; }
+.gallery-share-controls h2, .gallery-share-controls h3, .gallery-share-controls p { margin: 0; }
+.gallery-share-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.gallery-share-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; border: 3px solid var(--line); padding: 16px; }
+.gallery-share-list a { color: var(--ink); font-weight: 800; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .shared-gallery-shell { padding: 18px; }
+  .shared-gallery-intro, .shared-gallery-welcome, .shared-gallery-person, .gallery-share-controls { padding: 18px; }
+  .shared-gallery-nav .button { width: 100%; }
+}
+
 .profile-summary {
   min-width: 0;
 }
