@@ -4,12 +4,12 @@ import { test, expect } from "./fixtures";
 // Do not mark known defects as expected failures: a repair should turn them green.
 test("@eval appearance is accessible and persists after reload", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".app-preferences > summary").click();
+  await page.getByRole("link", { name: "Options", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toBeVisible();
   await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.locator(".app-preferences > summary").click();
+  await page.getByRole("link", { name: "Options", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toHaveValue("light");
 });
 

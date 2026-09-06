@@ -109,7 +109,7 @@ export function ProfileManagement() {
 
   return <main className="shell">
     <AppNavigation current="PROFILES" />
-    <header className="site-header"><div><p className="eyebrow">DIDdy · private profiles</p><h1>Profiles & Media</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
+    <header className="site-header"><div><p className="eyebrow">DIDdy · private profiles</p><h1>People</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
     <p className="notice" role="status">{notice}</p>
     {loadState === "error" && <div className="actions"><p>Private records are unavailable. Sign in if needed, then try again.</p><button className="button" type="button" onClick={() => void load()}>Retry loading profiles</button></div>}
     {loadState === "ready" && <>
@@ -133,11 +133,7 @@ export function ProfileManagement() {
         <details className="profile-disclosure" onToggle={(event) => { if (event.currentTarget.open) setSelectedProfileId(""); }}><summary>Add a private profile</summary>{profileForm()}</details>
       </section>
 
-      <section className="current-front" aria-labelledby="current-front-heading">
-        <h2 id="current-front-heading">Recorded current front</h2>
-        {state.currentFront ? <><p className="current-front-name">{state.currentFront.alterName}</p><p className="small">Recorded since {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(state.currentFront.startedAt))}</p></> : <p>No current front is recorded.</p>}
-        <p className="small">Profile changes and coverage records do not change the current front.</p>
-      </section>
+
 
       <section className="panel" aria-labelledby="coverage-heading"><h2 id="coverage-heading">Coverage records</h2><p>Coverage is recorded separately from current front. A draft becomes coverage history only when you confirm it.</p>
         <details className="profile-disclosure"><summary>Create a coverage draft</summary>

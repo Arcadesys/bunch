@@ -77,7 +77,8 @@ test("@eval hosting and episode ends preserve independent records", async ({
       name: "Catch up for Test Finch · hosting",
       exact: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   expect(harness.presence.fronting).toHaveLength(1);
   await open(page);
   await page.getByLabel("Experience change").selectOption("END");
@@ -133,7 +134,7 @@ test("@eval stale host version requires reread and explicit reconfirmation", asy
     .getByRole("button", { name: "Confirm change", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Catch-up for Test Finch" }),
+    page.getByRole("heading", { name: "Catch-up for Test Robin" }),
   ).toBeVisible();
   expect(harness.writes[1].body.expectedVersion).toBe(1);
 });
