@@ -44,6 +44,16 @@ jobs:
       - run: npm run test:browser
         env:
           MOBILE_TEST_SERVER: production
+      - name: Upload browser test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diddy-browser-evidence
+          path: |
+            test-results/playwright
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Package portable plugin
         id: package

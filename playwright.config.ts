@@ -3,14 +3,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Intentionally local-only: never reuse a signed-in or production server.
+const isCi = Boolean(process.env.CI);
+
 export default defineConfig({
   testDir: "./tests/mobile",
-  outputDir: process.env.MOBILE_TEST_OUTPUT ?? join(tmpdir(), "system-mobile-tests"),
+  outputDir: isCi
+    ? "test-results/playwright"
+    : process.env.MOBILE_TEST_OUTPUT ?? join(tmpdir(), "system-mobile-tests"),
   timeout: 20_000,
   expect: { timeout: 3_000 },
   fullyParallel: true,
   workers: 2,
-  reporter: "list",
+  reporter: isCi
+    ? [
+        ["list"],
+        ["json", { outputFile: "playwright-report/results.json" }],
+        ["html", { outputFolder: "playwright-report", open: "never" }],
+      ]
+    : "list",
   use: {
     baseURL: "http://127.0.0.1:3217",
     browserName: "chromium",
