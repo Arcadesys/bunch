@@ -11,8 +11,9 @@ const themeScript = `(() => {
 })();`;
 
 export const metadata: Metadata = {
-  title: "DIDdy — your private companion",
+  title: "Bunch — your private companion",
   description: "A private, user-confirmed catch-up for notes, todos, decisions, threads, and switch history.",
+  icons: { icon: "/bunch-barrel-monkeys.png" },
   robots: { index: false, follow: false },
 };
 

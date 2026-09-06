@@ -40,7 +40,7 @@ test("@eval friend accepts privacy and invitation without recording any front", 
   });
   await page.goto("/join");
   await expect(
-    page.getByRole("heading", { name: "Join the DIDdy friends pilot" }),
+    page.getByRole("heading", { name: "Join the Bunch friends pilot" }),
   ).toBeVisible();
   await page.getByText("How catch-up and deletion work", { exact: true }).click();
   await expect(page.getByText(/Generated catch-up summaries are saved privately for 30 days/)).toBeVisible();
@@ -169,7 +169,7 @@ test("@eval signed-out join and client instructions never claim account access",
   await expect(page.getByText("Account status: ACTIVE")).toHaveCount(0);
   await page.getByRole("link", { name: "Connect clients" }).click();
   await expect(
-    page.getByRole("heading", { name: "Connect your private DIDdy account" }),
+    page.getByRole("heading", { name: "Connect your private Bunch account" }),
   ).toBeVisible();
   await expect(
     page.getByText(/only messages it can actually access/),

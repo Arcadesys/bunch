@@ -10,7 +10,7 @@ import { AppNavigation } from "../app-navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Private photo gallery — DIDdy",
+  title: "Private photo gallery — Bunch",
   description: "Owner-authorized private profile photos.",
   robots: { index: false, follow: false },
 };
@@ -41,7 +41,7 @@ export default async function PrivateGalleryPage() {
       <AppNavigation current="GALLERY" />
       <header className="site-header">
         <div>
-          <p className="eyebrow">DIDdy · private photos</p>
+          <p className="eyebrow">Bunch · private photos</p>
           <h1>Private photo gallery</h1>
         </div>
         <div className="header-actions"><Link className="button button-secondary" href="/profiles">Manage profiles and pictures</Link></div>

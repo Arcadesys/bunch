@@ -74,7 +74,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       connect_domains: ["https://system-arcades-me.vercel.app"],
       resource_domains: ["https://system-arcades-me.vercel.app"],
     });
-    assert.match(html, /DIDdy/);
+    assert.match(html, /Bunch/);
     assert.match(html, /Catch-up tasks/);
     assert.match(html, /Mark reviewed/);
     assert.doesNotMatch(html, />Finish review</);

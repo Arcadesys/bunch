@@ -19,9 +19,9 @@ export function SavedReturnReview({ sessionId }: { sessionId: string }) {
     <p className="command-kicker">Your return review</p><h2 id="return-review-heading">Catch up at your pace</h2>
     {status && <p role="status">{status}</p>}
     {review ? <><p className="review-prose">{review.summary}</p><h3>Sources and coverage gaps</h3><p className="review-prose">{review.coverage}</p>
-      {review.sourceReferences?.length ? <ul>{review.sourceReferences.map((source, i) => <li key={i}><strong>{source.kind === "DIDDY" ? "DIDdy record" : source.kind === "MEMORY" ? "ChatGPT memory" : "Conversation context"}:</strong> {source.reference}</li>)}</ul> : null}
+      {review.sourceReferences?.length ? <ul>{review.sourceReferences.map((source, i) => <li key={i}><strong>{source.kind === "DIDDY" ? "Bunch record" : source.kind === "MEMORY" ? "ChatGPT memory" : "Conversation context"}:</strong> {source.reference}</li>)}</ul> : null}
       <p className="small">Saved {new Date(review.createdAt).toLocaleString()}{review.sourceClient ? ` · ${review.sourceClient}` : ""}. Expires {new Date(review.expiresAt).toLocaleString()}.</p>
-    </> : <p>Available DIDdy records are below. ChatGPT can save a review using its available context; missing context remains a coverage gap.</p>}
+    </> : <p>Available Bunch records are below. ChatGPT can save a review using its available context; missing context remains a coverage gap.</p>}
     <p className="small">Reading this review changes no notes, todos, or review states.</p>
     <button className="command-button secondary" onClick={() => setAttempt(value => value + 1)}>Refresh saved review</button>
   </section>;

@@ -28,6 +28,6 @@ export async function requireOwnerId(request?: Request): Promise<string> {
 // Identity-only access is reserved for joining and account recovery/export/deletion.
 export async function requirePilotIdentity(): Promise<PilotIdentity> {
   const session = await getAuth0Client().getSession();
-  if (!session?.user.sub) throw new Error("Sign in with Google to manage your DIDdy account.");
+  if (!session?.user.sub) throw new Error("Sign in with Google to manage your Bunch account.");
   return { ownerId: ownerIdFromAuth0Subject(session.user.sub), email: typeof session.user.email === "string" ? session.user.email : "", emailVerified: session.user.email_verified === true };
 }

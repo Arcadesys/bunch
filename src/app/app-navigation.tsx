@@ -10,7 +10,7 @@ const destinations: { href: string; label: string; page: AppPage }[] = [
 ];
 export function AppNavigation({ current }: { current?: AppPage }) {
   return <header className="command-topbar app-navigation">
-    <Link href="/" className="command-brand" aria-label="DIDdy home"><Image src="/plural-rings.svg" alt="" width={40} height={40} />DIDdy</Link>
-    <nav className="command-topnav" aria-label="DIDdy navigation">{destinations.map(({ href, label, page }) => <Link key={page} href={href} aria-current={current === page || current === "GALLERY" && page === "PROFILES" || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}>{label}</Link>)}</nav>
+    <Link href="/" className="command-brand" aria-label="Bunch home"><Image src="/bunch-barrel-monkeys.png" alt="" width={48} height={48} />Bunch</Link>
+    <nav className="command-topnav" aria-label="Bunch navigation">{destinations.map(({ href, label, page }) => <Link key={page} href={href} aria-current={current === page || current === "GALLERY" && page === "PROFILES" || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}>{label}</Link>)}</nav>
   </header>;
 }

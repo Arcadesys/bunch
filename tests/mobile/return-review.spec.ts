@@ -4,7 +4,7 @@ test("saved review identifies memory gaps and reading makes no writes", async ({
   await page.route("**/api/v1/catch-up/review?*", route => route.fulfill({ json: { data: { revision: 1, review: {
     id: "70000000-0000-4000-8000-000000000001", alterId: harness.session!.alterId,
     summary: "Overview\nA four-month review.\n\nWhat needs attention now\nRead the open note.\n\nSignificant changes during the gap\nA recorded decision changed.",
-    coverage: "ChatGPT memory was unavailable. DIDdy records cover this interval; other conversations are a coverage gap.",
+    coverage: "ChatGPT memory was unavailable. Bunch records cover this interval; other conversations are a coverage gap.",
     sourceClient: "ChatGPT", sourceReferences: [{kind:"DIDDY",reference:"Synthetic note"},{kind:"MEMORY",reference:"Unavailable"}],
     createdAt: "2026-09-06T01:00:00Z", expiresAt:"2026-10-06T01:00:00Z"
   } } } }));

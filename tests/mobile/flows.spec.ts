@@ -5,7 +5,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.goto("/");
-  await expect(page).toHaveTitle("DIDdy — your private companion");
+  await expect(page).toHaveTitle("Bunch — your private companion");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("initial-viewport.png"), fullPage: false });
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
@@ -56,7 +56,7 @@ test("stale write is announced without false success or optimistic state", async
 
 test("navigation opens saved records and identifies the active page", async ({ page }) => {
   await page.goto("/");
-  const nav = page.getByRole("navigation", { name: "DIDdy navigation" });
+  const nav = page.getByRole("navigation", { name: "Bunch navigation" });
   for (const [label, path, type] of [["Board", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
     await nav.getByRole("link", { name: "Options", exact: true }).click();
     await page.getByRole("link").filter({ has: page.getByRole("heading", { name: label, exact: true }) }).click();
