@@ -6,6 +6,8 @@ export const todoStatusSchema = z.enum(["INBOX", "OPEN", "IN_PROGRESS", "BLOCKED
 export const todoPrioritySchema = z.enum(["LOW", "NORMAL", "HIGH"]);
 export const recordSourceSchema = z.enum(["MCP", "WEB", "SYSTEM"]);
 export const isoTimestampSchema = z.string().datetime({ offset: true });
+export const galleryShareLifetimeSchema = z.enum(["1h", "2h", "4h", "1d", "1w", "forever"]);
+export const galleryShareCreateSchema = z.object({ duration: galleryShareLifetimeSchema }).strict();
 
 const shortOptional = z.string().trim().max(500).optional();
 const textOptional = z.string().trim().max(5000).optional();
