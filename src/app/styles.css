@@ -1442,6 +1442,13 @@ details { margin: .75rem 0; }
 .profile-summary h3 { margin: .5rem 0; }
 .profile-list > li { min-width: 0; }
 .profile-disclosure, .profile-images, .upload-form { min-width: 0; max-width: 100%; }
+.profile-disclosure { overflow-x: clip; }
+/* Reference selection is an explicit, high-stakes choice: make the control itself
+   as easy to target as the surrounding label at normal and enlarged text. */
+.profile-disclosure input[type="checkbox"] { inline-size: 44px; block-size: 44px; min-height: 44px; }
+/* Grid children default to their min-content width; remove that constraint in the
+   appearance section so long labels keep wrapping instead of widening a phone page. */
+.profile-disclosure .form-stack > * { min-width: 0; max-width: 100%; }
 input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px; }
 :target { scroll-margin-top: 1rem; outline: 3px solid var(--focus); }
 @media (max-width: 700px) {

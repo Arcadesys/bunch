@@ -8,6 +8,43 @@ import { SystemService } from "@/server/system-service";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationTest = databaseUrl ? test : test.skip;
 
+integrationTest("generated gallery keepers are receipt-bound, idempotent, and do not change presence", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 2 });
+  const service = new SystemService(pool, async () => undefined);
+  const owner = `test:${randomUUID()}`;
+  const otherOwner = `test:${randomUUID()}`;
+  const requestId = randomUUID();
+  const exactBytesHash = "a".repeat(64);
+  try {
+    const alter = await service.createAlter(owner, { requestId: randomUUID(), name: "Keeper" }, "SYSTEM");
+    const first = await service.saveGeneratedGalleryResult(owner, alter.data.id, {
+      id: randomUUID(), storageKey: `profiles/test/${randomUUID()}.png`, contentType: "image/png",
+    }, { requestId, contentHash: exactBytesHash }, "SYSTEM");
+    assert.equal(first.replayed, false);
+    assert.equal(first.data.profilePictureChanged, false);
+
+    const replay = await service.saveGeneratedGalleryResult(owner, alter.data.id, {
+      id: randomUUID(), storageKey: `profiles/test/${randomUUID()}.png`, contentType: "image/png",
+    }, { requestId, contentHash: exactBytesHash }, "SYSTEM");
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.data.imageId, first.data.imageId);
+    await assert.rejects(() => service.saveGeneratedGalleryResult(owner, alter.data.id, {
+      id: randomUUID(), storageKey: `profiles/test/${randomUUID()}.png`, contentType: "image/png",
+    }, { requestId, contentHash: "b".repeat(64) }, "SYSTEM"), (error) => error instanceof SystemError && error.code === "CONFLICT");
+    await assert.rejects(() => service.saveGeneratedGalleryResult(otherOwner, alter.data.id, {
+      id: randomUUID(), storageKey: `profiles/test/${randomUUID()}.png`, contentType: "image/png",
+    }, { requestId: randomUUID(), contentHash: exactBytesHash }, "SYSTEM"), (error) => error instanceof SystemError && error.code === "NOT_FOUND");
+
+    const images = await pool.query("select id, is_profile_picture from private_image where owner_id=$1 and alter_id=$2::uuid", [owner, alter.data.id]);
+    assert.deepEqual(images.rows, [{ id: first.data.imageId, is_profile_picture: false }]);
+    assert.equal((await pool.query("select count(*) from fronting_session where owner_id=$1", [owner])).rows[0].count, "0");
+    assert.equal((await pool.query("select count(*) from system_host where owner_id=$1", [owner])).rows[0].count, "0");
+  } finally {
+    await pool.query("delete from app_user where id = any($1::text[])", [[owner, otherOwner]]).catch(() => undefined);
+    await pool.end();
+  }
+});
+
 integrationTest("profile-picture backfill selects only profiles with exactly one image", async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   const owner = `test:${randomUUID()}`;
