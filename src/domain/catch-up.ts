@@ -42,7 +42,7 @@ export const catchUpSessionSchema = z.object({
   stateVersion: z.number().int().nonnegative(),
 });
 
-const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value, context) => {
+export const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value, context) => {
   if (value !== "UTC" && !value.includes("/")) {
     context.addIssue({ code: "custom", message: "Use an IANA time zone, such as America/Chicago." });
     return;

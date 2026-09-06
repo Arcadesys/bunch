@@ -51,7 +51,10 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - For a separate explicit catch-up request, resolve the named profile with `list_alters`, then call `prepare_conversation_catch_up` with an IANA time zone and the selected periodId for hosting/fronting windows. If several periods are open, ask the user to choose. Use an explicit complete `startAt`/`endAt` correction when supplied. A recorded-fronting window is only a candidate, never proof of absence.
 - Explicit timestamp offsets are authoritative for the returned instants; the IANA time zone is display context and is never used to reinterpret those offsets.
 - System does not automatically receive ChatGPT history. Generate the summary immediately from available messages in the returned window and report topics, decisions, open matters, source links, and coverage gaps. Never rely only on titles.
-- If host history access is unavailable, say that DIDdy supplied dates but this host cannot retrieve other conversations; offer selected conversations or a capable host. Do not claim that nothing happened, fabricate a summary, or persist raw transcripts/generated summaries in System.
+- If host history access is unavailable, say that DIDdy supplied dates but this host cannot retrieve other conversations; offer selected conversations or a capable host. Do not claim that nothing happened, fabricate a summary, or persist raw transcripts in System.
+
+- After generating a grounded summary, call `save_conversation_catch_up` with its alterId, exact startAt/endAt/timeZone, synthesis (including source links), and coverage gaps. Save for 30 days from creation; reuse the same requestId for retries so they never renew retention. Do not save raw transcripts or fabricated summaries when history is unavailable. Report success only after the save succeeds.
+- Retrieve retained summaries with `list_conversation_catch_ups` and `get_conversation_catch_up`; expired summaries are unavailable. These are historical syntheses, never new source evidence or proof of current facts. Use `delete_conversation_catch_up` when the user requests early deletion.
 
 ## Privacy boundary
 

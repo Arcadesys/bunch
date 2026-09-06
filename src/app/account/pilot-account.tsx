@@ -177,7 +177,8 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
           <p>
             Your connected ChatGPT or Codex account receives the records you
             request. DIDdy does not automatically receive your conversation
-            history and does not save generated catch-up summaries.
+            history. Generated catch-up summaries are saved privately for 30 days,
+            with their dates and coverage gaps. Raw transcripts are not saved.
           </p>
           <p>
             Deletion removes live records and images. The pilot requires

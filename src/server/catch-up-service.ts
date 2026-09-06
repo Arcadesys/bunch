@@ -197,7 +197,7 @@ export class CatchUpService {
       "This handoff does not give System access to ChatGPT conversation history.",
       "Generate the catch-up now in ChatGPT: show the window and elapsedSeconds as a readable duration, then summarize what happened. A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
       "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
-      "Keep conversation findings separate from current authenticated facts and real-world completion. Do not persist raw transcripts or generated chat summaries in System.",
+      "Keep conversation findings separate from current authenticated facts and real-world completion. After generating the summary, call save_conversation_catch_up with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
     ];
     if (ownerId.startsWith("demo:")) {
       if (input.alterId !== demoAlterId) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");

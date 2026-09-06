@@ -77,3 +77,13 @@ Observe existing-provider usage daily for the first week. At 80% of a shared all
 - Live billing, production backup/restore, OAuth expiry on another real account, client installation, and the one-week pilot remain explicit launch gates.
 
 Final local score: 69 server checks, 120 browser checks, lint, application/browser typechecks, production build, plugin validation, and the isolated recovery rehearsal passed. No production activation or invitations have occurred.
+
+## Catch-up summary retention
+
+Host-generated summaries are private account records, retained for 30 days (720 hours) from the first successful save. They include the exact date window, display time zone, and coverage gaps. Raw transcripts remain prohibited. Saving does not grant access to ChatGPT history, and a saved synthesis is not new source evidence. Unavailable history must not produce fabricated saved summaries.
+
+Use `save_conversation_catch_up`, `list_conversation_catch_ups`, `get_conversation_catch_up`, and `delete_conversation_catch_up`. Retry the same requestId after an uncertain save. Retries cannot extend expiry or resurrect deleted content. Only an ID and expiry are kept in internal retry receipts. Exports include only unexpired summaries; account deletion removes all summaries immediately from access and then physically during the deletion job.
+
+Deploy migration 0009 before this application version. Configure a strong `CRON_SECRET` in Vercel before release ([Vercel cron authentication](https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs)), production summary saves fail closed until the secret is set. Then verify the authenticated daily `/api/cron/expire-catch-ups` job. `vercel.json` schedules it at 06:00 UTC; requests without its secret fail closed. Retrieval and export stop at the exact expiry independently of job health; physical cleanup occurs on the next daily run (up to 24 hours later under normal operation). Monitor failed runs and retry with `npm run pilot:admin -- purge-summaries`. This cleanup also handles revoked/paused accounts. Do not log summary bodies or authorization headers.
+
+Application backup archives exclude all conversation-summary rows, so recovery will not resurrect them and cannot recover accidentally deleted summaries. Provider-managed database recovery copies may retain data under the documented seven-day recovery policy; inspect those separately before pilot activation. User-downloaded exports and chat-host copies are outside DIDdy's retention controls. No new paid service is required by this implementation; verify existing cron/runtime allowances before production activation.

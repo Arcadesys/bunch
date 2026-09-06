@@ -78,7 +78,7 @@ integration("@eval arrival-to-conversation handoff through real MCP and PostgreS
       const handoff = conversationCatchUpHandoffSchema.parse((await call("prepare_conversation_catch_up", { alterId: alter.id, periodId: period.id, timeZone: "UTC" })).structuredContent);
       assert.equal(handoff.historyAccess, "HOST_REQUIRED");
       assert.match(handoff.instructions.join(" "), /cannot retrieve other conversations/);
-      assert.match(handoff.instructions.join(" "), /Do not persist raw transcripts or generated chat summaries/);
+      assert.match(handoff.instructions.join(" "), /Never persist raw transcripts/);
       const saved = await pool.query("select count(*)::int as n from catch_up_session where owner_id=$1", [owner]);
       assert.equal(saved.rows[0].n, 0);
       const denied = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: foreign.id, timeZone: "UTC" } });

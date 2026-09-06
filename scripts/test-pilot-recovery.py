@@ -17,6 +17,7 @@ try:
     # IDs are generated locally; no user-supplied text is interpolated into SQL.
     sql(f"insert into app_user(id,google_subject) values('{owner}','{owner}'); insert into pilot_account(owner_id,role) values('{owner}','FRIEND')")
     sql(f"begin; select set_config('app.pilot_purge','{owner}',true); insert into alter_profile(owner_id,name) values('{owner}','Synthetic restore profile'); commit")
+    sql(f"begin; select set_config('app.pilot_purge','{owner}',true); insert into conversation_summary(owner_id,alter_id,start_at,end_at,time_zone,summary,coverage) select owner_id,id,now(),now(),'UTC','Synthetic summary excluded from backups','Fixture only' from alter_profile where owner_id='{owner}'; commit")
     run('createdb',target)
     result=run('npx','tsx','scripts/pilot-backup.ts','create',env=runenv)
     backup=json.loads(result.stdout.strip().splitlines()[-1])['backup']
@@ -27,6 +28,7 @@ try:
     targetenv=base.copy();targetenv['PGDATABASE']=target
     assert sql(f"select state from pilot_account where owner_id='{owner}'",targetenv)=='REVOKED'
     assert sql(f"select count(*) from alter_profile where owner_id='{owner}'",targetenv)=='1'
+    assert sql(f"select count(*) from conversation_summary where owner_id='{owner}'",targetenv)=='0'
     run('dropdb',target);run('createdb',target)
     with open(backup,'r+b') as f:
         f.seek(50);value=f.read(1);f.seek(50);f.write(bytes([value[0]^1]))
@@ -34,7 +36,7 @@ try:
     assert result.returncode!=0,'Tampering must fail before restoration'
     stale=pathlib.Path(folder)/'diddy-1.diddy-backup';stale.write_bytes(b'synthetic expired artifact');old=time.time()-8*86400;os.utime(stale,(old,old))
     run('npx','tsx','scripts/pilot-backup.ts','prune',env=runenv);assert not stale.exists()
-    print('PASS: encrypted restore, post-backup revocation replay, ciphertext tampering, seven-day pruning. Synthetic fixture has no media.')
+    print('PASS: encrypted restore, post-backup revocation replay, ciphertext tampering, seven-day pruning, summary exclusion. Synthetic fixture has no media.')
 finally:
     subprocess.run(['dropdb','--if-exists',target],env=base,capture_output=True)
     sql(f"begin; select set_config('app.pilot_purge','{owner}',true); delete from app_user where id='{owner}'; delete from pilot_account where owner_id='{owner}'; commit")
