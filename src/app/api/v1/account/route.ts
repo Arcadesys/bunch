@@ -1,12 +1,14 @@
 import { requirePilotIdentity } from "@/server/auth";
 import { getPilotService } from "@/server/pilot-service";
 import { apiResponse } from "@/server/http-api";
+import { canShareGallery } from "@/server/gallery-access";
 export const runtime = "nodejs";
 export async function GET() {
   return apiResponse(async () => {
     const identity = await requirePilotIdentity();
     const pilot = getPilotService();
     const a = await pilot.account(identity.ownerId);
+    const galleryAccess = await canShareGallery(pilot.pool, identity.ownerId);
     const used = a
       ? Number(
           (
@@ -22,7 +24,8 @@ export async function GET() {
         data: {
           signedIn: true,
           emailVerified: identity.emailVerified,
-          state: a?.state ?? "NOT_ENROLLED",
+          state: a?.state ?? (galleryAccess ? "LEGACY" : "NOT_ENROLLED"),
+          canShareGallery: galleryAccess,
           role: a?.role,
           displayName: a?.display_name,
           usedBytes: used,

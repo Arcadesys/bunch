@@ -5,6 +5,7 @@ import { GalleryShareControls } from "./gallery-share-controls";
 
 type Account = {
   state: string;
+  canShareGallery?: boolean;
   role?: string;
   displayName?: string;
   emailVerified: boolean;
@@ -204,7 +205,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
         <>
           <p>
             <strong>
-              Account status: {account.state.replaceAll("_", " ")}
+              Account status: {account.state === "LEGACY" ? "Existing system account" : account.state.replaceAll("_", " ")}
             </strong>
           </p>
           {account.state === "NOT_ENROLLED" ? (
@@ -254,9 +255,10 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
                   <p>
                     <a href="/profiles">Add or manage alter profiles</a>
                   </p>
-                  <GalleryShareControls />
                 </>
               )}
+              {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}
+              {account.canShareGallery && <GalleryShareControls />}
               {["ACTIVE", "REVOKED"].includes(account.state) && (
                 <button onClick={() => void exportRecords()} disabled={busy}>
                   Export records and image list

@@ -2,6 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { getDatabasePool } from "@/db/client";
 
+import { canShareGallery, galleryAccessPredicate } from "./gallery-access";
+import { SystemError } from "./system-error";
+
 const lifetimeMilliseconds = {
   "1h": 60 * 60 * 1000,
   "2h": 2 * 60 * 60 * 1000,
@@ -26,7 +29,13 @@ const date = (value: unknown) => new Date(String(value)).toISOString();
 export class GalleryShareService {
   constructor(readonly pool: Pool = getDatabasePool()) {}
 
+  private async assertAccess(ownerId: string) {
+    if (!await canShareGallery(this.pool, ownerId))
+      throw new SystemError("FORBIDDEN", "Gallery sharing is unavailable for this account.");
+  }
+
   async create(ownerId: string, lifetime: GalleryShareLifetime) {
+    await this.assertAccess(ownerId);
     const token = randomBytes(32).toString("base64url");
     const expiresAt = lifetimeMilliseconds[lifetime] === null ? null : new Date(Date.now() + lifetimeMilliseconds[lifetime]).toISOString();
     const row = (await this.pool.query(
@@ -37,19 +46,22 @@ export class GalleryShareService {
   }
 
   async list(ownerId: string): Promise<GalleryShare[]> {
+    await this.assertAccess(ownerId);
     const rows = (await this.pool.query("select id,expires_at,revoked_at,created_at from gallery_share where owner_id=$1 order by created_at desc", [ownerId])).rows;
     return rows.map((row) => this.toShare(row));
   }
 
   async revoke(ownerId: string, id: string) {
+    await this.assertAccess(ownerId);
     return (await this.pool.query("update gallery_share set revoked_at=coalesce(revoked_at,now()) where owner_id=$1 and id=$2::uuid returning id", [ownerId, id])).rowCount === 1;
   }
 
   // This check intentionally runs for every public metadata and image request.
   async publicOwner(token: string): Promise<string | null> {
     const row = (await this.pool.query(
-      `select s.owner_id from gallery_share s join pilot_account a on a.owner_id=s.owner_id
-       where s.token_hash=$1 and s.revoked_at is null and (s.expires_at is null or s.expires_at>now()) and a.state='ACTIVE' limit 1`,
+      `select s.owner_id from gallery_share s join app_user u on u.id=s.owner_id
+       left join pilot_account a on a.owner_id=u.id cross join pilot_policy p
+       where s.token_hash=$1 and s.revoked_at is null and (s.expires_at is null or s.expires_at>now()) and ${galleryAccessPredicate} limit 1`,
       [tokenHash(token)],
     )).rows[0];
     return row ? String(row.owner_id) : null;

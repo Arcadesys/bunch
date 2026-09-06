@@ -1460,3 +1460,12 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
 .command-kicker, .eyebrow { color: var(--warm); }
 .return-review { margin-top: 1rem; }
 .command-row-content > a, .return-shortcuts > a { display: inline-flex; align-items: center; min-height: 44px; }
+
+.gallery-share-list li > div { min-width: 0; width: 100%; display: grid; gap: 12px; }
+.gallery-share-list input { width: 100%; min-width: 0; }
+@media (max-width: 600px) {
+  .pilot-page:has(.gallery-share-controls) { padding: 12px; }
+  .pilot-page .gallery-share-controls { padding: 12px; }
+  .gallery-share-list li { padding: 10px; }
+  .pilot-page .gallery-share-controls button { padding-inline: .4rem; overflow-wrap: normal; }
+}
