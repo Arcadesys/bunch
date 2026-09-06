@@ -81,6 +81,7 @@ export const privateImage = pgTable("private_image", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "private_image_owner_alter_fk" }).onDelete("cascade"),
+  unique("private_image_owner_id_id_key").on(table.ownerId, table.id),
   uniqueIndex("private_image_one_profile_picture").on(table.ownerId, table.alterId).where(sql`${table.isProfilePicture} = true`),
 ]);
 
@@ -355,6 +356,27 @@ export const pilotInvitation=pgTable("pilot_invitation",{
   expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(),revokedAt:timestamp("revoked_at",{withTimezone:true}),
   acceptedBy:text("accepted_by").references(()=>pilotAccount.ownerId),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 });
+
+export const alterAppearance = pgTable("alter_appearance", {
+  ownerId: text("owner_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  appearanceNotes: text("appearance_notes"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.alterId] }),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "alter_appearance_owner_alter_fk" }).onDelete("cascade"),
+]);
+
+export const alterAppearanceReference = pgTable("alter_appearance_reference", {
+  ownerId: text("owner_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  imageId: uuid("image_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.alterId, table.imageId] }),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "alter_appearance_reference_owner_alter_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.imageId], foreignColumns: [privateImage.ownerId, privateImage.id], name: "alter_appearance_reference_owner_image_fk" }).onDelete("cascade"),
+]);
 export const pilotUpload=pgTable("pilot_upload",{
   storageKey:text("storage_key").primaryKey(),ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bytes:bigint("bytes",{mode:"number"}).notNull(),state:text("state").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[index("pilot_upload_owner").on(t.ownerId)]);

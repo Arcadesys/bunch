@@ -12,6 +12,7 @@ import {
   listNotesSchema,
   listTodosSchema,
   noteCreateSchema,
+  setAlterAppearanceSchema,
   setProfilePictureSchema,
   todoCreateSchema,
   todoPatchSchema,
@@ -29,6 +30,7 @@ import {
   type RecordSource,
   type ProfileImageView,
   type SetProfilePicture,
+  type SetAlterAppearance,
   type TodoCreate,
   type TodoPatch,
   type TodoView,
@@ -49,6 +51,8 @@ type AlterRow = QueryResultRow & {
   pronouns: string | null;
   self_described_gender: string | null;
   description: string | null;
+  appearance_notes: string | null;
+  appearance_reference_image_ids: string[] | null;
   communication_guidance: string | null;
   strengths: string[];
   boundaries: string[];
@@ -99,6 +103,8 @@ type NoteRow = QueryResultRow & {
 };
 
 const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a.description,
+  appearance.appearance_notes, coalesce((select array_agg(ref.image_id order by ref.created_at, ref.image_id)
+    from alter_appearance_reference ref where ref.owner_id = a.owner_id and ref.alter_id = a.id), '{}') as appearance_reference_image_ids,
   a.communication_guidance, a.strengths, a.boundaries, a.version, a.created_at, a.updated_at, a.archived_at,
   coalesce((select array_agg(aa.alias order by aa.normalized_alias) from alter_alias aa
     where aa.owner_id = a.owner_id and aa.alter_id = a.id), '{}') as aliases,
@@ -109,7 +115,8 @@ const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a
   (select jsonb_build_object('id', pi.id, 'contentType', pi.content_type, 'isProfilePicture', true,
     'createdAt', pi.created_at) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id
     and pi.is_profile_picture = true limit 1) as profile_picture
-  from alter_profile a`;
+  from alter_profile a
+  left join alter_appearance appearance on appearance.owner_id = a.owner_id and appearance.alter_id = a.id`;
 
 const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on, t.priority, t.coverage_id,
   t.version, t.created_at, t.updated_at, t.archived_at,
@@ -147,6 +154,8 @@ function alterFromRow(row: AlterRow): AlterView {
     pronouns: row.pronouns ?? undefined,
     selfDescribedGender: row.self_described_gender ?? undefined,
     description: row.description ?? undefined,
+    appearanceNotes: row.appearance_notes ?? undefined,
+    appearanceReferenceImageIds: row.appearance_reference_image_ids ?? [],
     communicationGuidance: row.communication_guidance ?? undefined,
     strengths: row.strengths ?? [],
     boundaries: row.boundaries ?? [],
@@ -618,6 +627,30 @@ export class SystemService {
     const input = setProfilePictureSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, `set_profile_picture:${alterId}`, async (client) => {
       return this.promoteProfilePicture(client, ownerId, alterId, input.imageId, input.expectedVersion, input.requestId, source);
+    });
+  }
+
+  async setAlterAppearance(ownerId: string, alterId: string, raw: SetAlterAppearance, source: RecordSource) {
+    const input = setAlterAppearanceSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `set_alter_appearance:${alterId}`, async (client) => {
+      const current = await this.alterById(client, ownerId, alterId, false);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+      const imageIds = [...new Set(input.referenceImageIds)];
+      if (imageIds.length) {
+        const owned = await client.query<{ id: string }>("select id from private_image where owner_id = $1 and alter_id = $2::uuid and id = any($3::uuid[])", [ownerId, alterId, imageIds]);
+        if (owned.rowCount !== imageIds.length) throw new SystemError("VALIDATION_ERROR", "Appearance references must be private images belonging to this alter.");
+      }
+      await client.query(`insert into alter_appearance (owner_id, alter_id, appearance_notes) values ($1, $2::uuid, $3)
+        on conflict (owner_id, alter_id) do update set appearance_notes = excluded.appearance_notes, updated_at = now()`, [ownerId, alterId, input.appearanceNotes ?? null]);
+      await client.query("delete from alter_appearance_reference where owner_id = $1 and alter_id = $2::uuid", [ownerId, alterId]);
+      for (const imageId of imageIds) await client.query("insert into alter_appearance_reference (owner_id, alter_id, image_id) values ($1, $2::uuid, $3::uuid)", [ownerId, alterId, imageId]);
+      const updated = await client.query("update alter_profile set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, alterId, input.expectedVersion]);
+      if (!updated.rowCount) {
+        const latest = await this.alterById(client, ownerId, alterId);
+        throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: latest.version });
+      }
+      await this.activity(client, ownerId, "ALTER", alterId, "APPEARANCE_SET", source, ["appearanceNotes", "appearanceReferenceImageIds"], input.requestId);
+      return this.alterById(client, ownerId, alterId);
     });
   }
 

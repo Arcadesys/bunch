@@ -99,6 +99,15 @@ export const setProfilePictureSchema = z.object({
   expectedVersion: z.number().int().positive(),
   requestId: uuidSchema,
 }).strict();
+export const setAlterAppearanceSchema = z.object({
+  appearanceNotes: z.string().trim().max(5000).nullable().optional(),
+  referenceImageIds: z.array(uuidSchema).max(12),
+  expectedVersion: z.number().int().positive(),
+  requestId: uuidSchema,
+}).strict();
+export const prepareFurryTransformSchema = z.object({
+  alterName: z.string().trim().min(1).max(120),
+}).strict();
 export const listTodosSchema = listPageSchema.extend({
   status: z.array(todoStatusSchema).max(6).optional(),
   assigneeAlterId: uuidSchema.optional(),
@@ -115,12 +124,14 @@ export const alterViewSchema = z.object({
   pronouns: z.string().optional(),
   selfDescribedGender: z.string().optional(),
   description: z.string().optional(),
+  appearanceNotes: z.string().optional(),
   communicationGuidance: z.string().optional(),
   strengths: z.array(z.string()),
   boundaries: z.array(z.string()),
   imageCount: z.number().int().nonnegative(),
   profilePicture: profileImageViewSchema.optional(),
   images: z.array(profileImageViewSchema),
+  appearanceReferenceImageIds: z.array(uuidSchema),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -189,6 +200,7 @@ export type FrontingSwitch = z.infer<typeof frontingSwitchSchema>;
 export type FrontingSessionView = z.infer<typeof frontingSessionViewSchema>;
 export type ProfileImageView = z.infer<typeof profileImageViewSchema>;
 export type SetProfilePicture = z.infer<typeof setProfilePictureSchema>;
+export type SetAlterAppearance = z.infer<typeof setAlterAppearanceSchema>;
 export type TodoStatus = z.infer<typeof todoStatusSchema>;
 export type TodoPriority = z.infer<typeof todoPrioritySchema>;
 export type RecordSource = z.infer<typeof recordSourceSchema>;

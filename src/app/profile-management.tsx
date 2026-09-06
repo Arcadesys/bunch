@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { FrontingSessionView } from "@/domain/contracts";
 import type { AlterProfile, CoverageAssignment } from "@/domain/types";
+import type { AlterView } from "@/domain/contracts";
 import { AppNavigation } from "./app-navigation";
 
 type SystemState = { currentFront: FrontingSessionView | null; profiles: AlterProfile[]; assignments: CoverageAssignment[] };
@@ -22,6 +23,7 @@ export function ProfileManagement() {
   const [draftEnd, setDraftEnd] = useState("");
   const [draftProfileId, setDraftProfileId] = useState("");
   const [sharedContext, setSharedContext] = useState("");
+  const [appearance, setAppearance] = useState<Record<string, Pick<AlterView, "appearanceNotes" | "appearanceReferenceImageIds" | "version">>>({});
   const saveInFlight = useRef(false);
 
   const load = async (successNotice = "Private profiles loaded.") => {
@@ -84,6 +86,29 @@ export function ProfileManagement() {
     } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to change profile picture."); }
   }
 
+  async function loadAppearance(profile: AlterProfile) {
+    if (appearance[profile.id]) return;
+    try {
+      const response = await fetch(`/api/v1/alters/${profile.id}`, { headers: { "x-system-demo": "local" } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "Unable to load appearance settings.");
+      setAppearance(current => ({ ...current, [profile.id]: data.data }));
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to load appearance settings."); }
+  }
+
+  async function saveAppearance(profile: AlterProfile) {
+    const current = appearance[profile.id];
+    if (!current) return;
+    try {
+      const requestId = crypto.randomUUID();
+      const response = await fetch(`/api/v1/alters/${profile.id}/appearance`, { method: "PUT", headers: { ...demoHeaders, "Idempotency-Key": requestId }, body: JSON.stringify({ appearanceNotes: current.appearanceNotes || null, referenceImageIds: current.appearanceReferenceImageIds, expectedVersion: current.version }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "Unable to save appearance settings.");
+      setAppearance(items => ({ ...items, [profile.id]: data.data }));
+      await load("Appearance references saved. Profile picture and presence are unchanged.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to save appearance settings."); }
+  }
+
   async function createDraft(event: FormEvent) {
     event.preventDefault();
     try {
@@ -119,13 +144,14 @@ export function ProfileManagement() {
           <article className="profile-entry" aria-labelledby={`profile-name-${profile.id}`}>
             <div className="profile-summary"><h3 id={`profile-name-${profile.id}`}>{profile.name}</h3>{profile.selfDescribedGender && <p>{profile.selfDescribedGender}</p>}<p>{profile.description || "No description added."}</p></div>
             {profile.profilePicture ? <Image className="profile-picture" src={privateImageUrl(profile.profilePicture.storageKey)} alt={`Profile picture for ${profile.name}`} width={420} height={420} sizes="(max-width: 800px) 90vw, 420px" unoptimized /> : <p className="empty-picture">No profile picture selected.</p>}
-            <details className="profile-disclosure" onToggle={(event) => { if (!event.currentTarget.open && selectedProfileId === profile.id) setSelectedProfileId(""); }}>
+            <details className="profile-disclosure" onToggle={(event) => { if (event.currentTarget.open) void loadAppearance(profile); if (!event.currentTarget.open && selectedProfileId === profile.id) setSelectedProfileId(""); }}>
               <summary>Manage {profile.name}’s profile and pictures</summary>
               {selectedProfileId === profile.id ? profileForm(profile) : <button className="button button-secondary" type="button" onClick={() => setSelectedProfileId(profile.id)}>Edit {profile.name}’s details</button>}
               <form onSubmit={uploadImage} className="upload-form compact-upload"><input type="hidden" name="alterId" value={profile.id} /><input type="hidden" name="expectedVersion" value={profile.version} /><input type="hidden" name="setAsProfilePicture" value="true" /><label>Choose a new profile picture<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label><button className="button" type="submit">Change {profile.name}’s profile picture</button></form>
               {profile.images.length > 0 && <section aria-labelledby={`gallery-${profile.id}`}><h4 id={`gallery-${profile.id}`}>Private picture history</h4><p className="small">Earlier pictures stay private and available here.</p><div className="profile-images">
                 {profile.images.map((image, index) => <figure className="profile-image-card" key={image.id}><Image className="profile-image" src={privateImageUrl(image.storageKey)} alt={`Private picture ${index + 1} for ${profile.name}`} width={240} height={240} sizes="(max-width: 800px) 70vw, 240px" unoptimized /><figcaption>{image.isProfilePicture ? <span className="selected-state">Selected as profile picture</span> : <button className="button button-secondary" type="button" onClick={() => chooseProfilePicture(profile, image.id)}>Use picture {index + 1} for {profile.name}</button>}</figcaption></figure>)}
               </div></section>}
+              <section className="form-stack" aria-labelledby={`appearance-${profile.id}`}><h4 id={`appearance-${profile.id}`}>Transformation appearance</h4><p className="small">Choose visual references for Furry Image Studio. This does not change the profile picture, hosting, or fronting.</p>{appearance[profile.id] && <><label>Appearance notes <span className="optional">optional</span><textarea rows={3} maxLength={5000} value={appearance[profile.id].appearanceNotes || ""} onChange={event => setAppearance(items => ({ ...items, [profile.id]: { ...items[profile.id], appearanceNotes: event.target.value } }))} /></label>{profile.images.map((image, index) => <label key={`reference-${image.id}`}><input type="checkbox" checked={appearance[profile.id].appearanceReferenceImageIds.includes(image.id)} onChange={event => setAppearance(items => ({ ...items, [profile.id]: { ...items[profile.id], appearanceReferenceImageIds: event.target.checked ? [...items[profile.id].appearanceReferenceImageIds, image.id] : items[profile.id].appearanceReferenceImageIds.filter(id => id !== image.id) } }))} /> Use private picture {index + 1} as an appearance reference</label>)}<button className="button button-secondary" type="button" onClick={() => void saveAppearance(profile)}>Save appearance references</button></>}</section>
               <form onSubmit={uploadImage} className="upload-form"><input type="hidden" name="alterId" value={profile.id} /><label>Add an image to {profile.name}’s gallery<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label><button className="button button-secondary" type="submit">Store private image</button></form>
             </details>
           </article>

@@ -29,6 +29,8 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
+    assert.equal(byName.get("prepare_furry_transform")?.annotations?.readOnlyHint, true, "transform preparation must not change private state");
+    assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
     assert.equal((handoff.structuredContent as { historyAccess?: string }).historyAccess, "HOST_REQUIRED");
@@ -128,9 +130,32 @@ test("lineup keeps private image capabilities in widget metadata only", async ()
   }
 });
 
+test("Furry transform preparation keeps selected reference media out of model-visible output", async () => {
+  const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
+  process.env.MCP_TOKEN_SIGNING_SECRET = "furry-transform-metadata-test-secret";
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const profile = { id: "11111111-1111-4111-8111-111111111111", name: "Melody Arcade", aliases: ["Melody"], strengths: [], boundaries: [], images: [], imageCount: 1, appearanceNotes: "Use the approved character references.", appearanceReferenceImageIds: ["22222222-2222-4222-8222-222222222222"], version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" };
+  const service = { listAlters: async () => ({ data: [profile] }) } as unknown as SystemService;
+  const server = createMcpServer("demo:furry-transform", service, undefined, { listProfiles: async () => [{ ...profile, ownerId: "demo:furry-transform", images: [{ id: "22222222-2222-4222-8222-222222222222", storageKey: "private-reference-key", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00Z" }] }] });
+  const client = new Client({ name: "furry-transform-test", version: "1.0.0" });
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const result = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
+    assert.deepEqual(result.structuredContent, { alter: { id: profile.id, name: profile.name, appearanceNotes: profile.appearanceNotes }, referenceCount: 1, snapshotRequired: true, mediaHandoff: "HOST_ADAPTER_REQUIRED" });
+    assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|private-reference-key|image:read/);
+    assert.match((result._meta?.referenceMedia as Array<{ src: string }>)[0].src, /\/api\/system\/images\/inline\/.*\?cap=/);
+  } finally {
+    if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
+    else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
+    await client.close();
+    await server.close();
+  }
+});
+
 test("lineup follows pagination to include every active profile", async () => {
   const calls: Array<{ limit?: number; cursor?: string }> = [];
-  const profile = (id: string, name: string) => ({ id, name, aliases: [], strengths: [], boundaries: [], images: [], imageCount: 0, version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" });
+  const profile = (id: string, name: string) => ({ id, name, aliases: [], strengths: [], boundaries: [], images: [], appearanceReferenceImageIds: [], imageCount: 0, version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" });
   const service = {
     getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
     getCurrentFront: async () => null,
