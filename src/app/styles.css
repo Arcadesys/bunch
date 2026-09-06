@@ -1477,6 +1477,20 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
 .install-page { overflow-wrap: anywhere; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
 .install-page .command-hero { padding-block: .5rem; }
 .install-page > .app-navigation { margin-bottom: .75rem; }
+.task-home .command-main { padding-top: 0; }
+.task-home > .app-navigation { margin-bottom: .5rem; }
+.task-home .command-hero { padding-block: 0 .6rem; }
+.task-home .command-hero p { margin-block: .4rem; }
+.home-tasks { margin-block: .5rem 1.5rem; }
+.home-tasks h2 { font-size: 1.15rem; }
+.home-task-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: .5rem; }
+.home-task-grid a { display: flex; align-items: center; min-height: 64px; padding: .65rem; border: 2px solid var(--accent); border-radius: 10px; background: var(--wash); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.home-catch-up, .home-presence { margin-block: 2rem; padding-top: 1rem; border-top: 2px solid var(--line); }
+.task-return, .task-return-links a { display: inline-flex; align-items: center; min-height: 48px; padding: .4rem; }
+.task-return-links { display: flex; flex-wrap: wrap; gap: .5rem; }
+.task-return-links a { border: 2px solid var(--accent); border-radius: 8px; }
+.form-feedback { margin-top: 1rem; }
+.form-feedback p:not(:empty) { padding: .75rem; border-left: 4px solid var(--accent); background: var(--wash); font-weight: 700; }
 @media (max-width: 600px) {
   .pilot-page:has(.gallery-share-controls) { padding: 12px; }
   .pilot-page .gallery-share-controls { padding: 12px; }

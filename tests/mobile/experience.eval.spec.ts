@@ -52,7 +52,7 @@ for (const kind of ["note", "todo"]) {
     const input = page.getByLabel(kind === "note" ? "Note" : "Title", { exact: true });
     await input.fill("Synthetic save check");
     await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save todo", exact: true }).click();
-    await expect(page.locator(".command-notice")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Board.");
+    await expect(page.locator(".command-notice")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Todos.");
     await expect(input).toHaveValue("");
     expect(harness.writes).toHaveLength(1);
   });
