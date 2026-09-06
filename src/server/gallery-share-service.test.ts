@@ -6,6 +6,7 @@ test("gallery shares store only a hash and build a narrow retained gallery", asy
   const calls: Array<{ text: string; values?: unknown[] }> = [];
   const pool = { query: async (text: string, values?: unknown[]) => {
     calls.push({ text, values });
+    if (text.includes("select u.id")) return { rows: [{ id: "owner-a" }], rowCount: 1 };
     if (text.startsWith("insert into gallery_share")) return { rows: [{ id: "a", expires_at: values?.[2], revoked_at: null, created_at: "2026-01-01T00:00:00Z" }], rowCount: 1 };
     if (text.includes("select s.owner_id")) return { rows: [{ owner_id: "owner-a" }], rowCount: 1 };
     if (text.includes("from alter_profile")) return { rows: [
@@ -19,8 +20,8 @@ test("gallery shares store only a hash and build a narrow retained gallery", asy
   const created = await service.create("owner-a", "1h");
   assert.match(created.token, /^[A-Za-z0-9_-]{40,}$/);
   assert.ok(created.share.expiresAt);
-  assert.ok(!calls[0].values?.includes(created.token));
-  assert.match(String(calls[0].values?.[1]), /^[a-f0-9]{64}$/);
+  assert.ok(!calls.find(call => call.text.startsWith("insert into gallery_share"))!.values?.includes(created.token));
+  assert.match(String(calls.find(call => call.text.startsWith("insert into gallery_share"))!.values?.[1]), /^[a-f0-9]{64}$/);
 
   const gallery = await service.publicGallery(created.token);
   assert.deepEqual(gallery, {
