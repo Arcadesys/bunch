@@ -5,7 +5,7 @@ test("@eval compact phone header keeps navigation and recipient in the first scr
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
 
   const appearance = page.getByRole("link", { name: "Options", exact: true });
-  const nav = page.getByRole("navigation", { name: "DIDdy navigation" });
+  const nav = page.getByRole("navigation", { name: "Bunch navigation" });
   const heading = page.getByRole("heading", { name: "Catch-up for Test Robin", exact: true });
   await expect(appearance).toBeVisible();
   await expect(nav.getByRole("link", { name: "Catch-up", exact: true })).toBeVisible();

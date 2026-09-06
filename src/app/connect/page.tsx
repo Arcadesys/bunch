@@ -3,18 +3,18 @@ export default function ConnectPage() {
   return (
     <main className="pilot-page">
       <nav aria-label="Connection navigation">
-        <Link href="/">DIDdy</Link>
+        <Link href="/">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/join">Accept invitation</a>
       </nav>
-      <h1>Connect your private DIDdy account</h1>
+      <h1>Connect your private Bunch account</h1>
       <p>
         Accept your invitation first, then use the same Google sign-in in each
         client. Each friend system has its own account.
       </p>
       <h2>Codex plugin</h2>
       <p>
-        Install the versioned DIDdy package provided by the operator using your
+        Install the versioned Bunch package provided by the operator using your
         Codex plugin installation controls. Review the remote MCP address and
         complete your own OAuth sign-in. The package contains no shared login or
         private records.
@@ -22,7 +22,7 @@ export default function ConnectPage() {
       <h2>ChatGPT</h2>
       <p>
         If your account supports custom apps, open its app/developer settings
-        and add the operator-provided DIDdy MCP address. Complete your own
+        and add the operator-provided Bunch MCP address. Complete your own
         sign-in. Workspace administrators may need to enable custom apps.
       </p>
       <p>
@@ -43,9 +43,9 @@ export default function ConnectPage() {
       </ol>
       <h2>Conversation catch-up</h2>
       <p>
-        DIDdy supplies recorded dates and elapsed time. Your ChatGPT or Codex
+        Bunch supplies recorded dates and elapsed time. Your ChatGPT or Codex
         session can summarize only messages it can actually access. It must tell
-        you when history is unavailable. Summaries are not saved in DIDdy.
+        you when history is unavailable. Summaries are not saved in Bunch.
       </p>
     </main>
   );

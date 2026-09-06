@@ -155,12 +155,12 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">
-        <Link href="/">DIDdy</Link>
+        <Link href="/">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/connect">Connect clients</a>
       </nav>
       <h1>
-        {join ? "Join the DIDdy friends pilot" : "Your private system account"}
+        {join ? "Join the Bunch friends pilot" : "Your private system account"}
       </h1>
       <p>
         One login holds your system’s alters, notes, tasks, images, and recorded
@@ -177,7 +177,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
           <summary>How catch-up and deletion work</summary>
           <p>
             Your connected ChatGPT or Codex account receives the records you
-            request. DIDdy does not automatically receive your conversation
+            request. Bunch does not automatically receive your conversation
             history. Generated catch-up summaries are saved privately for 30 days,
             with their dates and coverage gaps. Raw transcripts are not saved.
           </p>

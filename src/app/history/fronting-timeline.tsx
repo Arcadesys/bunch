@@ -66,7 +66,7 @@ export function FrontingTimeline() {
       <label>Through date<input type="date" name="to" defaultValue={range.to} /></label>
       <button type="submit" disabled={busy}>Show timeline</button>
     </form>
-    <p className="fronting-help">Ask DIDdy: “Who was out yesterday?” or “When was [name] last out?”</p>
+    <p className="fronting-help">Ask Bunch: “Who was out yesterday?” or “When was [name] last out?”</p>
     {busy ? <p role="status">Loading recorded history…</p> : null}
     {error ? <div role="alert"><p>{error}</p><button onClick={() => void load(range.from, range.to)}>Retry</button></div> : null}
     {result ? <>

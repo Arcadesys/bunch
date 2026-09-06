@@ -68,9 +68,9 @@ export function SharedGallery({ token }: { token: string }) {
   const selected = gallery?.alters[selectedIndex] ?? gallery?.alters[0];
   return <main className="shell shared-gallery-shell">
     <header className="shared-gallery-intro">
-      <p className="eyebrow">DIDdy · shared photo gallery</p>
+      <p className="eyebrow">Bunch · shared photo gallery</p>
       <h1>A shared, read-only photo gallery</h1>
-      <p>This gallery was shared with you by its owner. It does not require a DIDdy account or sign-in.</p>
+      <p>This gallery was shared with you by its owner. It does not require a Bunch account or sign-in.</p>
       {status && <p className="notice" role="status">{status}</p>}
     </header>
     {gallery && !started && <section className="shared-gallery-welcome" aria-labelledby="who-heading">

@@ -31,7 +31,7 @@ function freshEvidence(policy: {
 const unavailable = () =>
   new SystemError(
     "FORBIDDEN",
-    "This account does not have active DIDdy access. Visit /join or /account.",
+    "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
   "gallery_share",

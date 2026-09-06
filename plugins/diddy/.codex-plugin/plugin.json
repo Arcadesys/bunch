@@ -7,7 +7,7 @@
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "DIDdy",
+    "displayName": "Bunch",
     "shortDescription": "Your private system companion.",
     "longDescription": "Connect your own invited account. Track hosting and overlapping fronting periods, keep notes and tasks, and prepare conversation catch-up without inferring absence.",
     "developerName": "Arcadesys",
@@ -18,8 +18,8 @@
       "Help me catch up using available conversations.",
       "Show my private notes."
     ],
-    "logo": "./assets/plural-rings.svg",
-    "composerIcon": "./assets/plural-rings.svg"
+    "logo": "./assets/bunch-barrel-monkeys.png",
+    "composerIcon": "./assets/bunch-barrel-monkeys.png"
   },
   "mcpServers": "./.mcp.json"
 }

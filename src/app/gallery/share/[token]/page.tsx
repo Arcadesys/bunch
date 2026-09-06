@@ -4,7 +4,7 @@ import { SharedGallery } from "@/app/shared-gallery/[token]/shared-gallery";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Shared photo gallery — DIDdy",
+  title: "Shared photo gallery — Bunch",
   description: "A read-only photo gallery shared by its owner.",
   robots: { index: false, follow: false },
 };

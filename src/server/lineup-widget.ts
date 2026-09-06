@@ -6,7 +6,7 @@ export function lineupWidget(publicOrigin: string) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>DIDdy lineup</title>
+  <title>Bunch lineup</title>
   <style>
     :root{color-scheme:dark;font:20px/1.5 system-ui,sans-serif;color:#f8fafc;background:#07111f}
     *{box-sizing:border-box}body{margin:0;padding:12px;background:#07111f}.shell{max-width:960px;margin:auto;border:3px solid #e2e8f0;background:#0b1626}.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;padding:18px 20px;border-bottom:3px solid #e2e8f0}.brand{font-size:1.45rem;font-weight:950;letter-spacing:.04em}.link{color:#38bdf8;font-weight:900}.intro{padding:22px 20px;background:#102a43;border-bottom:3px solid #e2e8f0}.intro h1{margin:0 0 8px;font-size:clamp(1.9rem,6vw,3rem);line-height:1.05}.intro p{margin:0;color:#e2e8f0}.notice{margin:0;padding:14px 20px;border-bottom:3px solid #e2e8f0;font-weight:850}.lineup{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;padding:20px}.profile{position:relative;border:3px solid #e2e8f0;background:#07111f;padding:14px}.profile.current{border-color:#38bdf8;box-shadow:inset 0 0 0 2px #38bdf8}.badge{display:inline-block;margin:0 0 10px;padding:5px 9px;background:#38bdf8;color:#04131c;font-weight:950}.picture,.fallback{display:grid;width:100%;aspect-ratio:1;place-items:center;border:3px solid #e2e8f0;background:#020617}.picture{object-fit:cover}.fallback{font-size:clamp(2.4rem,11vw,5.5rem);font-weight:950;color:#38bdf8}.profile h2{margin:14px 0 3px;font-size:1.55rem;line-height:1.1}.pronouns,.description,.image-note{margin:7px 0;color:#cbd5e1}.image-note{font-weight:800}.empty{margin:20px;border:3px dashed #e2e8f0;padding:20px;font-weight:850}a:focus-visible{outline:5px solid #fbbf24;outline-offset:4px}
@@ -16,7 +16,7 @@ export function lineupWidget(publicOrigin: string) {
 </head>
 <body>
 <main class="shell">
-  <header class="top"><span class="brand">DIDdy</span><a class="link" id="open-site" href="${publicOrigin}/profiles">Manage profiles</a></header>
+  <header class="top"><span class="brand">Bunch</span><a class="link" id="open-site" href="${publicOrigin}/profiles">Manage profiles</a></header>
   <section class="intro"><h1>Alter lineup</h1><p>Each active profile and its selected profile picture.</p></section>
   <p class="notice" id="notice" role="status">Loading your private lineup…</p>
   <section class="lineup" id="lineup" aria-label="Alter lineup"></section>

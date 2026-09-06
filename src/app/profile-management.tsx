@@ -109,7 +109,7 @@ export function ProfileManagement() {
 
   return <main className="shell">
     <AppNavigation current="PROFILES" />
-    <header className="site-header"><div><p className="eyebrow">DIDdy · private profiles</p><h1>People</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
+    <header className="site-header"><div><p className="eyebrow">Bunch · private profiles</p><h1>People</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
     <p className="notice" role="status">{notice}</p>
     {loadState === "error" && <div className="actions"><p>Private records are unavailable. Sign in if needed, then try again.</p><button className="button" type="button" onClick={() => void load()}>Retry loading profiles</button></div>}
     {loadState === "ready" && <>
