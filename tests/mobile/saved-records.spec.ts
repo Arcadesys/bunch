@@ -31,3 +31,16 @@ test("assigned todo is immediately visible; completing it is distinct from revie
   await page.reload();
   await expect(todo.getByRole("button", { name: "Reopen todo" })).toBeVisible();
 });
+
+test("Open record finds an older note beyond the first page", async ({page,harness}) => {
+  const target = "80000000-0000-4000-8000-000000000008";
+  let reads = 0;
+  await page.route("**/api/v1/notes*", route => {
+    reads++;
+    const more = new URL(route.request().url()).searchParams.has("cursor");
+    return route.fulfill({json:{data:more ? [{...harness.saved.notes[0],id:target,body:"Older addressed record"}] : harness.saved.notes,meta:more ? {} : {nextCursor:"synthetic-next"}}});
+  });
+  await page.goto(`/notes#record-${target}`);
+  await expect(page.locator(`#record-${target}`)).toContainText("Older addressed record");
+  expect(reads).toBe(2);
+});

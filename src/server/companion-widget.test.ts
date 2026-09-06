@@ -72,10 +72,10 @@ for (const transport of ["openai", "postMessage"]) {
   });
 }
 
-test("widget offers hosting and fronting separately when no period is selected", () => {
+test("widget offers current fronting episodes without treating hosting as fronting", () => {
   const {context,element}=widgetHarness();
   vm.runInContext(`render({structuredContent:{presence:{hosting:{id:'host-period',alterName:'Example',kind:'HOSTING'},fronting:[{id:'front-period',alterName:'Example',kind:'FRONTING'}]},catchUp:null}})`,context);
-  assert.match(element("period-choice").innerHTML,/Example · hosting/);
+  assert.doesNotMatch(element("period-choice").innerHTML,/Example · hosting/);
   assert.match(element("period-choice").innerHTML,/Example · fronting/);
   assert.equal(element("welcome").textContent,"Your catch-up");
   assert.match(element("items").innerHTML,/choose a catch-up period/);

@@ -163,17 +163,6 @@ export function FrontSwitchPanel({
       // Catch-up reads are separate: a read failure must never replay this write.
       let periodId: string | undefined;
       if (pending.action === "START") periodId = payload.data.id;
-      if (pending.action === "HOST") {
-        try {
-          const p = await read<typeof presence>(
-            "/api/v1/presence/current",
-            new AbortController().signal,
-          );
-          periodId = p.data.hosting?.id;
-        } catch {
-          /* The confirmed host is saved; refresh can recover its catch-up. */
-        }
-      }
       onConfirmed(periodId);
       onNotice(
         pending.action === "HOST"

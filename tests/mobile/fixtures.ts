@@ -63,9 +63,10 @@ export const test = base.extend<{ harness: Harness }>({
       }
       if (!url.pathname.startsWith("/api/")) return route.continue();
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
+      if (url.pathname === "/api/v1/catch-up/review") return reply({ review: null, revision: 0 });
       if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") {
         const selected=url.searchParams.get("periodId");
-        if(selected){const p=[harness.presence.hosting,...harness.presence.fronting].find(p=>p?.id===selected);if(!p)return reply(null);harness.session={...structuredClone(fixtureSession),presencePeriodId:p.id,sourceKind:p.kind,alterId:p.alterId,alterName:p.alterName};}
+        if(selected || harness.switchCount){const p=selected ? harness.presence.fronting.find(p=>p.id===selected) : harness.presence.fronting.at(-1);if(!p)return reply(null);harness.session={...structuredClone(fixtureSession),presencePeriodId:p.id,sourceKind:p.kind,alterId:p.alterId,alterName:p.alterName};}
         return reply(harness.session,harness.readStatus);
       }
       if(url.pathname === "/api/v1/presence/current" && request.method()==="GET")return reply(harness.presence,harness.switchReadStatus);

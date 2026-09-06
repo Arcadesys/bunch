@@ -15,10 +15,23 @@ export const saveConversationSummarySchema = summaryInput.refine(v => Date.parse
   path: ["endAt"], message: "endAt must be on or after startAt.",
 });
 export const conversationSummarySchema = summaryInput.omit({ requestId: true }).extend({
+  startAt: isoTimestampSchema.nullable(),
+  catchUpSessionId: uuidSchema.nullish(), revision: z.number().int().positive().nullish(),
+  generatedAt: isoTimestampSchema.nullish(), sourceClient: z.string().nullish(),
+  sourceReferences: z.array(z.object({ kind: z.enum(["DIDDY", "MEMORY", "CONVERSATION"]), reference: z.string().max(1000) })).optional(),
   id: uuidSchema, createdAt: isoTimestampSchema, expiresAt: isoTimestampSchema,
 });
 export const listConversationSummariesSchema = z.object({
   alterId: uuidSchema.optional(),
   before: isoTimestampSchema.optional(),
   limit: z.number().int().min(1).max(50).default(20),
+}).strict();
+
+export const saveEpisodeReviewSchema = z.object({
+  version: z.literal(1), requestId: uuidSchema, catchUpSessionId: uuidSchema, alterId: uuidSchema,
+  expectedRevision: z.number().int().min(0), generatedAt: isoTimestampSchema,
+  sourceClient: z.string().trim().min(1).max(100), timeZone: ianaTimeZoneSchema,
+  overview: z.string().trim().min(1).max(6000), attentionNow: z.string().trim().min(1).max(6000),
+  significantChanges: z.string().trim().min(1).max(6000), coverage: z.string().trim().min(1).max(4000),
+  sourceReferences: z.array(z.object({ kind: z.enum(["DIDDY", "MEMORY", "CONVERSATION"]), reference: z.string().trim().min(1).max(1000) }).strict()).max(200),
 }).strict();

@@ -11,7 +11,7 @@ test("timeline shows intervals, filters dates and loads older records without wr
       : { data: [current], meta: { recordedOnly: true, nextCursor: { startedAt: current.startedAt, id: current.id, kind: "FRONTING" } } } });
   });
   await page.goto("/history");
-  await expect(page.getByRole("heading", { name: "Who was out when" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
   await expect(page.getByText("Fronting · no end recorded")).toBeVisible();
   await page.getByRole("button", { name: "Load older records" }).click();
   await expect(page.getByRole("heading", { name: "Test Finch" })).toBeVisible();

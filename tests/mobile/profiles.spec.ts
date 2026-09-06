@@ -19,7 +19,7 @@ test("profiles show the lineup before editing and save the chosen profile", asyn
   await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Test Finch", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "DIDdy navigation" }).getByRole("link", { name: "Profiles & Media" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "DIDdy navigation" }).getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
   await page.getByText("Manage Test Finch’s profile and pictures", { exact: true }).click();
   await page.getByRole("button", { name: "Edit Test Finch’s details" }).click();
   const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
@@ -43,7 +43,7 @@ test("unavailable profiles do not assert empty records and retry restores the li
   status = 200;
   await page.getByRole("button", { name: "Retry loading profiles" }).click();
   await expect(page.getByRole("heading", { name: "Profile lineup" })).toBeVisible();
-  await expect(page.getByText("No current front is recorded.", { exact: true })).toBeVisible();
+  await expect(page.getByText("No current front is recorded.", { exact: true })).toHaveCount(0);
 });
 
 

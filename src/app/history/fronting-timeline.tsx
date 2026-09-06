@@ -4,11 +4,17 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppNavigation } from "../app-navigation";
 import { frontingHistoryResponseSchema, type FrontingHistoryResponse } from "@/domain/fronting-history";
 
+function defaultRange() {
+  const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 6);
+  const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return { from: day(start), to: day(end) };
+}
+
 export function FrontingTimeline() {
   const [result, setResult] = useState<FrontingHistoryResponse | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [range, setRange] = useState({ from: "", to: "" });
+  const [range, setRange] = useState(defaultRange);
   const [zone, setZone] = useState("");
   const controller = useRef<AbortController | null>(null);
 
@@ -39,8 +45,9 @@ export function FrontingTimeline() {
   }
   useEffect(() => {
     // Bootstrap an abortable external read; subsequent state updates follow its response.
+    const dates = defaultRange();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load("", "");
+    void load(dates.from, dates.to);
     return () => controller.current?.abort();
   }, []);
   function filter(event: FormEvent<HTMLFormElement>) {
@@ -51,12 +58,12 @@ export function FrontingTimeline() {
   }
   const stamp = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   return <div className="command-app"><AppNavigation current="HISTORY" /><main className="fronting-history">
-    <h1>Who was out when</h1>
+    <h1>History</h1><p>Showing seven days by default. Choose broader dates below; this never limits a return catch-up.</p>
     <p>Hosting periods and fronting episodes, newest first. Times are shown in {zone || "your local timezone"}.</p>
     <p>Only confirmed records appear here. Gaps do not establish anyone’s absence.</p>
     <form onSubmit={filter} className="fronting-filters">
-      <label>From date<input type="date" name="from" /></label>
-      <label>Through date<input type="date" name="to" /></label>
+      <label>From date<input type="date" name="from" defaultValue={range.from} /></label>
+      <label>Through date<input type="date" name="to" defaultValue={range.to} /></label>
       <button type="submit" disabled={busy}>Show timeline</button>
     </form>
     <p className="fronting-help">Ask DIDdy: “Who was out yesterday?” or “When was [name] last out?”</p>

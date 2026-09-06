@@ -47,13 +47,13 @@ function PresenceCard({
       ) : null}
       <h3>{period.alterName}</h3>
       <p>Recorded since {new Date(period.startedAt).toLocaleString()}.</p>
-      <button
+      {period.kind === "FRONTING" ? <button
         className="command-button secondary"
         onClick={() => onChoose(period.id)}
       >
         Catch up for {period.alterName} ·{" "}
-        {period.kind === "HOSTING" ? "hosting" : "fronting"}
-      </button>
+        fronting
+      </button> : null}
     </article>
   );
 }
@@ -113,7 +113,7 @@ export function CurrentFrontSummary({
     >
       <div>
         <h2 id="presence-heading">Hosting and fronting</h2>
-        {session?<p>{session.firstTime?"First catch-up for this experience · addressed items plus urgent System-wide carryover":`Recorded catch-up window: ${session.windowStart?new Date(session.windowStart).toLocaleString():"First record"} to ${new Date(session.windowEnd).toLocaleString()}`}</p>:<p>Choose a recorded period to open catch-up.</p>}
+        {session?<p>{session.firstTime?"First catch-up for this experience · addressed items plus urgent System-wide carryover":`Recorded catch-up window: ${session.windowStart?new Date(session.windowStart).toLocaleString():"First record"} to ${new Date(session.windowEnd).toLocaleString()}`}</p>:<p>Catch-up is available for currently fronting people.</p>}
         <Link className="command-button secondary" href="/profiles">Profiles and pictures</Link>
         {error ? (
           <p role="alert">{error}</p>
@@ -137,7 +137,7 @@ export function CurrentFrontSummary({
               <p>No open fronting episodes are recorded.</p>
             )}
             <p>
-              Choose a period to open its catch-up. These records do not
+              Choose a current fronter to open their catch-up. These records do not
               establish anyone’s absence.
             </p>
           </>

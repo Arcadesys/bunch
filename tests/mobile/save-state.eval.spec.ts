@@ -11,7 +11,7 @@ test("@eval read states do not present an unverified front or empty private reco
   await page.getByRole("button", { name: "Retry catch-up" }).click();
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await expect(page.getByText("Catch-up · recorded window", { exact: true })).toBeVisible();
-  await expect(page.locator(".command-avatar")).toHaveText("TR");
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
 });
 
 test("@eval failed save keeps the entered draft and sends one write", async ({ page, harness }) => {

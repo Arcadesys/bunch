@@ -272,6 +272,7 @@ export const presencePeriod = pgTable("presence_period", {
 ]);
 
 export const catchUpSession = pgTable("catch_up_session", {
+  narrativeRevision: integer("narrative_revision").notNull().default(0),
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   frontingSessionId: uuid("fronting_session_id"),
@@ -354,13 +355,18 @@ export const conversationSummary = pgTable("conversation_summary", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   alterId: uuid("alter_id").notNull(),
-  startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  catchUpSessionId: uuid("catch_up_session_id"), revision: integer("revision"),
+  generatedAt: timestamp("generated_at", { withTimezone: true }), sourceClient: text("source_client"),
+  sourceReferences: jsonb("source_references").notNull().default(sql`'[]'::jsonb`),
   endAt: timestamp("end_at", { withTimezone: true }).notNull(),
   timeZone: text("time_zone").notNull(), summary: text("summary").notNull(), coverage: text("coverage").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().default(sql`now() + interval '720 hours'`),
 }, t => [
   foreignKey({ columns: [t.ownerId, t.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.ownerId, t.catchUpSessionId], foreignColumns: [catchUpSession.ownerId, catchUpSession.id] }).onDelete("cascade"),
+  uniqueIndex("conversation_summary_session_revision").on(t.ownerId, t.catchUpSessionId, t.revision),
   index("conversation_summary_owner_created").on(t.ownerId, t.createdAt.desc()),
   index("conversation_summary_expiry").on(t.expiresAt),
   check("conversation_summary_window", sql`${t.endAt} >= ${t.startAt}`),

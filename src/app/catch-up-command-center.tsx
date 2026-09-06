@@ -6,6 +6,7 @@ import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/c
 import { AppNavigation } from "./app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import { CurrentFrontSummary } from "./current-front-summary";
+import { SavedReturnReview } from "./saved-return-review";
 import { FrontSwitchPanel } from "./front-switch-panel";
 
 export type CommandView = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY";
@@ -54,11 +55,6 @@ async function requestCatchUp(periodId?: string) {
 }
 
 type CatchUpLoadState = "loading" | "ready" | "unauthorized" | "error";
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
-}
 
 export function CatchUpCommandCenter({ initialView = "CATCH_UP" }: { initialView?: CommandView }) {
   if (initialView === "BOARD" || initialView === "NOTES" || initialView === "THREADS") return <SavedRecords key={initialView} view={initialView} />;
@@ -123,8 +119,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
   const presenceChanged = (periodId?: string) => {
     setFrontRefresh(v => v + 1);
     selectedPeriod.current = periodId;
-    if (periodId) void loadCatchUp(periodId);
-    else setCatchUpFromServer(null);
+    void loadCatchUp(periodId);
   };
 
   const primaryItems = useMemo(() => {
@@ -159,13 +154,16 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     <AppNavigation current={initialView} />
     <section className="command-main">
       <section className="command-hero" aria-labelledby="welcome-heading">
-        <div className="command-avatar" aria-hidden="true">{session && loadState === "ready" ? initials(session.alterName) : "?"}</div>
-        <div><p className="command-kicker">{loadState === "ready" && session ? "Catch-up · recorded window" : loadState === "ready" ? "Catch-up · choose a period" : loadState === "loading" ? "Catch-up · loading" : "Catch-up unavailable"}</p><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "ready" ? "No catch-up is open" : loadState === "loading" ? "Loading catch-up" : loadState === "unauthorized" ? "Sign in to view your catch-up" : "Catch-up could not be read"}</h1><CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} /></div>
+
+        <div><p className="command-kicker">{loadState === "ready" && session ? "Catch-up · recorded window" : loadState === "ready" ? "Catch-up · record an arrival" : loadState === "loading" ? "Catch-up · loading" : "Catch-up unavailable"}</p><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "ready" ? "Who is fronting?" : loadState === "loading" ? "Loading catch-up" : loadState === "unauthorized" ? "Sign in to view your catch-up" : "Catch-up could not be read"}</h1>{session && <p className="command-window">{session.windowStart ? `Since ${formatTimestamp(session.windowStart)}` : "Previous fronting end unknown · available history"} → {formatTimestamp(session.windowEnd)}</p>}</div>
         {loadState === "ready" && session ? <div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div> : null}
       </section>
       <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
+      <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
+      {loadState === "ready" && !session ? <p>No current fronter is recorded. Use the explicit fronting action below to record an arrival.</p> : null}
       {loadState === "error" ? <button className="command-button" type="button" onClick={() => { void loadCatchUp(); }}>Retry catch-up</button> : null}
       {loadState === "ready" && session ? (initialView === "HISTORY" ? <SwitchTimeline session={session} /> : <>
+        <SavedReturnReview key={session.id} sessionId={session.id} />
         <section className="command-section" aria-labelledby="view-heading"><div className="command-section-heading"><div><h2 id="view-heading">{title}</h2>{initialView !== "CATCH_UP" ? <p>{description}</p> : null}</div><span className="command-count">{primaryItems.length} item{primaryItems.length === 1 ? "" : "s"}</span></div>
           <div className="command-items">{primaryItems.length ? primaryItems.map((item) => <CatchUpRow key={item.entryId} item={item} disabled={isPending} onState={setReviewState} />) : <p className="command-empty">Nothing in this view needs your eyes.</p>}</div>
         </section>
@@ -243,7 +241,7 @@ function CatchUpRow({ item, disabled, onState }: { item: CatchUpItem; disabled: 
     <div className={`command-type type-${item.itemType.toLowerCase()}`}><Icon name={item.itemType === "TODO" ? "board" : item.itemType === "NOTE" ? "note" : item.itemType === "THREAD" ? "thread" : "history"} /><span>{item.itemType === "THREAD" && item.threadSource ? item.threadSource : item.itemType}</span></div>
     <div className="command-row-content"><h3>{item.title}</h3><p className="command-row-meta">From {item.fromLabel} · To {item.toLabel} · {formatTimestamp(item.timestamp)}</p>{item.statusLabel || item.dueOn ? <p className="command-row-status">{item.statusLabel}{item.dueOn ? ` · Due ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${item.dueOn}T12:00:00`))}` : ""}</p> : null}<p className="command-why">{item.whyItMatters}</p><p className="command-next"><strong>Next:</strong> {item.nextAction}</p>{item.threadUrl ? <a className="command-thread-link" href={item.threadUrl} target="_blank" rel="noreferrer">Open approved thread link <Icon name="arrow" /></a> : null}<p className="command-state">{reviewLabels[item.reviewState]}{item.deferUntilNextSwitch ? " · Returns at next recorded period" : item.deferUntil ? ` · Returns ${formatTimestamp(item.deferUntil)}` : ""}</p>
       {showDefer ? <div className="command-defer"><label>Return time<select value={choice} onChange={(event) => setChoice(event.target.value)}><option value="TODAY">Later today</option><option value="TOMORROW">Tomorrow</option><option value="NEXT_SWITCH">Next recorded period</option><option value="CUSTOM">Custom</option></select></label>{choice === "CUSTOM" ? <label>Custom time<input type="datetime-local" value={custom} onChange={(event) => setCustom(event.target.value)} /></label> : null}<button className="command-button" disabled={disabled} onClick={() => onState(item, "DEFERRED", { choice, custom })}>Confirm defer</button></div> : null}
-      <p>Reviewing this item does not complete or change the original record.</p><div className="command-row-actions"><button className="command-button" disabled={disabled} onClick={() => onState(item, "ACKNOWLEDGED")}>Mark reviewed</button><button className="command-button secondary" disabled={disabled} onClick={() => setShowDefer((value) => !value)}>Review later</button></div>
+      <Link href={`${item.itemType === "NOTE" ? "/notes" : item.itemType === "TODO" ? "/board" : item.itemType === "THREAD" ? "/threads" : "/decisions"}#record-${item.itemId}`}>Open record</Link><p>Reviewing this item does not complete or change the original record.</p><div className="command-row-actions"><button className="command-button" disabled={disabled} onClick={() => onState(item, "ACKNOWLEDGED")}>Mark reviewed</button><button className="command-button secondary" disabled={disabled} onClick={() => setShowDefer((value) => !value)}>Review later</button></div>
     </div>
   </article>;
 }
@@ -292,7 +290,17 @@ function SavedRecords({ view }: { view: RecordView }) {
   useEffect(() => {
     let active = true;
     const current = ++generation.current;
-    readPage<SavedRecord>(recordEndpoints[view]).then((page) => {
+    readPage<SavedRecord>(recordEndpoints[view]).then(async (page) => {
+      const target = window.location.hash.startsWith("#record-") ? window.location.hash.slice(8) : undefined;
+      const collected = [...page.data];
+      let next = page.meta.nextCursor;
+      const seen = new Set<string>();
+      while (active && current === generation.current && target && !collected.some(record => record.id === target) && next && !seen.has(next)) {
+        seen.add(next);
+        const more = await readPage<SavedRecord>(`${recordEndpoints[view]}?cursor=${encodeURIComponent(next)}`);
+        collected.push(...more.data); next = more.meta.nextCursor;
+      }
+      page = { data: collected, meta: { nextCursor: next } };
       if (!active || current !== generation.current) return;
       setRecords(page.data); setCursor(page.meta.nextCursor); setState("ready"); setRefreshing(false);
     }).catch((error: unknown) => {
@@ -318,6 +326,10 @@ function SavedRecords({ view }: { view: RecordView }) {
     void loadProfiles().catch(() => { if (active) setProfileError("Profiles could not be loaded. Retry to choose recipients and create a record."); });
     return () => { active = false; };
   }, [refresh]);
+
+  useEffect(() => {
+    if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }, [records]);
 
   async function loadMore() {
     if (!cursor || mutation.current || refreshing) return;
@@ -358,7 +370,7 @@ function SavedRecords({ view }: { view: RecordView }) {
       <section className="command-section" aria-label={`Saved ${recordTitles[view]}`}>
         <h2>Saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</h2><button className="command-button secondary" disabled={busy || refreshing} onClick={refreshRecords}>{refreshing ? "Refreshing records…" : "Refresh records"}</button>
         {!records.length ? <p className="command-empty">No saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"} yet.</p> : null}
-        <div className="command-items">{records.map((record) => <article className="command-row" key={record.id}><div className="command-row-content">
+        <div className="command-items">{records.map((record) => <article className="command-row" id={`record-${record.id}`} key={record.id}><div className="command-row-content">
           {"body" in record ? <><h3>Note for {record.alterName ?? (record.alterId ? "a linked profile" : "System-wide")}</h3><p style={{ whiteSpace: "pre-wrap" }}>{record.body}</p>{record.actorAlterName ? <p>From {record.actorAlterName}</p> : null}</> : "assigneeAlterIds" in record ? <><h3>{record.title}</h3><p>{record.status.toLowerCase().replaceAll("_", " ")} · {record.priority?.toLowerCase() ?? "normal"} priority</p>{record.details ? <p style={{ whiteSpace: "pre-wrap" }}>{record.details}</p> : null}<p>Assigned to: {record.assigneeAlterIds.length ? record.assigneeAlterIds.map((id) => profiles.find((profile) => profile.id === id)?.name ?? "Linked profile").join(", ") : "System-wide"}</p>{record.dueOn ? <p>Due {record.dueOn}</p> : null}<button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(record)}>{record.status === "DONE" ? "Reopen todo" : "Mark todo complete"}</button></> : <><h3>{record.title}</h3><p>{record.status === "CONFIRMED" ? "Confirmed for catch-up" : "Suggestion — not yet confirmed"}</p><p>{record.approvedSummary}</p><p><strong>Decision or action:</strong> {record.keyDecisionOrAction}</p><p>For {record.recipients?.length ? record.recipients.join(", ") : "System-wide"}</p><a href={record.url} target="_blank" rel="noreferrer">Open thread</a>{record.status === "SUGGESTED" ? <p><button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(record)}>Confirm this summary and action</button></p> : null}</>}
           <p className="command-row-meta">Updated {formatTimestamp(record.updatedAt)}</p>
         </div></article>)}</div>

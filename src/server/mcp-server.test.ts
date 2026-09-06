@@ -12,6 +12,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const catchUp = new CatchUpService({} as never);
   catchUp.openForPresence = async () => null;
+  catchUp.openForCurrentFronter = async () => null;
   const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);

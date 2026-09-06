@@ -58,9 +58,10 @@ test("navigation opens saved records and identifies the active page", async ({ p
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "DIDdy navigation" });
   for (const [label, path, type] of [["Board", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
-    await nav.getByRole("link", { name: label, exact: true }).click();
+    await nav.getByRole("link", { name: "Options", exact: true }).click();
+    await page.getByRole("link").filter({ has: page.getByRole("heading", { name: label, exact: true }) }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await expect(nav.getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link", { name: "Options", exact: true })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("article")).toHaveCount(1);
     await expect(page.getByRole("article")).toContainText(`Fixture ${type}`);
   }
