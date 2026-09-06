@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
 
-type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number };
+type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number; requestId?: string; generatedResult?: true };
 type ImageReadClaims = { sub: string; imageId: string; scope: "image:read"; exp: number };
 export const COMPANION_SCOPE = "system:companion";
 export const COMPANION_OAUTH_SCOPES = [COMPANION_SCOPE, "openid", "profile", "email", "offline_access"] as const;
@@ -102,12 +102,25 @@ export function issueImageUploadCapability(ownerId: string, alterId: string) {
   return signClaims({ sub: ownerId, alterId, scope: "image:write", exp: Math.floor(Date.now() / 1000) + 60 });
 }
 
+// A generated keeper is a distinct write from an ordinary gallery upload. Bind
+// its short-lived bearer capability to the receipt request ID so the endpoint
+// cannot accidentally treat a retry as a new gallery item.
+export function issueFurryResultUploadCapability(ownerId: string, alterId: string, requestId: string) {
+  return signClaims({ sub: ownerId, alterId, requestId, generatedResult: true, scope: "image:write", exp: Math.floor(Date.now() / 1000) + 60 });
+}
+
 export function requireImageUploadCapability(request: Request) {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) throw new Error("A valid image upload capability is required.");
   const claims = verifiedClaims<ImageUploadClaims>(authorization.slice(7));
   if (!claims.sub || !claims.alterId || claims.scope !== "image:write") throw new Error("A valid image upload capability is required.");
   return claims;
+}
+
+export function requireFurryResultUploadCapability(request: Request) {
+  const claims = requireImageUploadCapability(request);
+  if (!claims.generatedResult || !claims.requestId) throw new Error("A valid generated-result capability is required.");
+  return claims as ImageUploadClaims & { requestId: string; generatedResult: true };
 }
 
 // Widget-only image URLs need a capability because the ChatGPT iframe does not

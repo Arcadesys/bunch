@@ -666,6 +666,35 @@ export class SystemService {
     });
   }
 
+  async saveGeneratedGalleryResult(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, input: { requestId: string; contentHash: string }, source: RecordSource) {
+    const operation = `save_furry_result:${alterId}`;
+    const prior = await this.findGeneratedGalleryResult(ownerId, alterId, input.requestId, input.contentHash);
+    if (prior) return { data: prior, replayed: true };
+    const result = await this.mutate(ownerId, input.requestId, operation, async (client) => {
+      await this.alterById(client, ownerId, alterId, false);
+      await client.query(`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
+        values ($1::uuid, $2, $3::uuid, $4, $5)`, [image.id, ownerId, alterId, image.storageKey, image.contentType]);
+      await this.activity(client, ownerId, "ALTER", alterId, "GENERATED_IMAGE_SAVED", source, ["images"], input.requestId);
+      return { imageId: image.id, alterId, contentHash: input.contentHash, profilePictureChanged: false as const };
+    });
+    if (result.replayed && (result.data.alterId !== alterId || result.data.contentHash !== input.contentHash)) {
+      throw new SystemError("CONFLICT", "This generated-result request was already used for different image bytes.");
+    }
+    return result;
+  }
+
+  async findGeneratedGalleryResult(ownerId: string, alterId: string, requestId: string, contentHash: string) {
+    const operation = `save_furry_result:${alterId}`;
+    const result = await this.pool.query<{ operation: string; result: { imageId: string; alterId: string; contentHash: string; profilePictureChanged: boolean } }>(
+      "select operation, result from mutation_receipt where owner_id = $1 and request_id = $2::uuid", [ownerId, requestId],
+    );
+    if (!result.rows[0]) return null;
+    if (result.rows[0].operation !== operation) throw new SystemError("CONFLICT", "This generated-result requestId was already used for a different operation.");
+    const receipt = result.rows[0].result;
+    if (receipt.alterId !== alterId || receipt.contentHash !== contentHash) throw new SystemError("CONFLICT", "This generated-result request was already used for different image bytes.");
+    return receipt;
+  }
+
   private async promoteProfilePicture(client: PoolClient, ownerId: string, alterId: string, imageId: string, expectedVersion: number, requestId: string, source: RecordSource) {
     await client.query("select 1 from alter_profile where owner_id = $1 and id = $2::uuid for update", [ownerId, alterId]);
     const current = await this.alterById(client, ownerId, alterId, false);
