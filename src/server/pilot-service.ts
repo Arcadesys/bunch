@@ -34,6 +34,7 @@ const unavailable = () =>
     "This account does not have active DIDdy access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "conversation_summary",
   "catch_up_entry",
   "catch_up_session",
   "important_thread_recipient",
@@ -243,7 +244,7 @@ export class PilotService {
       for (const table of OWNER_TABLES) {
         if (table === "mutation_receipt") continue; // Internal retry payloads are not user records.
         const rows = (
-          await c.query(`select * from ${table} where owner_id=$1`, [ownerId])
+          await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;
         data[table] = rows.map((row) => {
           const clean = { ...row };

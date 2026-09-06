@@ -349,3 +349,22 @@ export const pilotUpload=pgTable("pilot_upload",{
   storageKey:text("storage_key").primaryKey(),ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bytes:bigint("bytes",{mode:"number"}).notNull(),state:text("state").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[index("pilot_upload_owner").on(t.ownerId)]);
 export const pilotRate=pgTable("pilot_rate",{ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bucket:text("bucket").notNull(),windowStart:timestamp("window_start",{withTimezone:true}).notNull(),count:integer("count").notNull()},t=>[primaryKey({columns:[t.ownerId,t.bucket]})]);
+
+export const conversationSummary = pgTable("conversation_summary", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id").notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+  endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+  timeZone: text("time_zone").notNull(), summary: text("summary").notNull(), coverage: text("coverage").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().default(sql`now() + interval '720 hours'`),
+}, t => [
+  foreignKey({ columns: [t.ownerId, t.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id] }).onDelete("cascade"),
+  index("conversation_summary_owner_created").on(t.ownerId, t.createdAt.desc()),
+  index("conversation_summary_expiry").on(t.expiresAt),
+  check("conversation_summary_window", sql`${t.endAt} >= ${t.startAt}`),
+  check("conversation_summary_retention", sql`${t.expiresAt} = ${t.createdAt} + interval '720 hours'`),
+  check("conversation_summary_body_length", sql`char_length(${t.summary}) between 1 and 20000`),
+  check("conversation_summary_coverage_length", sql`char_length(${t.coverage}) between 1 and 4000`),
+]);

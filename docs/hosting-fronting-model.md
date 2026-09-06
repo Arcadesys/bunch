@@ -74,7 +74,7 @@ A confirmed arrival through DIDdy now directs ChatGPT to prepare and generate a 
 
 The handoff returns `elapsedSeconds`, calculated from the recorded instants. Exact period/session IDs preserve the arrival cutoff even after that period ends. Missing prior history returns `NEEDS_DATES`. Host reaffirmations, clearing hosting, episode ends, and completed retries do not request another summary.
 
-ChatGPT must read available messages, report topics, decisions, open matters and coverage gaps, and show the window and duration. DIDdy does not receive ChatGPT history or persist generated summaries. This is a ChatGPT MCP follow-up; a website mutation cannot independently start a ChatGPT conversation. Runtime history retrieval and generation depend on the connected host's capabilities.
+ChatGPT must read available messages, report topics, decisions, open matters and coverage gaps, and show the window and duration. DIDdy does not automatically receive ChatGPT history. Once the host generates a grounded summary, it saves that synthesis with its window and coverage gaps for 30 days using `save_conversation_catch_up`; raw transcripts remain prohibited. This is a ChatGPT MCP follow-up; a website mutation cannot independently start a ChatGPT conversation. Runtime history retrieval and generation depend on the connected host's capabilities.
 
 Verification for this follow-up: duration and DST checks, pinned source selection, mutation follow-up instructions, retry/clear exclusions, and database-backed hosting timestamp matching. No additional migration or production record change is needed.
 

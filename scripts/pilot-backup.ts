@@ -96,6 +96,7 @@ async function main() {
           "pg_dump",
           [
             "--format=custom",
+            "--exclude-table-data=*.conversation_summary",
             "--no-owner",
             `--snapshot=${snapshot}`,
             `--file=${join(stage, "database.dump")}`,

@@ -42,6 +42,9 @@ test("@eval friend accepts privacy and invitation without recording any front", 
   await expect(
     page.getByRole("heading", { name: "Join the DIDdy friends pilot" }),
   ).toBeVisible();
+  await page.getByText("How catch-up and deletion work", { exact: true }).click();
+  await expect(page.getByText(/Generated catch-up summaries are saved privately for 30 days/)).toBeVisible();
+  await page.getByText("How catch-up and deletion work", { exact: true }).click();
   await page.getByLabel("Invitation code").fill("a".repeat(43));
   await page.getByLabel("System display name").fill("Fixture system");
   await page.getByRole("button", { name: "Accept invitation" }).click();

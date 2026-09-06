@@ -1,3 +1,4 @@
+import { ConversationSummaryService } from "../src/server/conversation-summary-service";
 import "dotenv/config";
 import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
@@ -153,6 +154,8 @@ async function main() {
         }
       }
       console.log(`Reconciled ${rows.length} expired reservations.`);
+    } else if (command === "purge-summaries") {
+      console.log(`Purged ${await new ConversationSummaryService(pool).purgeExpired()} expired summaries.`);
     } else if (command === "retry-deletions") {
       const rows = (
         await pool.query(
@@ -166,7 +169,7 @@ async function main() {
       console.log(`Attempted ${rows.length} pending deletions.`);
     } else
       throw new Error(
-        "Usage: pilot-admin.ts status | enroll-operator OWNER | lock-gate | open EVIDENCE.json | invite EMAIL | revoke-invite UUID | revoke OWNER | freeze | pause | reconcile-uploads | retry-deletions",
+        "Usage: pilot-admin.ts status | enroll-operator OWNER | lock-gate | open EVIDENCE.json | invite EMAIL | revoke-invite UUID | revoke OWNER | freeze | pause | reconcile-uploads | retry-deletions | purge-summaries",
       );
   } finally {
     await pool.end();
