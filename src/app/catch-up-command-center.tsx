@@ -159,8 +159,9 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
         {loadState === "ready" && session ? <div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div> : null}
       </section>
       <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
+      <FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} />
       <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
-      {loadState === "ready" && !session ? <p>No current fronter is recorded. Use the explicit fronting action below to record an arrival.</p> : null}
+      {loadState === "ready" && !session ? <p>No current fronter is recorded. Use Update hosting or fronting to record an arrival.</p> : null}
       {loadState === "error" ? <button className="command-button" type="button" onClick={() => { void loadCatchUp(); }}>Retry catch-up</button> : null}
       {loadState === "ready" && session ? (initialView === "HISTORY" ? <SwitchTimeline session={session} /> : <>
         <SavedReturnReview key={session.id} sessionId={session.id} />
@@ -171,7 +172,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
         {initialView === "CATCH_UP" ? <SwitchTimeline session={session} compact /> : null}
       </>) : null}
     </section>
-    <aside className="command-actions" aria-labelledby="actions-heading"><h2 id="actions-heading">Quick actions</h2><Link href="/notes" className="command-action"><Icon name="note" /><span><strong>Leave a note</strong><small>For an alter or System-wide</small></span><Icon name="arrow" /></Link><Link href="/board" className="command-action"><Icon name="board" /><span><strong>Add a todo</strong><small>Assign it and set urgency</small></span><Icon name="arrow" /></Link><Link href="/threads" className="command-action"><Icon name="thread" /><span><strong>Save current thread</strong><small>Review before confirmation</small></span><Icon name="arrow" /></Link><FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} /></aside>
+    <aside className="command-actions" aria-labelledby="actions-heading"><h2 id="actions-heading">Quick actions</h2><Link href="/notes" className="command-action"><Icon name="note" /><span><strong>Leave a note</strong><small>For an alter or System-wide</small></span><Icon name="arrow" /></Link><Link href="/board" className="command-action"><Icon name="board" /><span><strong>Add a todo</strong><small>Assign it and set urgency</small></span><Icon name="arrow" /></Link><Link href="/threads" className="command-action"><Icon name="thread" /><span><strong>Save current thread</strong><small>Review before confirmation</small></span><Icon name="arrow" /></Link></aside>
   </main>;
 }
 

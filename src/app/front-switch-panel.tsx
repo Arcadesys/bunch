@@ -17,7 +17,6 @@ async function read<T>(
   const response = await fetch(url, {
     cache: "no-store",
     signal,
-    headers: { "x-system-demo": "local" },
   });
   const payload = await response.json();
   if (!response.ok)
@@ -55,6 +54,8 @@ export function FrontSwitchPanel({
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false);
+  const saved = useRef<{ action: Action; periodId?: string } | null>(null);
+  const [needsRead, setNeedsRead] = useState(false);
   const [uncertain, setUncertain] = useState(false),
     [reload, setReload] = useState(0);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -104,6 +105,44 @@ export function FrontSwitchPanel({
   function close() {
     restoreFocus.current = true;
     setOpen(false);
+  }
+  async function refreshSaved() {
+    const confirmed = saved.current;
+    if (!confirmed) return;
+    setMessage("Change saved. Reading current hosting and fronting…");
+    try {
+      const signal = AbortSignal.timeout(15_000);
+      const [h, p] = await Promise.all([
+        read<SystemHostView | null>("/api/v1/hosting/current", signal),
+        read<typeof presence>("/api/v1/presence/current", signal),
+      ]);
+      setHost(h.data);
+      setPresence(p.data);
+      saved.current = null;
+      setNeedsRead(false);
+      onConfirmed(confirmed.periodId);
+      onNotice(
+        confirmed.action === "HOST"
+          ? "Hosting recorded. Fronting episodes continue independently."
+          : confirmed.action === "CLEAR"
+            ? "Hosting ended. Fronting episodes continue independently."
+            : confirmed.action === "START"
+              ? "Fronting episode recorded. Hosting is unchanged."
+              : "Fronting episode ended. Hosting and other episodes are unchanged.",
+      );
+      close();
+    } catch {
+      setNeedsRead(true);
+      setReady(false);
+      setMessage("Your change was saved, but current records could not be read. Retry reading records; this will not save the change again.");
+    }
+  }
+  async function retryRead() {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    try { await refreshSaved(); }
+    finally { submitting.current = false; setBusy(false); }
   }
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,20 +199,12 @@ export function FrontSwitchPanel({
       }
       attempt.current = null;
       setUncertain(false);
-      // Catch-up reads are separate: a read failure must never replay this write.
-      let periodId: string | undefined;
-      if (pending.action === "START") periodId = payload.data.id;
-      onConfirmed(periodId);
-      onNotice(
-        pending.action === "HOST"
-          ? "Hosting recorded. Fronting episodes continue independently."
-          : pending.action === "CLEAR"
-            ? "Hosting ended. Fronting episodes continue independently."
-            : pending.action === "START"
-              ? "Fronting episode recorded. Hosting is unchanged."
-              : "Fronting episode ended. Hosting and other episodes are unchanged.",
-      );
-      close();
+      // A confirmed save is never replayed when its follow-up read fails.
+      saved.current = {
+        action: pending.action,
+        periodId: pending.action === "START" ? payload.data.id : undefined,
+      };
+      await refreshSaved();
     } catch {
       setUncertain(true);
       setMessage(
@@ -197,6 +228,7 @@ export function FrontSwitchPanel({
         onClick={() => {
           setReady(false);
           setSelected("");
+          setAction("START");
           setMessage("Loading recorded hosting and fronting…");
           setOpen(true);
         }}
@@ -214,6 +246,12 @@ export function FrontSwitchPanel({
           </h2>
           <p role="status">{message}</p>
           {ready ? (
+            <div role="group" aria-label="Current recorded state">
+              <p><strong>Current host:</strong> {host?.alterName ?? "Not recorded"}</p>
+              <p><strong>Active fronting:</strong> {presence.fronting.length ? presence.fronting.map(p => p.alterName).join(", ") : "No open episodes recorded"}</p>
+            </div>
+          ) : null}
+          {ready ? (
             <form className="form-stack" onSubmit={confirm}>
               <label>
                 Experience change
@@ -227,7 +265,7 @@ export function FrontSwitchPanel({
                 >
                   <option value="START">Start fronting episode</option>
                   <option value="END">End fronting episode</option>
-                  <option value="HOST">Start hosting</option>
+                  <option value="HOST">Set or change host</option>
                   <option value="CLEAR">End hosting</option>
                 </select>
               </label>
@@ -272,15 +310,16 @@ export function FrontSwitchPanel({
           ) : (
             <button
               className="command-button secondary"
-              onClick={() => setReload((v) => v + 1)}
+              disabled={busy}
+              onClick={() => needsRead ? void retryRead() : setReload((v) => v + 1)}
             >
-              Reload hosting and fronting
+              {needsRead ? "Retry reading saved records" : "Reload hosting and fronting"}
             </button>
           )}
           <button
             className="command-button secondary"
             onClick={close}
-            disabled={busy || uncertain}
+            disabled={busy || uncertain || needsRead}
           >
             Cancel
           </button>

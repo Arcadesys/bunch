@@ -241,3 +241,50 @@ test("@eval late initial catch-up cannot undo selected episode", async ({
     page.getByRole("heading", { name: "Catch-up for Test Finch" }),
   ).toBeVisible();
 });
+
+test("@eval controls are reachable before catch-up items and show both records", async ({ page, harness }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
+  await page.goto("/");
+  await expect(page).toHaveURL("http://127.0.0.1:3217/");
+  await expect(page).toHaveTitle(/your private companion/);
+  const trigger = page.getByRole("button", { name: "Update hosting or fronting", exact: true });
+  await expect(trigger).toBeInViewport();
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Experience change")).toBeVisible();
+  await expect(page.getByLabel("Current recorded state")).toContainText("Current host: Not recorded");
+  await expect(page.getByLabel("Current recorded state")).toContainText("Active fronting: Test Robin");
+  expect(harness.writes).toHaveLength(0);
+  await page.getByRole("heading", { name: "Confirm hosting or fronting" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("web-presence-controls.png"), fullPage: false });
+  expect(errors).toEqual([]);
+});
+
+test("@eval saved change with failed reread retries reads without another mutation", async ({ page, harness }) => {
+  await page.goto("/");
+  await open(page);
+  await page.getByLabel("Profile", { exact: true }).selectOption(harness.profiles[1].id);
+  let failRead = true;
+  let reads = 0;
+  await page.route("**/api/v1/presence/current", async route => {
+    reads += 1;
+    if (failRead) await route.fulfill({ status: 503, json: { error: { message: "Temporary read failure" } } });
+    else await route.fallback();
+  });
+  await page.getByRole("button", { name: "Confirm change", exact: true }).click();
+  await expect(page.getByText(/Your change was saved, but current records could not be read/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  expect(harness.writes).toHaveLength(1);
+  expect(harness.presence.fronting).toHaveLength(2);
+  failRead = false;
+  await page.getByRole("button", { name: "Retry reading saved records" }).click();
+  await expect(page.getByRole("heading", { name: "Catch-up for Test Finch" })).toBeVisible();
+  expect(reads).toBeGreaterThanOrEqual(2);
+  expect(harness.writes).toHaveLength(1);
+  await page.reload();
+  await open(page);
+  await expect(page.getByLabel("Current recorded state")).toContainText("Test Finch");
+  expect(harness.writes).toHaveLength(1);
+});
