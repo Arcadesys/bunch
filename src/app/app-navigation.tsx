@@ -3,7 +3,7 @@ import Image from "next/image";
 
 type AppPage = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY" | "PROFILES" | "GALLERY" | "OPTIONS";
 const destinations: { href: string; label: string; page: AppPage }[] = [
-  { href: "/", label: "Catch-up", page: "CATCH_UP" },
+  { href: "/", label: "Home", page: "CATCH_UP" },
   { href: "/history", label: "History", page: "HISTORY" },
   { href: "/profiles", label: "People", page: "PROFILES" },
   { href: "/options", label: "Options", page: "OPTIONS" },

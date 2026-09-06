@@ -57,7 +57,7 @@ test("stale write is announced without false success or optimistic state", async
 test("navigation opens saved records and identifies the active page", async ({ page }) => {
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Bunch navigation" });
-  for (const [label, path, type] of [["Board", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
+  for (const [label, path, type] of [["Todos", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
     await nav.getByRole("link", { name: "Options", exact: true }).click();
     await page.getByRole("link").filter({ has: page.getByRole("heading", { name: label, exact: true }) }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));

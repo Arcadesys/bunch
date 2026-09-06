@@ -249,6 +249,9 @@ test("@eval controls are reachable before catch-up items and show both records",
   await page.goto("/");
   await expect(page).toHaveURL("http://127.0.0.1:3217/");
   await expect(page).toHaveTitle(/your private companion/);
+  const shortcut = page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Hosting & fronting" });
+  await expect(shortcut).toBeInViewport();
+  await shortcut.click();
   const trigger = page.getByRole("button", { name: "Update hosting or fronting", exact: true });
   await expect(trigger).toBeInViewport();
   await trigger.focus();

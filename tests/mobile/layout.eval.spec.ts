@@ -8,7 +8,7 @@ test("@eval compact phone header keeps navigation and recipient in the first scr
   const nav = page.getByRole("navigation", { name: "Bunch navigation" });
   const heading = page.getByRole("heading", { name: "Catch-up for Test Robin", exact: true });
   await expect(appearance).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Catch-up", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Home", exact: true })).toBeVisible();
   await expect(heading).toBeVisible();
 
   const firstScreen = await Promise.all([appearance, heading, ...(await nav.getByRole("link").all())].map((locator) => locator.boundingBox()));

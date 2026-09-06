@@ -7,7 +7,7 @@ export default function OptionsPage() {
       ["/install", "Install on your phone", "Add Bunch to your home screen. iPhone and Android instructions."],
       ["/account", "Account & privacy", "Privacy, retention, and account controls."],
       ["/connect", "Connect clients", "Connect ChatGPT and other companions."],
-      ["/board", "Board", "Assigned and System-wide todos."],
+      ["/board", "Todos", "Assigned and System-wide todos."],
       ["/notes", "Notes", "Messages for a person or the System."],
       ["/threads", "Threads", "Saved links and approved summaries."],
       ["/decisions", "Decisions", "Recorded decisions and next actions."],
