@@ -6,7 +6,7 @@ import Image from "next/image";
 type ImageRecord = {
   id: string;
   contentType: string;
-  role: "profile-picture" | "gallery";
+  role: "profile" | "image";
   order: number;
 };
 type Alter = {
@@ -85,12 +85,12 @@ export function SharedGallery({ token }: { token: string }) {
       </nav>}
       {selected && <section className="shared-gallery-person" aria-labelledby="selected-person">
         <h2 id="selected-person">{selected.name}</h2>
-        {selected.images.filter((image) => image.role === "profile-picture").map((image) => <section key={image.id} aria-labelledby="profile-picture-heading">
+        {selected.images.filter((image) => image.role === "profile").map((image) => <section key={image.id} aria-labelledby="profile-picture-heading">
           <h3 id="profile-picture-heading">Profile picture</h3>
           <GalleryImage token={token} image={image} alt={`Profile picture for ${selected.name}`} onOpen={() => setOpenImage({ id: image.id, alt: `Profile picture for ${selected.name}` })} />
         </section>)}
         <h3>All pictures</h3>
-        {selected.images.filter((image) => image.role === "gallery").length ? <div className="shared-gallery-grid">{[...selected.images].filter((image) => image.role === "gallery").sort((a, b) => a.order - b.order).map((image, index) => <GalleryImage key={image.id} token={token} image={image} alt={`Picture ${index + 1} for ${selected.name}`} onOpen={() => setOpenImage({ id: image.id, alt: `Picture ${index + 1} for ${selected.name}` })} />)}</div> : <p className="empty-picture">No gallery pictures were shared for {selected.name}.</p>}
+        {selected.images.length ? <div className="shared-gallery-grid">{[...selected.images].sort((a, b) => a.order - b.order).map((image, index) => <GalleryImage key={image.id} token={token} image={image} alt={`Picture ${index + 1} for ${selected.name}`} onOpen={() => setOpenImage({ id: image.id, alt: `Picture ${index + 1} for ${selected.name}` })} />)}</div> : <p className="empty-picture">No gallery pictures were shared for {selected.name}.</p>}
       </section>}
       {(gallery.generalImages?.length ?? 0) > 0 && <section className="shared-gallery-person" aria-labelledby="general-gallery-heading">
         <h2 id="general-gallery-heading">General gallery</h2>

@@ -25,8 +25,8 @@ test("gallery shares store only a hash and build a narrow retained gallery", asy
   const gallery = await service.publicGallery(created.token);
   assert.deepEqual(gallery, {
     alters: [
-      { name: "Same name", images: [{ id: "image-1", contentType: "image/png", role: "profile", order: 0 }] },
-      { name: "Same name", images: [{ id: "image-2", contentType: "image/webp", role: "image", order: 0 }] },
+      { id: "first", name: "Same name", images: [{ id: "image-1", contentType: "image/png", role: "profile", order: 0 }] },
+      { id: "second", name: "Same name", images: [{ id: "image-2", contentType: "image/webp", role: "image", order: 0 }] },
     ],
     generalImages: [{ id: "general-1", contentType: "image/jpeg", role: "image", order: 0 }],
   });

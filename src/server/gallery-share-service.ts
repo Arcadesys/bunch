@@ -14,7 +14,9 @@ const lifetimeMilliseconds = {
 export type GalleryShareLifetime = keyof typeof lifetimeMilliseconds;
 export type GalleryShare = { id: string; expiresAt: string | null; revokedAt: string | null; createdAt: string };
 export type PublicGallery = {
-  alters: Array<{ name: string; images: Array<{ id: string; contentType: string; role: "profile" | "image"; order: number }> }>;
+  // This ID distinguishes people with the same displayed name. It is not an
+  // owner identifier and is only used for client-side navigation.
+  alters: Array<{ id: string; name: string; images: Array<{ id: string; contentType: string; role: "profile" | "image"; order: number }> }>;
   generalImages: Array<{ id: string; contentType: string; role: "image"; order: number }>;
 };
 
@@ -64,7 +66,7 @@ export class GalleryShareService {
     const byId = new Map<string, PublicGallery["alters"][number]>();
     const alters = rows.reduce<PublicGallery["alters"]>((all, row) => {
       let alter = byId.get(String(row.alter_id));
-      if (!alter) { alter = { name: String(row.name), images: [] }; byId.set(String(row.alter_id), alter); all.push(alter); }
+      if (!alter) { alter = { id: String(row.alter_id), name: String(row.name), images: [] }; byId.set(String(row.alter_id), alter); all.push(alter); }
       if (row.id) alter.images.push({ id: String(row.id), contentType: String(row.content_type), role: row.is_profile_picture ? "profile" : "image", order: alter.images.length });
       return all;
     }, []);

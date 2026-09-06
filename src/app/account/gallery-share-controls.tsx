@@ -56,7 +56,7 @@ export function GalleryShareControls() {
     <p>Anyone with the link can view the photos you choose to share. Forwarding, downloads, and screenshots cannot be revoked.</p>
     <label>Link lifetime<select value={duration} onChange={(event) => setDuration(event.target.value as typeof duration)}>{durations.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
     <button className="button" type="button" disabled={busy} onClick={() => void create()}>Create gallery link</button>
-    {message && <p role="status" className="pilot-notice">{message}</p>}
+    {message && <p aria-live="polite" className="pilot-notice">{message}</p>}
     <h3>Existing gallery links</h3>
     {shares.length ? <ul className="gallery-share-list">{shares.map((share) => <li key={share.id}><div>{shareUrl(share) ? <a href={shareUrl(share)}>{shareUrl(share)}</a> : <span>Link available after refresh</span>}<p>{displayExpiry(share.expiresAt)}</p></div><button className="button button-secondary" type="button" disabled={busy} onClick={() => void revoke(share.id)}>Revoke link</button></li>)}</ul> : <p>No active gallery links.</p>}
   </section>;

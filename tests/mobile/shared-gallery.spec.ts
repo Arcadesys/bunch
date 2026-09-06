@@ -2,16 +2,16 @@ import { test, expect } from "./fixtures";
 
 const gallery = {
   alters: [
-    { id: "robin", name: "Test Robin", images: [{ id: "robin-profile", contentType: "image/png", role: "profile-picture", order: 0 }, { id: "robin-1", contentType: "image/png", role: "gallery", order: 1 }] },
-    { id: "finch", name: "Test Finch", images: [{ id: "finch-1", contentType: "image/png", role: "gallery", order: 1 }] },
+    { id: "robin", name: "Test Robin", images: [{ id: "robin-profile", contentType: "image/png", role: "profile", order: 0 }, { id: "robin-1", contentType: "image/png", role: "image", order: 1 }] },
+    { id: "finch", name: "Test Finch", images: [{ id: "finch-1", contentType: "image/png", role: "image", order: 1 }] },
   ],
-  generalImages: [{ id: "general-1", contentType: "image/png", role: "gallery", order: 1 }],
+  generalImages: [{ id: "general-1", contentType: "image/png", role: "image", order: 1 }],
 };
 
 test("shared gallery gives visitors an intro, accessible person navigation, and larger pictures", async ({ page }) => {
   await page.route("**/api/public/gallery/share-token", async (route) => route.fulfill({ json: gallery }));
   await page.route("**/api/public/gallery/share-token/images/**", async (route) => route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL2dQAAAABJRU5ErkJggg==", "base64") }));
-  await page.goto("/shared-gallery/share-token");
+  await page.goto("/gallery/share/share-token");
   await expect(page.getByRole("heading", { name: "Who’s here" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue to the gallery" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "People in this gallery" })).toHaveCount(0);
@@ -31,7 +31,7 @@ test("shared gallery gives visitors an intro, accessible person navigation, and 
 
 test("unavailable shared gallery is generic and does not expose token details", async ({ page }) => {
   await page.route("**/api/public/gallery/not-valid", async (route) => route.fulfill({ status: 404, json: { error: { message: "specific internal reason" } } }));
-  await page.goto("/shared-gallery/not-valid");
+  await page.goto("/gallery/share/not-valid");
   await expect(page.getByRole("status")).toHaveText("This shared gallery is unavailable.");
   await expect(page.getByText("specific internal reason")).toHaveCount(0);
 });
