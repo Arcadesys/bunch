@@ -7,3 +7,6 @@ private-uploads/
 *.tsbuildinfo
 .vercel
 .env*
+# Local reproduction of CI browser evidence
+/test-results/
+/playwright-report/
