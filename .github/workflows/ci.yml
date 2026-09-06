@@ -38,12 +38,23 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run typecheck:browser
-      - run: npm test
+      - run: npm run test:ci
       - run: python3 scripts/test-pilot-recovery.py
       - run: npm run build
       - run: npm run test:browser
         env:
           MOBILE_TEST_SERVER: production
+      - name: Upload browser test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diddy-browser-evidence
+          path: |
+            test-results/playwright
+            test-results/results.json
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Package portable plugin
         id: package

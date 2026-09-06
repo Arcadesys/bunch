@@ -58,3 +58,62 @@ screen-reader use, full contrast auditing and actual browser zoom remain separat
 acceptance gates. This suite uses Chromium viewport emulation and the development
 server by default (or the production bundle with `MOBILE_TEST_SERVER=production`);
 root-text enlargement is a reflow stress test, not real pinch/page zoom.
+
+## Reproduce the strict CI gates locally
+
+Use Node.js 22, Python 3, PostgreSQL 16 client tools (`psql`, `pg_dump`, `pg_restore`, `createdb`, `dropdb`), and Docker for the disposable
+PostgreSQL 16 instance below. Run from a clean checkout without production `.env`
+files. Port 55439 and the container name must be unused; browser checks use 3217.
+
+```sh
+npm ci
+npx playwright install chromium
+# On Linux, use: npx playwright install --with-deps chromium
+docker run --detach --rm --name diddy-gate-postgres \
+  -e POSTGRES_USER=diddy_test -e POSTGRES_PASSWORD=local_ci_test \
+  -e POSTGRES_DB=diddy_test -p 127.0.0.1:55439:5432 postgres:16
+until docker exec diddy-gate-postgres pg_isready -U diddy_test -d diddy_test; do
+  sleep 1
+done
+export TEST_DATABASE_URL='postgres://diddy_test:local_ci_test@127.0.0.1:55439/diddy_test'
+export DATABASE_URL_UNPOOLED="$TEST_DATABASE_URL"
+psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/baseline.sql
+npm run db:migrate
+npm run lint
+npm run typecheck
+npm run typecheck:browser
+npm run test:ci
+python3 scripts/test-pilot-recovery.py
+npm run build
+MOBILE_TEST_SERVER=production npm run test:browser
+npm run plugin:pack
+# Run after verification, including when an earlier check fails:
+docker stop diddy-gate-postgres
+unset TEST_DATABASE_URL DATABASE_URL_UNPOOLED
+```
+
+Stop at the first failed check and inspect its output. The container has no mounted
+volume: stopping it removes the disposable database. A native PostgreSQL 16 instance
+is also suitable if you create a fresh, dedicated database and use its URL instead.
+
+`test:ci` requires `TEST_DATABASE_URL` and rejects failures, an empty suite, skipped
+checks, and TODO checks. `npm test` remains the lightweight command that permits
+unconfigured database checks to skip. These are synthetic server/MCP scenarios and
+browser acceptance checks, not model-response quality evaluations.
+
+## CI browser evidence
+
+CI writes per-test failure screenshots and traces to `test-results/playwright`,
+a machine-readable report at `test-results/results.json`, and an HTML report in
+`playwright-report`.
+The `diddy-browser-evidence` Actions artifact is uploaded even after failure and
+retained for seven days. If the browser step never starts, there may be no evidence
+to upload; the earlier failed step remains the diagnostic source.
+
+After downloading and extracting the artifact, open the HTML report with
+`npx playwright show-report playwright-report`, or open a failure trace with
+`npx playwright show-trace path/to/trace.zip`. Reports contain synthetic fixtures.
+To reproduce CI reporting locally, run
+`CI=true MOBILE_TEST_SERVER=production npm run test:browser` after building.
+Normal local runs continue to write screenshots and traces under the OS temporary
+directory (or `MOBILE_TEST_OUTPUT`) without creating repository report folders.

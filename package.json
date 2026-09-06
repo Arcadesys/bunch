@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node --import tsx --test src/**/*.test.ts",
+    "test:ci": "tsx scripts/test-ci.ts",
     "test:mobile": "playwright test --grep-invert @eval",
     "eval:mobile": "playwright test --grep @eval",
     "test:browser": "playwright test",
