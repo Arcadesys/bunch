@@ -172,6 +172,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
           <Link href="/notes#create-record">Leave a note</Link>
           <Link href="/board">Manage todos</Link>
           <Link href="/profiles">People &amp; pictures</Link>
+          <Link href="/account">Share system</Link>
           <a href="#presence-controls">Hosting &amp; fronting</a>
           <Link href="/threads#create-record">Save a thread</Link>
         </div>
