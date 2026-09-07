@@ -21,6 +21,7 @@ test("@eval reflow fits the viewport including enlarged text and long content", 
   expect.soft(baseline.scroll, `Normal text: ${JSON.stringify(baseline)}`).toBeLessThanOrEqual(baseline.client + 1);
   harness.session!.items[0].title = "LongUnbrokenRecordTitle".repeat(8);
   await page.reload();
+  await page.getByText(/More saved changes/).click();
   await expect(page.getByRole("heading", { name: /LongUnbrokenRecordTitle/ })).toBeVisible();
   await page.addStyleTag({ content: "html { font-size: 40px !important; }" });
   const overflow = await page.evaluate(() => ({ width: window.innerWidth, client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));

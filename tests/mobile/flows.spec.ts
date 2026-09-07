@@ -8,6 +8,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   await expect(page).toHaveTitle("Bunch — your private companion");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("initial-viewport.png"), fullPage: false });
+  await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Mark reviewed" }).click();
   await expect(row.locator(".command-state")).toHaveText("Reviewed");
@@ -16,6 +17,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   expect(harness.writes[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
   expect(harness.session?.items[1].statusLabel).toBe("BLOCKED");
   await page.reload();
+  await page.getByText(/More saved changes/).click();
   await expect(row.locator(".command-state")).toHaveText("Reviewed");
   await expect(page.getByLabel("1 of 4 reviewed")).toBeVisible();
   expect(errors).toEqual([]);
@@ -25,7 +27,8 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
 
 test("defer is opt-in and next switch is an explicit return choice", async ({ page, harness }) => {
   await page.goto("/");
-  const row = page.locator("article.command-row").first();
+  await page.getByText(/More saved changes/).click();
+  const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
   expect(harness.writes).toHaveLength(0);
   await row.getByLabel("Return time").selectOption("NEXT_SWITCH");
@@ -36,7 +39,8 @@ test("defer is opt-in and next switch is an explicit return choice", async ({ pa
 
 test("missing custom defer time sends no write", async ({ page, harness }) => {
   await page.goto("/");
-  const row = page.locator("article.command-row").first();
+  await page.getByText(/More saved changes/).click();
+  const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
   await row.getByLabel("Return time").selectOption("CUSTOM");
   await row.getByRole("button", { name: "Confirm defer" }).click();
@@ -47,7 +51,8 @@ test("missing custom defer time sends no write", async ({ page, harness }) => {
 test("stale write is announced without false success or optimistic state", async ({ page, harness }) => {
   harness.writeStatus = 409;
   await page.goto("/");
-  const row = page.locator("article.command-row").first();
+  await page.getByText(/More saved changes/).click();
+  const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Mark reviewed", exact: true }).click();
   await expect(page.locator(".command-notice")).toContainText("Record changed");
   await expect(row.locator(".command-state")).toHaveText("Not reviewed");

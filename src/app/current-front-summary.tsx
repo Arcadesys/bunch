@@ -13,6 +13,8 @@ function PresenceCard({
   period: PresencePeriod;
   onChoose: (id: string) => void;
 }) {
+  const [pictureFailed, setPictureFailed] = useState(false);
+  const [checkNotice, setCheckNotice] = useState("");
   const [picture, setPicture] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -29,7 +31,7 @@ function PresenceCard({
           setPicture(payload.data.profilePicture?.id ?? null);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setPicture(null);
+        if (!controller.signal.aborted) { setPicture(null); setPictureFailed(true); }
       });
     return () => controller.abort();
   }, [period.alterId]);
@@ -42,11 +44,14 @@ function PresenceCard({
           width={112}
           height={112}
           unoptimized
-          onError={() => setPicture(null)}
+          onError={() => { setPicture(null); setPictureFailed(true); }}
         />
       ) : null}
+      {pictureFailed && <p>Profile picture could not be loaded. <Link href="/gallery">Open authenticated photo gallery</Link>.</p>}
       <h3>{period.alterName}</h3>
-      <p>Recorded since {new Date(period.startedAt).toLocaleString()}.</p>
+      <p>{period.alterName} was last recorded starting {period.kind === "FRONTING" ? "fronting" : "hosting"} <time dateTime={period.startedAt}>{new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" }).format(new Date(period.startedAt))}</time>. No end is recorded.</p>
+      {!checkNotice && <details><summary>Still accurate? Optional check</summary><p>Use the hosting and fronting controls to report a change.</p><button onClick={() => setCheckNotice("No changes saved. It’s okay to be unsure.")}>I’m unsure</button><button onClick={() => setCheckNotice("Presence left unchanged.")}>Leave unchanged</button></details>}
+      <p role="status">{checkNotice}</p>
       {period.kind === "FRONTING" ? <button
         className="command-button secondary"
         onClick={() => onChoose(period.id)}
@@ -137,8 +142,7 @@ export function CurrentFrontSummary({
               <p>No open fronting episodes are recorded.</p>
             )}
             <p>
-              Choose a current fronter to open their catch-up. These records do not
-              establish anyone’s absence.
+              These are saved reports, not a fresh check of who is here. Episodes stay open until an explicit end is reported. These records do not establish anyone’s absence.
             </p>
           </>
         )}
