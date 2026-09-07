@@ -62,6 +62,8 @@ export function CatchUpCommandCenter({ initialView = "CATCH_UP" }: { initialView
 }
 
 function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
+  const [overwhelmed, setOverwhelmed] = useState(false);
+  const nextStepHeading = useRef<HTMLHeadingElement>(null);
   const [frontRefresh,setFrontRefresh] = useState(0);
   const selectedPeriod = useRef<string | undefined>(undefined);
   const [session, setSession] = useState<CatchUpSession | null>(null);
@@ -69,6 +71,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
   const [loadState, setLoadState] = useState<CatchUpLoadState>("loading");
   const [isPending, startTransition] = useTransition();
   const reviewInFlight = useRef(false);
+  const reviewReceipt = useRef<{ key: string; requestId: string; body: object } | null>(null);
   const loadGeneration = useRef(0);
 
   // The front-switch panel can call this directly with its returned `catchUp`.
@@ -88,7 +91,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
       setNotice(data ? "" : "No catch-up is open.");
     }).catch((error: unknown) => {
       if (generation !== loadGeneration.current) return;
-      setSession(null);
+      if (error instanceof CatchUpReadError && error.status === 401) setSession(null);
       const message = error instanceof Error ? error.message : "Unable to load catch-up.";
       setLoadState(error instanceof CatchUpReadError && error.status === 401 ? "unauthorized" : "error");
       setNotice(message);
@@ -104,7 +107,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
       setNotice(data ? "" : "No catch-up is open.");
     }).catch((error: unknown) => {
       if (!active || generation !== loadGeneration.current) return;
-      setSession(null);
+      if (error instanceof CatchUpReadError && error.status === 401) setSession(null);
       const message = error instanceof Error ? error.message : "Unable to load catch-up.";
       setLoadState(error instanceof CatchUpReadError && error.status === 401 ? "unauthorized" : "error");
       setNotice(message);
@@ -113,20 +116,24 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
   }, []);
 
   const choosePeriod = (periodId: string) => {
+    setSession(null);
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
   const presenceChanged = (periodId?: string) => {
     setFrontRefresh(v => v + 1);
+    setSession(null);
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
 
   const primaryItems = useMemo(() => {
-    if (!session) return [];
-    return session.items.filter((item) => item.itemType !== "THREAD");
+    const urgency = (item: CatchUpItem) => Number(/BLOCKED/.test(item.statusLabel ?? "")) * 4 + Number(/HIGH/.test(item.statusLabel ?? "")) * 2 + Number(Boolean(item.dueOn && new Date(`${item.dueOn}T23:59:59`).getTime() < new Date(session?.windowEnd ?? 0).getTime()));
+    return session?.items.filter(item => item.reviewState === "NEW" && (item.itemType === "TODO" && !/^(DONE|CANCELLED)/.test(item.statusLabel ?? "") || item.itemType === "THREAD")).sort((a, b) => urgency(b) - urgency(a) || b.timestamp.localeCompare(a.timestamp)) ?? [];
   }, [session]);
-  const threads = initialView === "CATCH_UP" ? session?.items.filter((item) => item.itemType === "THREAD") ?? [] : [];
+  const updates = session?.items.filter(item => !primaryItems.includes(item)) ?? [];
+  const nextItem = primaryItems[0];
+  const recordHref = (item: CatchUpItem) => `${item.itemType === "TODO" ? "/board" : item.itemType === "THREAD" ? "/threads" : item.itemType === "NOTE" ? "/notes" : "/decisions"}#record-${item.itemId}`;
 
   function setReviewState(item: CatchUpItem, state: CatchUpReviewState, defer?: { choice: string; custom: string }) {
     if (reviewInFlight.current) return;
@@ -134,12 +141,14 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     const generation = loadGeneration.current;
     startTransition(async () => {
       try {
-        const body = { expectedVersion: item.version, state, ...(state === "DEFERRED" && defer ? deferPayload(defer.choice, defer.custom) : {}) };
-        const requestId = crypto.randomUUID();
+        const key = JSON.stringify({ entryId: item.entryId, version: item.version, state, defer });
+        if (reviewReceipt.current?.key !== key) reviewReceipt.current = { key, requestId: crypto.randomUUID(), body: { expectedVersion: item.version, state, ...(state === "DEFERRED" && defer ? deferPayload(defer.choice, defer.custom) : {}) } };
+        const { body, requestId } = reviewReceipt.current;
         const response = await fetch(`/api/v1/catch-up/items/${item.entryId}`, { method: "PATCH", headers: { "Content-Type": "application/json", "Idempotency-Key": requestId, "x-system-demo": "local" }, body: JSON.stringify(body) });
         const payload = await response.json();
         if (generation !== loadGeneration.current) return;
         if (!response.ok) throw new Error(payload.error?.message ?? "Unable to save review state.");
+        reviewReceipt.current = null;
         setSession(payload.data);
         setNotice(`${item.title}: ${reviewLabels[state].toLowerCase()}. The underlying ${item.itemType.toLowerCase()} is unchanged.`);
       } catch (error) { if (generation === loadGeneration.current) setNotice(error instanceof Error ? error.message : "Unable to save review state."); }
@@ -147,15 +156,13 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     });
   }
 
-  const title = initialView === "CATCH_UP" ? "Needs your eyes" : "Recorded period timeline";
-  const description = "The confirmed switch record for this catch-up window.";
 
   return <main className="command-shell task-home">
     <AppNavigation current={initialView} />
     <section className="command-main">
       <section className="command-hero" aria-labelledby="welcome-heading">
 
-        <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Keep notes, manage todos, and catch up on saved records.</p></div>
+        <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Help me resume my day.</p></div>
         {loadState === "unauthorized" ? <a className="command-button" href="/auth/login">Sign in with Google</a> : null}
       </section>
       <nav className="home-tasks" aria-label="Things you can do">
@@ -172,18 +179,34 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
       <section id="catch-up-records" tabIndex={-1} className="home-catch-up" aria-labelledby="catch-up-section-heading">
       <h2 id="catch-up-section-heading">Your catch-up</h2>
       <p>Read what was saved for this recorded period. Mark reviewed means you’ve read it; a todo stays open until you complete it in Todos.</p>
-      {loadState === "ready" && session ? <><p className="command-kicker">Catch-up · recorded window</p><p className="command-window">{session.windowStart ? `Since ${formatTimestamp(session.windowStart)}` : "Previous fronting end unknown · available history"} → {formatTimestamp(session.windowEnd)}</p><div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div></> : null}
+      {session ? <><p className="command-kicker">Catch-up · recorded window</p><p className="command-window">{session.windowStart ? `Since ${formatTimestamp(session.windowStart)}` : "Previous fronting end unknown · available history"} → {formatTimestamp(session.windowEnd)}</p><div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div></> : null}
       <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
-      {loadState === "ready" && !session ? <p>You can still leave notes and manage todos. To open a catch-up, <a className="task-return" href="#presence-controls">choose a current fronter under Hosting and fronting</a>.</p> : null}
-      {loadState === "error" ? <button className="command-button" type="button" onClick={() => { void loadCatchUp(); }}>Retry catch-up</button> : null}
-      {loadState === "ready" && session ? (initialView === "HISTORY" ? <SwitchTimeline session={session} /> : <>
-        <SavedReturnReview key={session.id} sessionId={session.id} />
-        <section className="command-section" aria-labelledby="view-heading"><div className="command-section-heading"><div><h2 id="view-heading">{title}</h2>{initialView !== "CATCH_UP" ? <p>{description}</p> : null}</div><span className="command-count">{primaryItems.length} item{primaryItems.length === 1 ? "" : "s"}</span></div>
-          <div className="command-items">{primaryItems.length ? primaryItems.map((item) => <CatchUpRow key={item.entryId} item={item} disabled={isPending} onState={setReviewState} />) : <p className="command-empty">Nothing in this view needs your eyes.</p>}</div>
+      <button className="command-button secondary" disabled={isPending || loadState === "loading"} onClick={() => void loadCatchUp()}>{loadState === "error" ? "Retry catch-up" : "Refresh catch-up"}</button>
+      {loadState === "ready" && !session && <p>No catch-up open. No return window is recorded; you can still read saved notes and tasks without reporting an arrival.</p>}
+      {loadState === "error" && <p role="alert">{session ? "Refresh failed. Showing the previously loaded records; they may be out of date." : "Saved records could not be loaded. Retry catch-up, or open Notes or Todos."}</p>}
+      {initialView === "HISTORY" ? session && <SwitchTimeline session={session} /> : (session || loadState === "ready") && <>
+        <p className="catch-up-coverage">Conversation history is not read here; the briefing uses saved records, with any saved conversation review available below.</p>
+        <button className="command-button secondary" aria-pressed={overwhelmed} onClick={() => { setOverwhelmed(!overwhelmed); if (!overwhelmed) requestAnimationFrame(() => nextStepHeading.current?.focus()); }}>{overwhelmed ? "Show full catch-up" : "I’m overwhelmed"}</button>
+        {!overwhelmed && <>
+          <section className="command-section" aria-labelledby="attention-heading"><h2 id="attention-heading">Needs attention</h2>
+            <div className="command-items">{primaryItems.slice(0, 3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div>
+            {!primaryItems.length && <p>{session ? "No unreviewed attention items in the loaded records." : "Open Todos to check your saved tasks."}</p>}
+            {primaryItems.length > 3 && <details><summary>More needs attention ({primaryItems.length - 3})</summary><div className="command-items">{primaryItems.slice(3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div></details>}
+          </section>
+          <section className="command-section" aria-labelledby="changes-heading"><h2 id="changes-heading">What changed</h2>
+            <p>{updates.length ? `${updates.length} other saved records in this catch-up.` : session ? "No other saved changes in the loaded records." : "Choose Notes to read saved context; there is no catch-up window to compare yet."}</p>
+            {updates.length > 0 && <details><summary>More saved changes ({updates.length})</summary><div className="command-items">{updates.map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div></details>}
+          </section>
+        </>}
+        <section className="command-section" aria-labelledby="next-step-heading"><h2 id="next-step-heading" ref={nextStepHeading} tabIndex={-1}>Next step</h2>
+          {nextItem ? <><p>{nextItem.title}: {nextItem.nextAction}</p><Link className="command-button" href={recordHref(nextItem)}>Open {nextItem.title}</Link></> : <><p>Open Todos and choose one saved task when you’re ready.</p><Link className="command-button" href="/board">Open Todos</Link></>}
+          {overwhelmed && <p>The rest is available with “Show full catch-up” whenever you want it.</p>}
         </section>
-        {threads.length ? <section className="command-section" aria-labelledby="threads-heading"><div className="command-section-heading"><div><h2 id="threads-heading">Important threads</h2><p>Approved summaries from Codex and ChatGPT. No raw transcripts.</p></div><span className="command-count">{threads.length} threads</span></div><div className="command-items">{threads.map((item) => <CatchUpRow key={item.entryId} item={item} disabled={isPending} onState={setReviewState} />)}</div></section> : null}
-        {initialView === "CATCH_UP" ? <SwitchTimeline session={session} compact /> : null}
-      </>) : null}
+        {!overwhelmed && session && <>
+          <details><summary>More: saved review and coverage</summary><SavedReturnReview key={session.id} sessionId={session.id} /></details>
+          <SwitchTimeline session={session} compact />
+        </>}
+      </>}
       <a className="task-return" href="#welcome-heading">Back to Home actions</a>
       </section>
       <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">

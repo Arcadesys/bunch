@@ -1497,3 +1497,7 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
   .gallery-share-list li { padding: 10px; }
   .pilot-page .gallery-share-controls button { padding-inline: .4rem; overflow-wrap: normal; }
 }
+
+/* Catch-up headings and actions must reflow at enlarged text sizes. */
+.home-catch-up { overflow-wrap: anywhere; }
+.home-catch-up .command-button { max-width: 100%; white-space: normal; }
