@@ -3,3 +3,4 @@
 \ir baseline.sql
 \ir ../drizzle/0001_mcp_crud.sql
 \ir ../drizzle/0002_fronting_sessions.sql
+\ir ../drizzle/0013_group_photo_composer.sql

@@ -4,13 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-type AppPage = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY" | "PROFILES" | "GALLERY" | "OPTIONS";
+type AppPage = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY" | "PROFILES" | "GALLERY" | "GROUP_PHOTO" | "OPTIONS";
 type IconName = "home" | "todos" | "notes" | "people" | "history" | "options" | "switch" | "review" | "update" | "glow" | "contrast";
 const destinations: { href: string; label: string; page: AppPage; icon: IconName }[] = [
   { href: "/", label: "Home", page: "CATCH_UP", icon: "home" },
   { href: "/board", label: "Todos", page: "BOARD", icon: "todos" },
   { href: "/notes", label: "Notes", page: "NOTES", icon: "notes" },
   { href: "/profiles", label: "People", page: "PROFILES", icon: "people" },
+  { href: "/group-photo", label: "Group Photo", page: "GROUP_PHOTO", icon: "people" },
   { href: "/history", label: "History", page: "HISTORY", icon: "history" },
   { href: "/options", label: "Options", page: "OPTIONS", icon: "options" },
 ];

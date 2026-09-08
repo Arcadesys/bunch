@@ -1,5 +1,6 @@
 import { buildAlterImagePrompt, imagePromptInputSchema, imagePromptResultSchema } from "@/domain/image-prompt";
 import { prepareAlterImagePrompt } from "@/server/image-prompt";
+import { getGroupPhotoService } from "@/server/group-photo-service";
 import { ConversationSummaryService } from "./conversation-summary-service";
 import { saveEpisodeReviewSchema, saveConversationSummarySchema, conversationSummarySchema, listConversationSummariesSchema } from "@/domain/conversation-summary";
 import { currentPresenceResponseSchema, startFrontingEpisodeSchema, endFrontingEpisodeSchema, presencePeriodResponseSchema } from "@/domain/presence";
@@ -317,6 +318,16 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     if (referenceMedia.length !== alter.appearanceReferenceImageIds.length) throw new Error("One or more selected appearance references are unavailable.");
     const prepared = buildAlterImagePrompt("Transform the selected person into this alter; preserve the snapshot pose, clothing, setting, and interactions.", [alter]);
     return { structuredContent: { ...prepared, alter: { id: alter.id, name: alter.name, appearanceNotes: alter.appearanceNotes }, referenceCount: referenceMedia.length, snapshotRequired: true as const, mediaHandoff: "HOST_ADAPTER_REQUIRED" as const }, content: [{ type: "text", text: `${prepared.prompt}\n\nPrepared ${alter.name}'s private transformation context. Attach the user's snapshot and the secured reference media to Furry Image Studio; preserve the snapshot's pose, clothing, setting, and interactions.` }], _meta: { referenceMedia } };
+  });
+
+  const groupPhotoRenderOutputSchema = z.object({ projectId: uuidSchema, status: z.literal("READY"), placements: z.array(z.object({ alterId: uuidSchema, tokenX: z.number().int(), tokenY: z.number().int(), depth: z.number().int(), occupancyZoneId: z.string().nullable() })), prompt: z.string(), identities: imagePromptResultSchema.shape.identities });
+  server.registerTool("prepare_group_photo_render", { title: "Prepare Group Photo render", description: "Prepare the selected staged people for an external MCP image studio. This returns deterministic placement, canonical prompts, and capability-secured selected appearance references. It never calls an image model, exposes backplate bytes, or substitutes profile pictures for selected appearance references.", inputSchema: { projectId: uuidSchema }, outputSchema: groupPhotoRenderOutputSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ projectId }) => {
+    const project = await getGroupPhotoService().get(ownerId, projectId);
+    if (!project.placements.length) throw new Error("Place at least one person before preparing a Group Photo render.");
+    const staged = project.placements.map((placement) => `${placement.alterId} at ${placement.tokenX}%, ${placement.tokenY}%, depth ${placement.depth}, zone ${placement.occupancyZoneId ?? "unassigned"}`).join("; ");
+    const prepared = await prepareAlterImagePrompt(service, ownerId, { alters: project.placements.map((placement) => placement.alterId), scene: `Group Photo staging on a private real-world backplate. ${staged}. Generate one isolated transparent character layer per person; preserve this placement as approximate social intent, not an exact pose.` }, publicOrigin);
+    if (!prepared.structuredContent.ready) throw new Error(prepared.structuredContent.notices.join(" "));
+    return { structuredContent: { projectId, status: "READY" as const, placements: project.placements.map(({ alterId, tokenX, tokenY, depth, occupancyZoneId }) => ({ alterId, tokenX, tokenY, depth, occupancyZoneId })), prompt: prepared.structuredContent.prompt, identities: prepared.structuredContent.identities }, content: [{ type: "text", text: "Prepared an appearance-grounded Group Photo render packet for the image studio. Render each person independently, then return their private layers for compositing." }], _meta: prepared._meta };
   });
 
   const recordedCoverageSchema = z.object({ period: z.object({ startsOn: z.string().date(), endsOn: z.string().date() }), coverage: z.array(z.object({ id: uuidSchema, alterId: uuidSchema, alterName: z.string(), startsOn: z.string().date(), endsOn: z.string().date().optional() })), handoff: z.string() });
