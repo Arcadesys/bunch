@@ -3,9 +3,9 @@ import { getPilotService } from "@/server/pilot-service";
 import { apiResponse } from "@/server/http-api";
 import { canShareGallery } from "@/server/gallery-access";
 export const runtime = "nodejs";
-export async function GET() {
+export async function GET(request: Request) {
   return apiResponse(async () => {
-    const identity = await requirePilotIdentity();
+    const identity = await requirePilotIdentity(request);
     const pilot = getPilotService();
     const a = await pilot.account(identity.ownerId);
     const galleryAccess = await canShareGallery(pilot.pool, identity.ownerId);
@@ -26,6 +26,7 @@ export async function GET() {
           emailVerified: identity.emailVerified,
           state: a?.state ?? (galleryAccess ? "LEGACY" : "NOT_ENROLLED"),
           canShareGallery: galleryAccess,
+          canManageTenantInvitations: await pilot.canManageTenantInvitations(identity.ownerId),
           role: a?.role,
           displayName: a?.display_name,
           usedBytes: used,
