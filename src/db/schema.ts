@@ -26,6 +26,7 @@ export const catchUpItemType = pgEnum("catch_up_item_type", ["NOTE", "TODO", "DE
 export const catchUpReviewState = pgEnum("catch_up_review_state", ["NEW", "ACKNOWLEDGED", "DEFERRED", "RESOLVED"]);
 export const importantThreadSource = pgEnum("important_thread_source", ["CODEX", "CHATGPT"]);
 export const importantThreadStatus = pgEnum("important_thread_status", ["SUGGESTED", "CONFIRMED", "ARCHIVED"]);
+export const groupPhotoProjectStatus = pgEnum("group_photo_project_status", ["ANALYZING", "READY", "BLOCKING", "RENDERING", "COMPLETE", "FAILED"]);
 
 export const appUser = pgTable("app_user", {
   id: text("id").primaryKey(),
@@ -90,6 +91,20 @@ export const privateImage = pgTable("private_image", {
   unique("private_image_owner_id_id_key").on(table.ownerId, table.id),
   uniqueIndex("private_image_one_profile_picture").on(table.ownerId, table.alterId).where(sql`${table.isProfilePicture} = true`),
 ]);
+
+export const groupPhotoProject = pgTable("group_photo_project", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  backplateStorageKey: text("backplate_storage_key").notNull().unique(), backplateContentType: text("backplate_content_type").notNull(),
+  sceneAnalysis: jsonb("scene_analysis").notNull(), status: groupPhotoProjectStatus("status").notNull().default("READY"), version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("group_photo_project_owner_updated_idx").on(table.ownerId, table.updatedAt)]);
+
+export const groupPhotoPlacement = pgTable("group_photo_placement", {
+  id: uuid("id").primaryKey().defaultRandom(), projectId: uuid("project_id").notNull().references(() => groupPhotoProject.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(), alterId: uuid("alter_id").notNull(), tokenX: integer("token_x").notNull(), tokenY: integer("token_y").notNull(),
+  depth: integer("depth").notNull().default(50), occupancyZoneId: text("occupancy_zone_id"), relationHints: jsonb("relation_hints").notNull().default([]), version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [unique("group_photo_placement_project_alter_key").on(table.projectId, table.alterId), foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "group_photo_placement_owner_alter_fk" }).onDelete("cascade"), index("group_photo_placement_project_idx").on(table.projectId)]);
 
 export const coverageAssignment = pgTable("coverage_assignment", {
   id: uuid("id").primaryKey().defaultRandom(),
