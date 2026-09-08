@@ -33,6 +33,11 @@ integration(
         { requestId: randomUUID(), name: "Operator fixture" },
         "WEB",
       );
+      await pool.query("insert into invitation_operator(owner_id) values($1)", [owner]);
+      assert.equal(await pilot.canManageTenantInvitations(owner), true, "the migration-pinned legacy owner can reach invitation controls without matching an email string");
+      const unrelated = `auth0:unrelated:${randomUUID()}`;
+      await service.createAlter(unrelated, { requestId: randomUUID(), name: "Unrelated fixture" }, "WEB");
+      assert.equal(await pilot.canManageTenantInvitations(unrelated), false, "a separately provisioned account cannot use the legacy bootstrap");
       await pilot.enrollOperator(owner);
       await assert.rejects(pilot.invite("a@example.test"), /closed/);
       await pool.query(
@@ -93,16 +98,14 @@ integration(
             "A",
             true,
           );
-          assert.equal(
-            (
-              await pilot.accept(
-                { ownerId: a, email: "a@example.test", emailVerified: true },
-                tokenA,
-                "A",
-                true,
-              )
-            ).owner_id,
-            a,
+          await assert.rejects(
+            pilot.accept(
+              { ownerId: a, email: "a@example.test", emailVerified: true },
+              tokenA,
+              "A",
+              true,
+            ),
+            /already been used/,
           );
           await assert.rejects(
             pilot.accept(
@@ -150,6 +153,27 @@ integration(
           await assert.rejects(pilot.export("auth0:unknown"));
         },
       );
+      await t.test("operator-created links are anonymous, one-use, revocable, and provision only one isolated owner", async () => {
+        await pool.query("update pilot_policy set max_friends=4 where id");
+        const linkToken = await pilot.createTenantInvitation(owner);
+        const listed = await pilot.listTenantInvitations(owner);
+        assert.equal(listed[0].status, "AVAILABLE");
+        assert.ok(!JSON.stringify(listed).includes(linkToken));
+        const c = `auth0:friend:${randomUUID()}`, d = `auth0:friend:${randomUUID()}`;
+        const results = await Promise.allSettled([
+          pilot.accept({ ownerId: c, email: "c@example.test", emailVerified: true }, linkToken, "C", true),
+          pilot.accept({ ownerId: d, email: "d@example.test", emailVerified: true }, linkToken, "D", true),
+        ]);
+        assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+        assert.equal((await pool.query("select count(*) as n from pilot_account where owner_id = any($1::text[])", [[c, d]])).rows[0].n, "1");
+        assert.equal((await pilot.listTenantInvitations(owner))[0].status, "USED");
+        const revoked = await pilot.createTenantInvitation(owner);
+        const revokeId = (await pilot.listTenantInvitations(owner)).find((item) => item.status === "AVAILABLE")?.id;
+        assert.ok(revokeId);
+        await pilot.revokeTenantInvitation(owner, revokeId!);
+        await assert.rejects(pilot.accept({ ownerId: `auth0:friend:${randomUUID()}`, email: "e@example.test", emailVerified: true }, revoked, "E", true));
+        await assert.rejects(pilot.createTenantInvitation(a), /operator/);
+      });
       await t.test(
         "parallel uploads atomically enforce 50 MB including reservations",
         async () => {

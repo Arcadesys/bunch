@@ -2,10 +2,12 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { GalleryShareControls } from "./gallery-share-controls";
+import { TenantInvitationControls } from "./tenant-invitation-controls";
 
 type Account = {
   state: string;
   canShareGallery?: boolean;
+  canManageTenantInvitations?: boolean;
   role?: string;
   displayName?: string;
   emailVerified: boolean;
@@ -37,10 +39,12 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
     const timer = setTimeout(() => {
       void refresh();
       const value = new URLSearchParams(location.hash.slice(1)).get("invite");
+      const saved = sessionStorage.getItem("bunch-invitation-token");
       if (value) {
         setToken(value);
+        sessionStorage.setItem("bunch-invitation-token", value);
         history.replaceState(null, "", location.pathname);
-      }
+      } else if (saved) setToken(saved);
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -66,6 +70,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
           result.error?.message ?? "Invitation could not be accepted.",
         );
       setToken("");
+      sessionStorage.removeItem("bunch-invitation-token");
       setMessage(
         "Your private system account is ready. Add an alter profile, then connect your clients.",
       );
@@ -259,6 +264,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
               )}
               {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}
               {account.canShareGallery && <GalleryShareControls />}
+              {account.canManageTenantInvitations && <TenantInvitationControls />}
               {["ACTIVE", "REVOKED"].includes(account.state) && (
                 <button onClick={() => void exportRecords()} disabled={busy}>
                   Export records and image list

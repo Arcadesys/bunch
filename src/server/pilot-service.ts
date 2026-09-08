@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { getDatabasePool } from "@/db/client";
 import { SystemError } from "./system-error";
+import type { z } from "zod";
+import { openTenantInvitationsSchema } from "@/domain/tenant-invitations";
 
 export type PilotIdentity = {
   ownerId: string;
@@ -15,6 +17,14 @@ export type PilotAccount = {
   display_name: string;
   quota_bytes: string;
 };
+export type TenantInvitation = {
+  id: string;
+  status: "AVAILABLE" | "USED" | "EXPIRED" | "REVOKED";
+  expiresAt: string;
+  createdAt: string;
+};
+type InvitationOpening = z.infer<typeof openTenantInvitationsSchema>;
+export type InvitationActivation = { open: boolean; maxFriends: number; reason?: string };
 const digest = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 function freshEvidence(policy: {
@@ -131,22 +141,99 @@ export class PilotService {
       );
     });
   }
+  private async invitationAdministrator(ownerId: string, client: Pool | PoolClient = this.pool) {
+    const result = await client.query<PilotAccount>(
+      "select * from pilot_account where owner_id=$1",
+      [ownerId],
+    );
+    const account = result.rows[0];
+    if (account?.role === "OPERATOR" && account.state === "ACTIVE") return;
+    const legacy = await client.query<{ pinned: boolean }>(
+      "select exists(select 1 from invitation_operator where owner_id=$1) as pinned",
+      [ownerId],
+    );
+    if (legacy.rows[0]?.pinned) return;
+    throw new SystemError("FORBIDDEN", "Only the active Bunch operator can manage invitations.");
+  }
+  async canManageTenantInvitations(ownerId: string) {
+    try {
+      await this.invitationAdministrator(ownerId);
+      return true;
+    } catch (error) {
+      if (error instanceof SystemError && error.code === "FORBIDDEN") return false;
+      throw error;
+    }
+  }
+  async invitationActivation(ownerId: string): Promise<InvitationActivation> {
+    await this.invitationAdministrator(ownerId);
+    const policy = (await this.pool.query("select * from pilot_policy where id")).rows[0];
+    if (!policy) return { open: false, maxFriends: 0, reason: "Invitation policy is unavailable." };
+    if (policy.invitations_open && policy.friends_enabled && freshEvidence(policy))
+      return { open: true, maxFriends: Number(policy.max_friends) };
+    return { open: false, maxFriends: Number(policy.max_friends), reason: "Record current capacity and recovery evidence before opening invitations." };
+  }
+  async openTenantInvitations(ownerId: string, input: InvitationOpening) {
+    const checkedAt = new Date(input.checkedAt);
+    if (Number.isNaN(checkedAt.getTime()) || checkedAt.getTime() > Date.now() || Date.now() - checkedAt.getTime() > 7 * 86400000)
+      throw new SystemError("VALIDATION_ERROR", "Capacity and recovery evidence must be from the last seven days.");
+    await this.transaction(async (c) => {
+      await this.invitationAdministrator(ownerId, c);
+      await c.query("select id from pilot_policy where id for update");
+      await c.query("insert into pilot_account(owner_id,role,privacy_accepted_at) values($1,'OPERATOR',now()) on conflict(owner_id) do nothing", [ownerId]);
+      const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
+      if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
+      await c.query(
+        "update pilot_policy set gate_enabled=true,friends_enabled=true,invitations_open=true,uploads_enabled=true,max_friends=$1,capacity_verified_at=$2,recovery_verified_at=$2,evidence=$3 where id",
+        [input.slots, checkedAt.toISOString(), JSON.stringify({ capacityEvidence: input.capacityEvidence, recoveryEvidence: input.recoveryEvidence, checkedAt: input.checkedAt })],
+      );
+    });
+  }
+  private async assertInvitationCapacity(c: PoolClient) {
+    const p = (await c.query("select * from pilot_policy where id for update")).rows[0];
+    if (!p.invitations_open || !p.friends_enabled || !freshEvidence(p))
+      throw new SystemError("FORBIDDEN", "Invitations are closed until capacity and recovery are verified.");
+    const count = (await c.query(`select (select count(*) from pilot_account where role='FRIEND' and state<>'DELETED') +
+      (select count(*) from pilot_invitation where accepted_by is null and revoked_at is null and expires_at>now()) as n`)).rows[0].n;
+    if (Number(count) >= p.max_friends) throw new SystemError("CONFLICT", "Pilot capacity is full.");
+  }
+  async createTenantInvitation(ownerId: string) {
+    const token = randomBytes(32).toString("base64url");
+    await this.transaction(async (c) => {
+      await this.invitationAdministrator(ownerId, c);
+      await this.assertInvitationCapacity(c);
+      await c.query(
+        "insert into pilot_invitation(token_hash,email,expires_at,created_by) values($1,'',now()+interval '7 days',$2)",
+        [digest(token), ownerId],
+      );
+    });
+    return token;
+  }
+  async listTenantInvitations(ownerId: string): Promise<TenantInvitation[]> {
+    await this.invitationAdministrator(ownerId);
+    const rows = await this.pool.query(
+      `select id,
+        case when revoked_at is not null then 'REVOKED'
+             when accepted_by is not null then 'USED'
+             when expires_at <= now() then 'EXPIRED'
+             else 'AVAILABLE' end as status,
+        expires_at, created_at
+       from pilot_invitation where created_by=$1 order by created_at desc`,
+      [ownerId],
+    );
+    return rows.rows.map((row) => ({ id: String(row.id), status: row.status as TenantInvitation["status"], expiresAt: new Date(row.expires_at).toISOString(), createdAt: new Date(row.created_at).toISOString() }));
+  }
+  async revokeTenantInvitation(ownerId: string, invitationId: string) {
+    await this.invitationAdministrator(ownerId);
+    const result = await this.pool.query(
+      "update pilot_invitation set revoked_at=now() where id=$1::uuid and created_by=$2 and accepted_by is null and revoked_at is null and expires_at>now() returning id",
+      [invitationId, ownerId],
+    );
+    if (!result.rowCount) throw new SystemError("NOT_FOUND", "That available invitation was not found.");
+  }
   async invite(email: string) {
     const token = randomBytes(32).toString("base64url");
     await this.transaction(async (c) => {
-      const p = (
-        await c.query("select * from pilot_policy where id for update")
-      ).rows[0];
-      if (!p.invitations_open || !p.friends_enabled || !freshEvidence(p))
-        throw new Error(
-          "Invitations are closed until capacity and recovery are verified.",
-        );
-      const count = (
-        await c.query(`select (select count(*) from pilot_account where role='FRIEND' and state<>'DELETED') +
-        (select count(*) from pilot_invitation where accepted_by is null and revoked_at is null and expires_at>now()) as n`)
-      ).rows[0].n;
-      if (Number(count) >= p.max_friends)
-        throw new Error("Pilot capacity is full.");
+      await this.assertInvitationCapacity(c);
       await c.query(
         "insert into pilot_invitation(token_hash,email,expires_at) values($1,$2,now()+interval '7 days')",
         [digest(token), email.trim().toLowerCase()],
@@ -182,18 +269,9 @@ export class PilotService {
           "FORBIDDEN",
           "This invitation is unavailable for this verified account.",
         );
-      if (i.accepted_by) {
-        if (i.accepted_by !== identity.ownerId) throw unavailable();
-        const existing = (
-          await c.query<PilotAccount>(
-            "select * from pilot_account where owner_id=$1",
-            [identity.ownerId],
-          )
-        ).rows[0];
-        if (existing?.state !== "ACTIVE") throw unavailable();
-        return existing;
-      }
-      if (i.email !== identity.email.toLowerCase().trim()) throw unavailable();
+      if (i.accepted_by)
+        throw new SystemError("CONFLICT", "This invitation has already been used.");
+      if (i.email && i.email !== identity.email.toLowerCase().trim()) throw unavailable();
       if (
         (
           await c.query("select 1 from pilot_account where owner_id=$1", [
@@ -222,7 +300,7 @@ export class PilotService {
         [identity.ownerId],
       );
       await c.query(
-        "update pilot_invitation set accepted_by=$2,email='' where id=$1",
+        "update pilot_invitation set accepted_by=$2,email='',used_at=now() where id=$1",
         [i.id, identity.ownerId],
       );
       return account;
