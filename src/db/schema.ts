@@ -1,4 +1,5 @@
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -20,6 +21,11 @@ export const coverageStatus = pgEnum("coverage_status", ["draft", "confirmed", "
 export const todoStatus = pgEnum("todo_status", ["INBOX", "OPEN", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"]);
 export const todoPriority = pgEnum("todo_priority", ["LOW", "NORMAL", "HIGH"]);
 export const recordSource = pgEnum("record_source", ["MCP", "WEB", "SYSTEM"]);
+export const catchUpItemType = pgEnum("catch_up_item_type", ["NOTE", "TODO", "DECISION", "THREAD"]);
+export const catchUpReviewState = pgEnum("catch_up_review_state", ["NEW", "ACKNOWLEDGED", "DEFERRED", "RESOLVED"]);
+export const importantThreadSource = pgEnum("important_thread_source", ["CODEX", "CHATGPT"]);
+export const importantThreadStatus = pgEnum("important_thread_status", ["SUGGESTED", "CONFIRMED", "ARCHIVED"]);
+export const groupPhotoProjectStatus = pgEnum("group_photo_project_status", ["ANALYZING", "READY", "BLOCKING", "RENDERING", "COMPLETE", "FAILED"]);
 
 export const appUser = pgTable("app_user", {
   id: text("id").primaryKey(),
@@ -33,6 +39,12 @@ export const alterProfile = pgTable("alter_profile", {
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   pronouns: text("pronouns"),
+  species: text("species"),
+  visualDescription: text("visual_description"),
+  presentation: text("presentation"),
+  signatureTraits: text("signature_traits").array().notNull().default([]),
+  styleTags: text("style_tags").array().notNull().default([]),
+  imageDoNotChange: text("image_do_not_change").array().notNull().default([]),
   selfDescribedGender: text("self_described_gender"),
   description: text("description"),
   communicationGuidance: text("communication_guidance"),
@@ -42,6 +54,7 @@ export const alterProfile = pgTable("alter_profile", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
+  appearanceReferenceImageId: uuid("appearance_reference_image_id"),
 }, (table) => [unique("alter_profile_owner_id_id_key").on(table.ownerId, table.id)]);
 
 export const alterAlias = pgTable("alter_alias", {
@@ -62,9 +75,45 @@ export const privateImage = pgTable("private_image", {
   alterId: uuid("alter_id").notNull(),
   storageKey: text("storage_key").notNull().unique(),
   contentType: text("content_type").notNull(),
+  isProfilePicture: boolean("is_profile_picture").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "private_image_owner_alter_fk" }).onDelete("cascade"),
+  uniqueIndex("private_image_one_profile_picture").on(table.ownerId, table.alterId).where(sql`${table.isProfilePicture} = true`),
+]);
+
+// A Group Photo remains editable: the original backplate, provisional scene map,
+// and person-level staging records are deliberately stored independently from
+// eventual generated layers and composites.
+export const groupPhotoProject = pgTable("group_photo_project", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  backplateStorageKey: text("backplate_storage_key").notNull().unique(),
+  backplateContentType: text("backplate_content_type").notNull(),
+  sceneAnalysis: jsonb("scene_analysis").notNull(),
+  status: groupPhotoProjectStatus("status").notNull().default("READY"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("group_photo_project_owner_updated_idx").on(table.ownerId, table.updatedAt)]);
+
+export const groupPhotoPlacement = pgTable("group_photo_placement", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => groupPhotoProject.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  tokenX: integer("token_x").notNull(),
+  tokenY: integer("token_y").notNull(),
+  depth: integer("depth").notNull().default(50),
+  occupancyZoneId: text("occupancy_zone_id"),
+  relationHints: jsonb("relation_hints").notNull().default([]),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("group_photo_placement_project_alter_key").on(table.projectId, table.alterId),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "group_photo_placement_owner_alter_fk" }).onDelete("cascade"),
+  index("group_photo_placement_project_idx").on(table.projectId),
 ]);
 
 export const coverageAssignment = pgTable("coverage_assignment", {
@@ -178,5 +227,146 @@ export const systemPreference = pgTable("system_preference", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [primaryKey({ columns: [table.ownerId, table.preferenceKey] })]);
 
+export const importantThread = pgTable("important_thread", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  source: importantThreadSource("source").notNull(),
+  externalThreadId: text("external_thread_id").notNull(),
+  url: text("url").notNull(),
+  title: text("title").notNull(),
+  approvedSummary: text("approved_summary").notNull(),
+  keyDecisionOrAction: text("key_decision_or_action").notNull(),
+  flaggedByAlterId: uuid("flagged_by_alter_id"),
+  status: importantThreadStatus("status").notNull().default("SUGGESTED"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+}, (table) => [
+  unique("important_thread_owner_id_id_key").on(table.ownerId, table.id),
+  unique("important_thread_owner_external_key").on(table.ownerId, table.source, table.externalThreadId),
+  foreignKey({ columns: [table.ownerId, table.flaggedByAlterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "important_thread_owner_flagger_fk" }).onDelete("restrict"),
+]);
+
+export const importantThreadRecipient = pgTable("important_thread_recipient", {
+  ownerId: text("owner_id").notNull(),
+  threadId: uuid("thread_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.threadId, table.alterId] }),
+  foreignKey({ columns: [table.ownerId, table.threadId], foreignColumns: [importantThread.ownerId, importantThread.id], name: "important_thread_recipient_thread_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "important_thread_recipient_alter_fk" }).onDelete("restrict"),
+]);
+
+export const systemDecision = pgTable("system_decision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  decision: text("decision").notNull(),
+  rationale: text("rationale"),
+  nextAction: text("next_action").notNull(),
+  actorAlterId: uuid("actor_alter_id"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (table) => [
+  unique("system_decision_owner_id_id_key").on(table.ownerId, table.id),
+  foreignKey({ columns: [table.ownerId, table.actorAlterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_decision_owner_actor_fk" }).onDelete("restrict"),
+]);
+
+export const systemDecisionRecipient = pgTable("system_decision_recipient", {
+  ownerId: text("owner_id").notNull(),
+  decisionId: uuid("decision_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.decisionId, table.alterId] }),
+  foreignKey({ columns: [table.ownerId, table.decisionId], foreignColumns: [systemDecision.ownerId, systemDecision.id], name: "system_decision_recipient_decision_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_decision_recipient_alter_fk" }).onDelete("restrict"),
+]);
+
+export const catchUpSession = pgTable("catch_up_session", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  frontingSessionId: uuid("fronting_session_id"),
+  episodeId: uuid("episode_id"),
+  narrative: jsonb("narrative"),
+  narrativeVersion: integer("narrative_version").notNull().default(0),
+  alterId: uuid("alter_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }),
+  windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+  firstTime: boolean("first_time").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("catch_up_session_owner_id_id_key").on(table.ownerId, table.id),
+  unique("catch_up_session_owner_front_key").on(table.ownerId, table.frontingSessionId),
+  unique("catch_up_session_owner_episode_key").on(table.ownerId, table.episodeId),
+  foreignKey({ columns: [table.ownerId, table.episodeId], foreignColumns: [presencePeriod.ownerId, presencePeriod.id], name: "catch_up_session_owner_episode_fk" }).onDelete("cascade"),
+  check("catch_up_session_one_origin", sql`(${table.frontingSessionId} is not null) <> (${table.episodeId} is not null)`),
+  foreignKey({ columns: [table.ownerId, table.frontingSessionId], foreignColumns: [frontingSession.ownerId, frontingSession.id], name: "catch_up_session_owner_front_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "catch_up_session_owner_alter_fk" }).onDelete("cascade"),
+  check("catch_up_session_valid_window", sql`${table.windowStart} is null or ${table.windowEnd} >= ${table.windowStart}`),
+]);
+
+export const catchUpEntry = pgTable("catch_up_entry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull(),
+  sessionId: uuid("session_id").notNull(),
+  itemType: catchUpItemType("item_type").notNull(),
+  itemId: uuid("item_id").notNull(),
+  reviewState: catchUpReviewState("review_state").notNull().default("NEW"),
+  deferUntil: timestamp("defer_until", { withTimezone: true }),
+  deferUntilNextSwitch: boolean("defer_until_next_switch").notNull().default(false),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("catch_up_entry_owner_id_id_key").on(table.ownerId, table.id),
+  unique("catch_up_entry_session_item_key").on(table.ownerId, table.sessionId, table.itemType, table.itemId),
+  foreignKey({ columns: [table.ownerId, table.sessionId], foreignColumns: [catchUpSession.ownerId, catchUpSession.id], name: "catch_up_entry_owner_session_fk" }).onDelete("cascade"),
+  check("catch_up_entry_defer_state", sql`(${table.reviewState} = 'DEFERRED' and ((${table.deferUntil} is not null) <> ${table.deferUntilNextSwitch})) or (${table.reviewState} <> 'DEFERRED' and ${table.deferUntil} is null and ${table.deferUntilNextSwitch} = false)`),
+]);
+
 export type AlterProfileRow = typeof alterProfile.$inferSelect;
 export type SystemTodoRow = typeof systemTodo.$inferSelect;
+
+// Host is an explicit System role, independent of fronting and coverage.
+export const systemHost = pgTable("system_host", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id"),
+  version: integer("version").notNull().default(1),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("system_host_one_per_owner").on(table.ownerId),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "system_host_owner_alter_fk" }).onDelete("restrict"),
+  check("system_host_positive_version", sql`${table.version} > 0`),
+]);
+
+export const presenceKind = pgEnum("presence_kind", ["HOSTING", "FRONTING"]);
+// Hosting periods are maintained atomically by the system_host_record_period trigger.
+// Fronting episodes overlap hosting and each other, and close only explicitly.
+export const presencePeriod = pgTable("presence_period", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id").notNull(),
+  kind: presenceKind("kind").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().default(sql`date_trunc('milliseconds', clock_timestamp())`),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
+  origin: text("origin").notNull().default("EXPLICIT"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  unique("presence_period_owner_id_id_key").on(table.ownerId, table.id),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "presence_period_owner_alter_fk" }).onDelete("cascade"),
+  uniqueIndex("presence_period_one_host").on(table.ownerId).where(sql`${table.kind} = 'HOSTING' and ${table.endedAt} is null`),
+  uniqueIndex("presence_period_one_episode_per_alter").on(table.ownerId, table.alterId).where(sql`${table.kind} = 'FRONTING' and ${table.endedAt} is null`),
+  index("presence_period_owner_started").on(table.ownerId, table.startedAt, table.id),
+  check("presence_period_positive_version", sql`${table.version} > 0`),
+  check("presence_period_valid_range", sql`${table.endedAt} is null or ${table.endedAt} >= ${table.startedAt}`),
+  check("presence_period_origin", sql`${table.origin} in ('EXPLICIT', 'SYSTEM_HOST_SNAPSHOT')`),
+]);

@@ -1,3 +1,6 @@
+import { startFrontingEpisodeSchema, endFrontingEpisodeSchema, type StartFrontingEpisode, type EndFrontingEpisode, type PresencePeriod } from "@/domain/presence";
+import { frontingHistoryQuerySchema, type FrontingHistoryQuery, type FrontingHistoryResponse } from "@/domain/fronting-history";
+import { setSystemHostSchema, type SetSystemHost, type SystemHostView } from "@/domain/host";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import {
@@ -9,6 +12,7 @@ import {
   listNotesSchema,
   listTodosSchema,
   noteCreateSchema,
+  setProfilePictureSchema,
   todoCreateSchema,
   todoPatchSchema,
   versionMutationSchema,
@@ -23,6 +27,8 @@ import {
   type NoteCreate,
   type NoteView,
   type RecordSource,
+  type ProfileImageView,
+  type SetProfilePicture,
   type TodoCreate,
   type TodoPatch,
   type TodoView,
@@ -33,20 +39,30 @@ import { SystemError } from "@/server/system-error";
 
 type MutationResult<T> = { data: T; replayed: boolean };
 type Page<T> = { data: T[]; nextCursor?: string };
-type ErasureCounts = { todos: number; notes: number; coverage: number; images: number };
+type ErasureCounts = { host: number; todos: number; notes: number; coverage: number; images: number };
 type ErasurePreview = { alterId: string; version: number; blockers: ErasureCounts; canErase: boolean; previewToken?: string; expiresAt?: string };
 
 type AlterRow = QueryResultRow & {
   id: string;
   name: string;
   aliases: string[] | null;
+  cursor_created_at: string;
   pronouns: string | null;
+  species: string | null;
+  visual_description: string | null;
+  presentation: string | null;
+  signature_traits: string[];
+  style_tags: string[];
+  image_do_not_change: string[];
   self_described_gender: string | null;
   description: string | null;
   communication_guidance: string | null;
   strengths: string[];
   boundaries: string[];
   image_count: string | number;
+  images: Array<{ id: string; contentType: string; isProfilePicture: boolean; createdAt: string }> | null;
+  profile_picture: { id: string; contentType: string; isProfilePicture: boolean; createdAt: string } | null;
+  appearance_reference: { id: string; contentType: string; isProfilePicture: boolean; createdAt: string } | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -91,10 +107,21 @@ type NoteRow = QueryResultRow & {
 };
 
 const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a.description,
+  a.created_at::text as cursor_created_at,
+  a.species, a.visual_description, a.presentation, a.signature_traits, a.style_tags, a.image_do_not_change,
   a.communication_guidance, a.strengths, a.boundaries, a.version, a.created_at, a.updated_at, a.archived_at,
   coalesce((select array_agg(aa.alias order by aa.normalized_alias) from alter_alias aa
     where aa.owner_id = a.owner_id and aa.alter_id = a.id), '{}') as aliases,
-  (select count(*) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id) as image_count
+  (select count(*) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id) as image_count,
+  coalesce((select jsonb_agg(jsonb_build_object('id', pi.id, 'contentType', pi.content_type,
+    'isProfilePicture', pi.is_profile_picture, 'createdAt', pi.created_at) order by pi.created_at desc, pi.id desc)
+    from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id), '[]'::jsonb) as images,
+  (select jsonb_build_object('id', pi.id, 'contentType', pi.content_type, 'isProfilePicture', true,
+    'createdAt', pi.created_at) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id
+    and pi.is_profile_picture = true limit 1) as profile_picture,
+  (select jsonb_build_object('id', pi.id, 'contentType', pi.content_type, 'isProfilePicture', pi.is_profile_picture,
+    'createdAt', pi.created_at) from private_image pi where pi.owner_id = a.owner_id and pi.alter_id = a.id
+    and pi.id = a.appearance_reference_image_id limit 1) as appearance_reference
   from alter_profile a`;
 
 const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on, t.priority, t.coverage_id,
@@ -120,17 +147,32 @@ function asIso(value: Date | string) {
 }
 
 function alterFromRow(row: AlterRow): AlterView {
+  const toImage = (image: NonNullable<AlterRow["images"]>[number]): ProfileImageView => ({
+    id: image.id,
+    contentType: image.contentType as ProfileImageView["contentType"],
+    isProfilePicture: image.isProfilePicture,
+    createdAt: asIso(image.createdAt),
+  });
   return {
     id: row.id,
     name: row.name,
     aliases: row.aliases ?? [],
     pronouns: row.pronouns ?? undefined,
+    species: row.species ?? undefined,
+    visualDescription: row.visual_description ?? undefined,
+    presentation: row.presentation ?? undefined,
+    signatureTraits: row.signature_traits ?? [],
+    styleTags: row.style_tags ?? [],
+    imageDoNotChange: row.image_do_not_change ?? [],
     selfDescribedGender: row.self_described_gender ?? undefined,
     description: row.description ?? undefined,
     communicationGuidance: row.communication_guidance ?? undefined,
     strengths: row.strengths ?? [],
     boundaries: row.boundaries ?? [],
     imageCount: Number(row.image_count),
+    profilePicture: row.profile_picture ? toImage(row.profile_picture) : undefined,
+    appearanceReference: row.appearance_reference ? toImage(row.appearance_reference) : undefined,
+    images: (row.images ?? []).map(toImage),
     version: row.version,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
@@ -265,6 +307,9 @@ export class SystemService {
       return { data: result, replayed: false };
     } catch (error) {
       await client.query("rollback");
+      if (typeof error === "object" && error && "code" in error && error.code === "23505" && "constraint" in error && error.constraint === "private_image_one_profile_picture") {
+        throw new SystemError("CONFLICT", "The profile picture changed during this request.");
+      }
       if (typeof error === "object" && error && "code" in error && error.code === "23505") {
         throw new SystemError("VALIDATION_ERROR", "An alias or identifier is already in use for this owner.");
       }
@@ -272,6 +317,38 @@ export class SystemService {
     } finally {
       client.release();
     }
+  }
+
+  private async readSystemHost(client: PoolClient, ownerId: string): Promise<SystemHostView | null> {
+    const result = await client.query(`select h.id, h.alter_id, a.name as alter_name, h.version, h.recorded_at
+      from system_host h left join alter_profile a on a.owner_id = h.owner_id and a.id = h.alter_id
+      where h.owner_id = $1`, [ownerId]);
+    const row = result.rows[0];
+    return row ? { id: row.id, alterId: row.alter_id, alterName: row.alter_name, version: row.version, recordedAt: new Date(row.recorded_at).toISOString() } : null;
+  }
+
+  async getSystemHost(ownerId: string) {
+    const client = await this.pool.connect();
+    try { return await this.readSystemHost(client, ownerId); } finally { client.release(); }
+  }
+
+  async setSystemHost(ownerId: string, raw: SetSystemHost, source: RecordSource) {
+    const input = setSystemHostSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "set_system_host", async (client) => {
+      // Lock the owner even before the first host row exists.
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const previous = await this.readSystemHost(client, ownerId);
+      if ((previous?.version ?? null) !== input.expectedVersion) throw new SystemError("CONFLICT", "The host record changed. Read it again before updating.");
+      if (input.alterId) {
+        const profile = await client.query("select id from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null for update", [ownerId, input.alterId]);
+        if (!profile.rowCount) throw new SystemError("VALIDATION_ERROR", "The host must be an active profile belonging to this System.");
+      }
+      await client.query(`insert into system_host (owner_id, alter_id, recorded_at) values ($1, $2::uuid, date_trunc('milliseconds', clock_timestamp()))
+        on conflict (owner_id) do update set alter_id = excluded.alter_id, version = system_host.version + 1, recorded_at = excluded.recorded_at`, [ownerId, input.alterId]);
+      const current = (await this.readSystemHost(client, ownerId))!;
+      await this.activity(client, ownerId, "HOST", current.id, input.alterId ? "SET" : "CLEARED", source, ["alterId"], input.requestId, previous?.alterId ?? undefined, input.alterId ?? undefined);
+      return current;
+    });
   }
 
   private async alterById(client: PoolClient, ownerId: string, alterId: string, includeArchived = true) {
@@ -292,7 +369,7 @@ export class SystemService {
     if (!input.includeArchived) where.push("a.archived_at is null");
     if (input.search) {
       values.push(`%${input.search}%`);
-      where.push(`(a.name ilike $${values.length} or exists (select 1 from alter_alias search_alias where search_alias.owner_id = a.owner_id and search_alias.alter_id = a.id and search_alias.alias ilike $${values.length}))`);
+      where.push(`(a.name ilike $${values.length} or a.species ilike $${values.length} or exists (select 1 from unnest(a.style_tags) tag where tag ilike $${values.length}) or exists (select 1 from alter_alias search_alias where search_alias.owner_id = a.owner_id and search_alias.alter_id = a.id and search_alias.alias ilike $${values.length}))`);
     }
     if (input.cursor) {
       const cursor = decodeCursor(input.cursor);
@@ -303,16 +380,21 @@ export class SystemService {
     const rows = await this.pool.query<AlterRow>(`${alterSelect} where ${where.join(" and ")} order by a.created_at desc, a.id desc limit $${values.length}`, values);
     const all = rows.rows.map(alterFromRow);
     const data = all.slice(0, input.limit);
-    return { data, nextCursor: all.length > input.limit ? encodeCursor(data[data.length - 1]) : undefined };
+    // PostgreSQL timestamps retain microseconds; Date/ISO conversion would
+    // truncate the page boundary and skip profiles sharing that millisecond.
+    const lastRow = rows.rows[input.limit - 1];
+    return { data, nextCursor: all.length > input.limit ? encodeCursor({ id: lastRow.id, createdAt: lastRow.cursor_created_at }) : undefined };
   }
 
   async createAlter(ownerId: string, raw: AlterCreate, source: RecordSource) {
     const input = alterCreateSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, "create_alter", async (client) => {
       const inserted = await client.query<{ id: string }>(`insert into alter_profile
-        (owner_id, name, pronouns, self_described_gender, description, communication_guidance, strengths, boundaries)
-        values ($1, $2, $3, $4, $5, $6, $7::text[], $8::text[]) returning id`,
-      [ownerId, input.name, input.pronouns ?? null, input.selfDescribedGender ?? null, input.description ?? null, input.communicationGuidance ?? null, input.strengths ?? [], input.boundaries ?? []]);
+        (owner_id, name, pronouns, self_described_gender, description, communication_guidance, strengths, boundaries,
+         species, visual_description, presentation, signature_traits, style_tags, image_do_not_change)
+        values ($1, $2, $3, $4, $5, $6, $7::text[], $8::text[], $9, $10, $11, $12::text[], $13::text[], $14::text[]) returning id`,
+      [ownerId, input.name, input.pronouns ?? null, input.selfDescribedGender ?? null, input.description ?? null, input.communicationGuidance ?? null, input.strengths ?? [], input.boundaries ?? [],
+        input.species ?? null, input.visualDescription ?? null, input.presentation ?? null, input.signatureTraits ?? [], input.styleTags ?? [], input.imageDoNotChange ?? []]);
       const alterId = inserted.rows[0].id;
       for (const item of normalizeAliases(input.aliases)) {
         await client.query("insert into alter_alias (owner_id, alter_id, alias, normalized_alias) values ($1, $2::uuid, $3, $4)", [ownerId, alterId, item.alias, item.normalized]);
@@ -338,6 +420,94 @@ export class SystemService {
     try { return await this.currentFront(client, ownerId); } finally { client.release(); }
   }
 
+  private async presenceById(client: PoolClient, ownerId: string, id: string): Promise<PresencePeriod> {
+    const result = await client.query(`select p.*, a.name as alter_name from presence_period p
+      join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+      where p.owner_id = $1 and p.id = $2::uuid`, [ownerId, id]);
+    const row = result.rows[0];
+    if (!row) throw new SystemError("NOT_FOUND", "Recorded period not found.");
+    return { ...frontingFromRow(row), kind: row.kind, origin: row.origin };
+  }
+
+  async getCurrentPresence(ownerId: string) {
+    const client = await this.pool.connect();
+    try {
+      // Both kinds and the compatibility record come from one consistent snapshot.
+      await client.query("begin isolation level repeatable read read only");
+      const rows = await client.query(`select p.*, a.name as alter_name from presence_period p
+        join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+        where p.owner_id = $1 and p.ended_at is null order by p.started_at, p.id`, [ownerId]);
+      const periods: PresencePeriod[] = rows.rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+      const legacyCurrentFront = await this.currentFront(client, ownerId);
+      await client.query("commit");
+      return { hosting: periods.find(p => p.kind === "HOSTING") ?? null,
+        fronting: periods.filter(p => p.kind === "FRONTING"), legacyCurrentFront };
+    } catch (error) { await client.query("rollback"); throw error; }
+    finally { client.release(); }
+  }
+
+  async startFrontingEpisode(ownerId: string, raw: StartFrontingEpisode, source: RecordSource) {
+    const input = startFrontingEpisodeSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "start_fronting_episode", async client => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const profile = await client.query("select id from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null for update", [ownerId, input.alterId]);
+      if (!profile.rowCount) throw new SystemError("NOT_FOUND", "The alter was not found or is archived.");
+      const active = await client.query("select id from presence_period where owner_id = $1 and alter_id = $2::uuid and kind = 'FRONTING' and ended_at is null", [ownerId, input.alterId]);
+      if (active.rowCount) throw new SystemError("CONFLICT", "This alter already has an open fronting episode. Read current presence first.");
+      const inserted = await client.query("insert into presence_period(owner_id, alter_id, kind) values ($1, $2::uuid, 'FRONTING') returning id", [ownerId, input.alterId]);
+      const result = await this.presenceById(client, ownerId, inserted.rows[0].id);
+      await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "STARTED", source, ["alterId", "startedAt"], input.requestId);
+      return result;
+    });
+  }
+
+  async endFrontingEpisode(ownerId: string, raw: EndFrontingEpisode, source: RecordSource) {
+    const input = endFrontingEpisodeSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "end_fronting_episode", async client => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const current = await this.presenceById(client, ownerId, input.episodeId);
+      if (current.kind !== "FRONTING") throw new SystemError("VALIDATION_ERROR", "Use set_system_host to end a hosting period.");
+      if (current.version !== input.expectedVersion || current.endedAt) throw new SystemError("CONFLICT", "The episode changed or already ended. Read current presence again.");
+      const updated = await client.query(`update presence_period set ended_at = date_trunc('milliseconds', clock_timestamp()),
+        version = version + 1, updated_at = clock_timestamp() where owner_id = $1 and id = $2::uuid
+        and version = $3 and ended_at is null and kind = 'FRONTING'`, [ownerId, input.episodeId, input.expectedVersion]);
+      if (!updated.rowCount) throw new SystemError("CONFLICT", "The episode changed while ending it. Read current presence again.");
+      const result = await this.presenceById(client, ownerId, input.episodeId);
+      await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "ENDED", source, ["endedAt", "version"], input.requestId);
+      return result;
+    });
+  }
+
+  async listFrontingHistory(ownerId: string, raw: FrontingHistoryQuery): Promise<FrontingHistoryResponse> {
+    const input = frontingHistoryQuerySchema.parse(raw);
+    if (input.from && input.to && Date.parse(input.from) >= Date.parse(input.to)) {
+      throw new SystemError("VALIDATION_ERROR", "The end must be after the start.");
+    }
+    const result = await this.pool.query(`with periods as (
+      select id, owner_id, alter_id, started_at, ended_at, version, kind::text, origin
+        from presence_period where owner_id = $1
+      union all
+      select id, owner_id, alter_id, started_at, ended_at, version, 'LEGACY_FRONT', 'LEGACY_RECORD'
+        from fronting_session where owner_id = $1
+    ) select p.*, a.name as alter_name,
+      to_char(p.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_started_at
+      from periods p join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
+      where ($2::timestamptz is null or p.ended_at is null or p.ended_at > $2)
+        and ($3::timestamptz is null or p.started_at < $3)
+        and ($4::uuid is null or p.alter_id = $4)
+        and ($5::timestamptz is null or (p.started_at, p.id, p.kind) < ($5::timestamptz, $6::uuid, $7::text))
+        and ($8::text is null or p.kind = $8)
+      order by p.started_at desc, p.id desc, p.kind desc limit $9`,
+    [ownerId, input.from ?? null, input.to ?? null, input.alterId ?? null,
+      input.before?.startedAt ?? null, input.before?.id ?? null, input.before?.kind ?? null,
+      input.kind ?? null, input.limit + 1]);
+    const rows = result.rows.slice(0, input.limit);
+    const data = rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+    const last = rows.at(-1);
+    return { data, meta: { recordedOnly: true, ...(result.rows.length > input.limit && last
+      ? { nextCursor: { startedAt: last.cursor_started_at, id: last.id, kind: last.kind } } : {}) } };
+  }
+
   async switchCurrentFront(ownerId: string, raw: FrontingSwitch, source: RecordSource) {
     const input = frontingSwitchSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, "switch_current_front", async (client) => {
@@ -348,7 +518,8 @@ export class SystemService {
 
       const current = await this.currentFront(client, ownerId, true);
       const currentVersion = current?.version ?? null;
-      if (input.expectedCurrentVersion !== currentVersion) {
+      if (input.expectedCurrentVersion !== currentVersion
+        || (input.expectedCurrentSessionId !== undefined && input.expectedCurrentSessionId !== (current?.id ?? null))) {
         throw new SystemError("CONFLICT", "The current front changed since it was read.", { currentVersion });
       }
       if (current?.alterId === input.alterId) return { current, previous: null };
@@ -443,6 +614,8 @@ export class SystemService {
       const updated = await client.query(`update alter_profile set
         name = $3, pronouns = $4, self_described_gender = $5, description = $6,
         communication_guidance = $7, strengths = $8::text[], boundaries = $9::text[],
+        species = $11, visual_description = $12, presentation = $13,
+        signature_traits = $14::text[], style_tags = $15::text[], image_do_not_change = $16::text[],
         version = version + 1, updated_at = now()
         where owner_id = $1 and id = $2::uuid and version = $10`, [
         ownerId, alterId,
@@ -454,6 +627,12 @@ export class SystemService {
         input.strengths ?? current.strengths,
         input.boundaries ?? current.boundaries,
         input.expectedVersion,
+        input.species === undefined ? current.species ?? null : input.species,
+        input.visualDescription === undefined ? current.visualDescription ?? null : input.visualDescription,
+        input.presentation === undefined ? current.presentation ?? null : input.presentation,
+        input.signatureTraits ?? current.signatureTraits ?? [],
+        input.styleTags ?? current.styleTags ?? [],
+        input.imageDoNotChange ?? current.imageDoNotChange ?? [],
       ]);
       if (!updated.rowCount) {
         const latest = await this.alterById(client, ownerId, alterId);
@@ -466,6 +645,67 @@ export class SystemService {
       await this.activity(client, ownerId, "ALTER", alterId, "UPDATED", source, changed, input.requestId);
       return this.alterById(client, ownerId, alterId);
     });
+  }
+
+  async setProfilePicture(ownerId: string, alterId: string, raw: SetProfilePicture, source: RecordSource) {
+    const input = setProfilePictureSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `set_profile_picture:${alterId}`, async (client) => {
+      return this.promoteProfilePicture(client, ownerId, alterId, input.imageId, input.expectedVersion, input.requestId, source);
+    });
+  }
+
+  async setAppearanceReference(ownerId: string, alterId: string, raw: SetProfilePicture, source: RecordSource) {
+    const input = setProfilePictureSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `set_appearance_reference:${alterId}`, async (client) => {
+      const current = await this.alterById(client, ownerId, alterId, false);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+      const image = await client.query("select 1 from private_image where owner_id = $1 and alter_id = $2::uuid and id = $3::uuid", [ownerId, alterId, input.imageId]);
+      if (!image.rowCount) throw new SystemError("NOT_FOUND", "That private image is not available for this alter.");
+      await client.query("update alter_profile set appearance_reference_image_id = $3::uuid, version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid", [ownerId, alterId, input.imageId]);
+      await this.activity(client, ownerId, "ALTER", alterId, "APPEARANCE_REFERENCE_SET", source, ["appearanceReferenceImageId"], input.requestId);
+      return this.alterById(client, ownerId, alterId);
+    });
+  }
+
+  async attachAndSetProfilePicture(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, raw: Omit<SetProfilePicture, "imageId">, source: RecordSource) {
+    const input = setProfilePictureSchema.omit({ imageId: true }).parse(raw);
+    return this.mutate(ownerId, input.requestId, `attach_profile_picture:${alterId}`, async (client) => {
+      const current = await this.alterById(client, ownerId, alterId, false);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+      const inserted = await client.query(`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
+        values ($1::uuid, $2, $3::uuid, $4, $5)`, [image.id, ownerId, alterId, image.storageKey, image.contentType]);
+      if (!inserted.rowCount) throw new SystemError("NOT_FOUND", "Alter not found.");
+      return this.promoteProfilePicture(client, ownerId, alterId, image.id, input.expectedVersion, input.requestId, source);
+    });
+  }
+
+  // A generated keeper is persisted before any appearance selection. The
+  // request receipt makes a transport retry return the original image ID,
+  // rather than creating a second gallery row.
+  async attachPrivateImage(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, raw: { requestId: string }, source: RecordSource) {
+    const input = setProfilePictureSchema.pick({ requestId: true }).parse(raw);
+    return this.mutate(ownerId, input.requestId, `attach_private_image:${alterId}`, async (client) => {
+      await this.alterById(client, ownerId, alterId, false);
+      await client.query(`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
+        values ($1::uuid, $2, $3::uuid, $4, $5)`, [image.id, ownerId, alterId, image.storageKey, image.contentType]);
+      await this.activity(client, ownerId, "ALTER", alterId, "IMAGE_ATTACHED", source, ["images"], input.requestId);
+      return { imageId: image.id };
+    });
+  }
+
+  private async promoteProfilePicture(client: PoolClient, ownerId: string, alterId: string, imageId: string, expectedVersion: number, requestId: string, source: RecordSource) {
+    await client.query("select 1 from alter_profile where owner_id = $1 and id = $2::uuid for update", [ownerId, alterId]);
+    const current = await this.alterById(client, ownerId, alterId, false);
+    if (current.version !== expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
+    const image = await client.query<{ is_profile_picture: boolean }>("select is_profile_picture from private_image where owner_id = $1 and alter_id = $2::uuid and id = $3::uuid", [ownerId, alterId, imageId]);
+    if (!image.rowCount) throw new SystemError("NOT_FOUND", "Profile image not found.");
+    if (image.rows[0].is_profile_picture) return current;
+    await client.query("update private_image set is_profile_picture = false where owner_id = $1 and alter_id = $2::uuid and is_profile_picture = true", [ownerId, alterId]);
+    await client.query("update private_image set is_profile_picture = true where owner_id = $1 and alter_id = $2::uuid and id = $3::uuid", [ownerId, alterId, imageId]);
+    const updated = await client.query("update alter_profile set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, alterId, expectedVersion]);
+    if (!updated.rowCount) throw new SystemError("CONFLICT", "The alter changed during profile-picture promotion.");
+    await this.activity(client, ownerId, "ALTER", alterId, "PROFILE_PICTURE_SET", source, ["profilePicture", "version"], requestId);
+    return this.alterById(client, ownerId, alterId);
   }
 
   private async setAlterArchive(ownerId: string, alterId: string, raw: { requestId: string; expectedVersion: number }, source: RecordSource, archived: boolean) {
@@ -484,13 +724,14 @@ export class SystemService {
   restoreAlter(ownerId: string, alterId: string, input: { requestId: string; expectedVersion: number }, source: RecordSource) { return this.setAlterArchive(ownerId, alterId, input, source, false); }
 
   private async blockerCounts(client: PoolClient, ownerId: string, alterId: string): Promise<ErasureCounts> {
-    const result = await client.query<{ todos: string; notes: string; coverage: string; images: string }>(`select
+    const result = await client.query<{ host: string; todos: string; notes: string; coverage: string; images: string }>(`select
+      (select count(*) from system_host where owner_id = $1 and alter_id = $2::uuid) as host,
       (select count(*) from todo_assignee where owner_id = $1 and alter_id = $2::uuid) as todos,
       (select count(*) from system_note where owner_id = $1 and alter_id = $2::uuid) as notes,
       (select count(*) from coverage_assignment where owner_id = $1 and alter_id = $2::uuid) as coverage,
       (select count(*) from private_image where owner_id = $1 and alter_id = $2::uuid) as images`, [ownerId, alterId]);
     const row = result.rows[0];
-    return { todos: Number(row.todos), notes: Number(row.notes), coverage: Number(row.coverage), images: Number(row.images) };
+    return { host: Number(row.host), todos: Number(row.todos), notes: Number(row.notes), coverage: Number(row.coverage), images: Number(row.images) };
   }
 
   async previewEraseAlter(ownerId: string, alterId: string): Promise<ErasurePreview> {
@@ -498,7 +739,7 @@ export class SystemService {
     try {
       const alter = await this.alterById(client, ownerId, alterId);
       const blockers = await this.blockerCounts(client, ownerId, alterId);
-      const canErase = blockers.todos + blockers.notes + blockers.coverage === 0;
+      const canErase = blockers.host + blockers.todos + blockers.notes + blockers.coverage === 0;
       if (!canErase) return { alterId, version: alter.version, blockers, canErase };
       const expiresAt = Date.now() + 10 * 60 * 1000;
       return { alterId, version: alter.version, blockers, canErase, expiresAt: new Date(expiresAt).toISOString(), previewToken: issuePreviewToken({ ownerId, alterId, version: alter.version, blockers, expiresAt }) };
@@ -510,10 +751,11 @@ export class SystemService {
     const token = readPreviewToken(input.previewToken);
     if (token.ownerId !== ownerId || token.alterId !== alterId || token.version !== input.expectedVersion || token.expiresAt < Date.now()) throw new SystemError("CONFLICT", "The erasure preview is stale. Request a fresh preview.");
     return this.mutate(ownerId, input.requestId, `erase_alter:${alterId}`, async (client) => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
       const current = await this.alterById(client, ownerId, alterId);
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since the erasure preview.", { currentVersion: current.version });
       const blockers = await this.blockerCounts(client, ownerId, alterId);
-      if (blockers.todos + blockers.notes + blockers.coverage > 0) throw new SystemError("ERASURE_BLOCKED", "Resolve todo, note, and coverage references before erasing this alter.", { blockers });
+      if (blockers.host + blockers.todos + blockers.notes + blockers.coverage > 0) throw new SystemError("ERASURE_BLOCKED", "Clear or reassign the host and resolve todo, note, and coverage references before erasing this alter.", { blockers });
       const images = await client.query<{ storage_key: string }>("select storage_key from private_image where owner_id = $1 and alter_id = $2::uuid", [ownerId, alterId]);
       await this.removePrivateImages(images.rows.map((row) => row.storage_key));
       await client.query("update activity_event set actor_alter_id = null where owner_id = $1 and actor_alter_id = $2::uuid", [ownerId, alterId]);
