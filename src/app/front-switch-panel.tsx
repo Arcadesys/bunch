@@ -234,7 +234,7 @@ export function FrontSwitchPanel({
         }}
         disabled={open}
       >
-        Update hosting or fronting
+        Set host or start side fronter
       </button>
       {open ? (
         <section
@@ -242,43 +242,42 @@ export function FrontSwitchPanel({
           aria-labelledby="presence-change-heading"
         >
           <h2 id="presence-change-heading" ref={heading} tabIndex={-1}>
-            Confirm hosting or fronting
+            Set host or start a side fronter
           </h2>
           <p role="status">{message}</p>
           {ready ? (
             <div role="group" aria-label="Current recorded state">
               <p><strong>Current host:</strong> {host?.alterName ?? "Not recorded"}</p>
-              <p><strong>Active fronting:</strong> {presence.fronting.length ? presence.fronting.map(p => p.alterName).join(", ") : "No open episodes recorded"}</p>
+              <p><strong>Active side fronters:</strong> {presence.fronting.length ? presence.fronting.map(p => p.alterName).join(", ") : "No open episodes recorded"}</p>
             </div>
           ) : null}
           {ready ? (
             <form className="form-stack" onSubmit={confirm}>
-              <label>
-                Experience change
-                <select
-                  value={action}
-                  disabled={busy || uncertain}
-                  onChange={(e) => {
-                    setAction(e.target.value as Action);
-                    setSelected("");
-                  }}
-                >
-                  <option value="START">Start fronting episode</option>
-                  <option value="END">End fronting episode</option>
-                  <option value="HOST">Set or change host</option>
-                  <option value="CLEAR">End hosting</option>
-                </select>
-              </label>
+              <fieldset className="presence-action-picker" disabled={busy || uncertain}>
+                <legend>Choose one explicit change</legend>
+                <button type="button" className="command-button" aria-pressed={action === "HOST"} onClick={() => { setAction("HOST"); setSelected(""); }}>
+                  Set host
+                </button>
+                <button type="button" className="command-button" aria-pressed={action === "START"} onClick={() => { setAction("START"); setSelected(""); }}>
+                  Start side fronter
+                </button>
+                <button type="button" className="command-button secondary" aria-pressed={action === "END"} onClick={() => { setAction("END"); setSelected(""); }}>
+                  End a side-fronting episode
+                </button>
+                <button type="button" className="command-button secondary" aria-pressed={action === "CLEAR"} onClick={() => { setAction("CLEAR"); setSelected(""); }}>
+                  End hosting
+                </button>
+              </fieldset>
               <p>
                 {action === "HOST" || action === "CLEAR"
                   ? `Hosting: ${host?.alterName ?? "not recorded"}. The host is responsible for everything otherwise unclaimed.`
-                  : "Fronting episodes can overlap hosting and end independently."}
+                  : "A side fronter starts an overlapping fronting episode. It does not replace the host or end any other side fronter."}
               </p>
               {action !== "CLEAR" ? (
                 <label>
-                  {action === "END" ? "Episode to end" : "Profile"}
+                  {action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
                   <select
-                    aria-label={action === "END" ? "Episode to end" : "Profile"}
+                    aria-label={action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
                     required
                     value={selected}
                     disabled={busy || uncertain}
@@ -286,7 +285,7 @@ export function FrontSwitchPanel({
                   >
                     <option value="">
                       Choose a{" "}
-                      {action === "END" ? "recorded episode" : "profile"}
+                      {action === "END" ? "recorded side-fronting episode" : "profile"}
                     </option>
                     {choices.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -304,7 +303,15 @@ export function FrontSwitchPanel({
                   (action === "CLEAR" && !host?.alterId)
                 }
               >
-                {uncertain ? "Retry confirmed change" : "Confirm change"}
+                {uncertain
+                  ? "Retry confirmed change"
+                  : action === "HOST"
+                    ? "Confirm host change"
+                    : action === "START"
+                      ? "Confirm side-fronter arrival"
+                      : action === "END"
+                        ? "Confirm side-fronting end"
+                        : "Confirm hosting end"}
               </button>
             </form>
           ) : (

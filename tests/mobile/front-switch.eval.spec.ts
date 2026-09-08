@@ -2,9 +2,9 @@ import { test, expect, fixtureSession } from "./fixtures";
 
 async function open(page: import("@playwright/test").Page) {
   await page
-    .getByRole("button", { name: "Update hosting or fronting", exact: true })
+    .getByRole("button", { name: "Set host or start side fronter", exact: true })
     .click();
-  await expect(page.getByLabel("Experience change")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start side fronter", exact: true })).toBeVisible();
 }
 
 test("@eval explicit episode start leaves other episodes intact and opens selected catch-up", async ({
@@ -14,7 +14,7 @@ test("@eval explicit episode start leaves other episodes intact and opens select
   await page.goto("/");
   await open(page);
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   expect(harness.writes).toHaveLength(0);
   await page.screenshot({
@@ -22,7 +22,7 @@ test("@eval explicit episode start leaves other episodes intact and opens select
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm side-fronter arrival", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Catch-up for Test Finch" }),
@@ -47,12 +47,12 @@ test("@eval cancelling writes nothing and restores focus", async ({
   await page.goto("/");
   await open(page);
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(
     page.getByRole("button", {
-      name: "Update hosting or fronting",
+      name: "Set host or start side fronter",
       exact: true,
     }),
   ).toBeFocused();
@@ -65,12 +65,12 @@ test("@eval hosting and episode ends preserve independent records", async ({
 }) => {
   await page.goto("/");
   await open(page);
-  await page.getByLabel("Experience change").selectOption("HOST");
+  await page.getByRole("button", { name: "Set host", exact: true }).click();
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Host profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm host change", exact: true })
     .click();
   await expect(
     page.getByRole("button", {
@@ -81,21 +81,21 @@ test("@eval hosting and episode ends preserve independent records", async ({
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   expect(harness.presence.fronting).toHaveLength(1);
   await open(page);
-  await page.getByLabel("Experience change").selectOption("END");
+  await page.getByRole("button", { name: "End a side-fronting episode", exact: true }).click();
   await page
-    .getByLabel("Episode to end")
+    .getByLabel("Side-fronting episode to end")
     .selectOption(harness.presence.fronting[0].id);
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm side-fronting end", exact: true })
     .click();
   await expect(
     page.getByText("No open fronting episodes are recorded."),
   ).toBeVisible();
   expect(harness.presence.hosting?.alterName).toBe("Test Finch");
   await open(page);
-  await page.getByLabel("Experience change").selectOption("CLEAR");
+  await page.getByRole("button", { name: "End hosting", exact: true }).click();
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm hosting end", exact: true })
     .click();
   await expect(page.getByText("No hosting period is recorded.")).toBeVisible();
 });
@@ -106,9 +106,9 @@ test("@eval stale host version requires reread and explicit reconfirmation", asy
 }) => {
   await page.goto("/");
   await open(page);
-  await page.getByLabel("Experience change").selectOption("HOST");
+  await page.getByRole("button", { name: "Set host", exact: true }).click();
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Host profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   harness.host = {
     id: crypto.randomUUID(),
@@ -118,7 +118,7 @@ test("@eval stale host version requires reread and explicit reconfirmation", asy
     recordedAt: new Date().toISOString(),
   };
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm host change", exact: true })
     .click();
   await expect(
     page.getByText("The record changed. Reload, choose again, and confirm."),
@@ -128,10 +128,10 @@ test("@eval stale host version requires reread and explicit reconfirmation", asy
     .getByRole("button", { name: "Reload hosting and fronting" })
     .click();
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Host profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm host change", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Catch-up for Test Robin" }),
@@ -147,13 +147,13 @@ test("@eval ambiguous retry applies once and prevents changed input", async ({
   await page.goto("/");
   await open(page);
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm side-fronter arrival", exact: true })
     .click();
   await expect(page.getByText(/The change may be saved/)).toBeVisible();
-  await expect(page.getByLabel("Experience change")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start side fronter", exact: true })).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeDisabled();
@@ -173,15 +173,15 @@ test("@eval profiles paginate and failed reads do not enable mutations", async (
   harness.switchReadStatus = 401;
   await page.goto("/");
   await page
-    .getByRole("button", { name: "Update hosting or fronting", exact: true })
+    .getByRole("button", { name: "Set host or start side fronter", exact: true })
     .click();
-  await expect(page.getByLabel("Experience change")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Choose one explicit change" })).toHaveCount(0);
   harness.switchReadStatus = 200;
   await page
     .getByRole("button", { name: "Reload hosting and fronting" })
     .click();
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   expect(harness.profileReads).toBeGreaterThanOrEqual(3);
   expect(harness.writes).toHaveLength(0);
@@ -195,7 +195,7 @@ test("@eval rapid confirmation sends one mutation", async ({
   await page.goto("/");
   await open(page);
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page.locator(".command-switch form").evaluate((form) => {
     form.dispatchEvent(
@@ -226,10 +226,10 @@ test("@eval late initial catch-up cannot undo selected episode", async ({
   await page.goto("/");
   await open(page);
   await page
-    .getByLabel("Profile", { exact: true })
+    .getByLabel("Side fronter profile", { exact: true })
     .selectOption(harness.profiles[1].id);
   await page
-    .getByRole("button", { name: "Confirm change", exact: true })
+    .getByRole("button", { name: "Confirm side-fronter arrival", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Catch-up for Test Finch" }),
@@ -252,15 +252,15 @@ test("@eval controls are reachable before catch-up items and show both records",
   const shortcut = page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Hosting & fronting" });
   await expect(shortcut).toBeInViewport();
   await shortcut.click();
-  const trigger = page.getByRole("button", { name: "Update hosting or fronting", exact: true });
+  const trigger = page.getByRole("button", { name: "Set host or start side fronter", exact: true });
   await expect(trigger).toBeInViewport();
   await trigger.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Experience change")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start side fronter", exact: true })).toBeVisible();
   await expect(page.getByLabel("Current recorded state")).toContainText("Current host: Not recorded");
-  await expect(page.getByLabel("Current recorded state")).toContainText("Active fronting: Test Robin");
+  await expect(page.getByLabel("Current recorded state")).toContainText("Active side fronters: Test Robin");
   expect(harness.writes).toHaveLength(0);
-  await page.getByRole("heading", { name: "Confirm hosting or fronting" }).scrollIntoViewIfNeeded();
+  await page.getByRole("heading", { name: "Set host or start a side fronter" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("web-presence-controls.png"), fullPage: false });
   expect(errors).toEqual([]);
 });
@@ -268,7 +268,7 @@ test("@eval controls are reachable before catch-up items and show both records",
 test("@eval saved change with failed reread retries reads without another mutation", async ({ page, harness }) => {
   await page.goto("/");
   await open(page);
-  await page.getByLabel("Profile", { exact: true }).selectOption(harness.profiles[1].id);
+  await page.getByLabel("Side fronter profile", { exact: true }).selectOption(harness.profiles[1].id);
   let failRead = true;
   let reads = 0;
   await page.route("**/api/v1/presence/current", async route => {
@@ -276,7 +276,7 @@ test("@eval saved change with failed reread retries reads without another mutati
     if (failRead) await route.fulfill({ status: 503, json: { error: { message: "Temporary read failure" } } });
     else await route.fallback();
   });
-  await page.getByRole("button", { name: "Confirm change", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm side-fronter arrival", exact: true }).click();
   await expect(page.getByText(/Your change was saved, but current records could not be read/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
   expect(harness.writes).toHaveLength(1);
