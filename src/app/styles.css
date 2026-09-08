@@ -1524,3 +1524,126 @@ input, textarea, select { max-width: 100%; border-radius: 7px; border-width: 2px
 /* Catch-up headings and actions must reflow at enlarged text sizes. */
 .home-catch-up { overflow-wrap: anywhere; }
 .home-catch-up .command-button { max-width: 100%; white-space: normal; }
+
+/* Bunch compact system: dense command language, never dense targets. */
+:root {
+  --paper: #0a0a14;
+  --surface: #14142a;
+  --wash: #1a1a30;
+  --ink: #e8e8ec;
+  --muted: #b6b3c6;
+  --line: rgba(255, 138, 0, .3);
+  --accent: #ff6b9d;
+  --accent-ink: #120914;
+  --focus: #ffc46b;
+  --bunch-orange: #ff8a00;
+  --bunch-pink: #ff3cac;
+}
+
+body {
+  background: radial-gradient(70% 55% at 18% 0%, rgb(255 138 0 / 7%), transparent 70%), radial-gradient(60% 50% at 88% 8%, rgb(255 60 172 / 8%), transparent 70%), var(--paper);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.shell, .command-shell, .command-app {
+  max-width: 74rem;
+  padding: 1rem;
+}
+
+.command-shell .command-main, .saved-records .command-main, .command-main, .fronting-history {
+  max-width: 68rem;
+}
+
+.app-navigation.command-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: block;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgb(255 138 0 / 28%);
+  border-radius: 12px;
+  background: rgb(10 10 20 / 92%);
+  backdrop-filter: blur(12px);
+}
+
+.bunch-primary-bar, .bunch-verbbar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.bunch-primary-bar { gap: .65rem; min-height: 60px; padding: .45rem .65rem; }
+.app-navigation .command-brand { flex: 0 0 auto; gap: .45rem; color: var(--ink); font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
+.app-navigation .command-brand img { width: 32px; height: 32px; border-radius: 8px; }
+
+.app-navigation .command-topnav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: .15rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.app-navigation .command-topnav a {
+  flex: 0 0 auto;
+  gap: .35rem;
+  min-height: 44px;
+  padding: .35rem .55rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-navigation .command-topnav svg, .bunch-verb svg, .bunch-icon-button svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.app-navigation .command-topnav a:hover { color: var(--ink); background: var(--wash); }
+.app-navigation .command-topnav a[aria-current="page"] { border-color: rgb(255 60 172 / 55%); background: #1e1e3a; color: var(--ink); }
+
+.bunch-utilities { display: flex; align-items: center; gap: .3rem; flex: 0 0 auto; }
+.bunch-private-pill { display: inline-flex; align-items: center; gap: .35rem; min-height: 36px; padding: 0 .6rem; border: 1px solid rgb(255 138 0 / 26%); border-radius: 999px; background: var(--surface); color: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .6rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.bunch-icon-button { display: grid; place-items: center; width: 44px; min-width: 44px; min-height: 44px; padding: 0; border: 1px solid rgb(255 138 0 / 26%); border-radius: 8px; background: var(--wash); color: var(--muted); }
+.bunch-icon-button:hover, .bunch-icon-button[aria-pressed="true"] { border-color: var(--bunch-pink); color: var(--bunch-pink); background: #1e1e3a; }
+.bunch-icon-button.contrast[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+
+.bunch-verbbar { gap: .45rem; min-height: 54px; padding: .45rem .75rem; overflow-x: auto; border-top: 1px solid rgb(255 138 0 / 16%); background: rgb(20 20 42 / 55%); }
+.bunch-verb-label { flex: 0 0 auto; padding-right: .1rem; color: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .6rem; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; }
+.bunch-verb { display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto; min-height: 44px; padding: .35rem .65rem; border: 1px solid rgb(255 138 0 / 26%); border-radius: 8px; background: var(--wash); color: var(--ink); font-size: .75rem; font-weight: 600; text-decoration: none; }
+.bunch-verb:hover { background: #1e1e3a; }
+.bunch-verb.switch { border-color: rgb(255 60 172 / 52%); }
+.bunch-verb.switch svg { color: var(--bunch-pink); }
+.bunch-verb.review { border-color: rgb(255 138 0 / 48%); }
+.bunch-verb.review svg { color: var(--bunch-orange); }
+.bunch-verb.update svg { color: var(--muted); }
+.bunch-verb kbd { padding: 1px 5px; border: 1px solid rgb(255 138 0 / 45%); border-radius: 4px; color: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .6rem; }
+.bunch-verb-hint { margin-left: auto; color: var(--muted); font-size: .7rem; white-space: nowrap; }
+
+.panel, .return-review, .presence-panel, .option-card, .command-row, .fronting-records li, .profile-entry { border-color: rgb(255 138 0 / 24%); border-radius: 12px; background: var(--surface); box-shadow: 0 6px 24px rgb(255 60 172 / 5%); }
+button, .button, .command-button { border-color: rgb(255 60 172 / 62%); background: linear-gradient(135deg, var(--bunch-orange), var(--bunch-pink)); color: #fff; }
+.button-secondary, .command-button.secondary { border-color: rgb(255 138 0 / 30%); background: var(--wash); color: var(--ink); }
+h1, .command-hero h1 { color: var(--ink); }
+:root[data-glow="on"] .command-brand, :root[data-glow="on"] h1 { text-shadow: 0 0 10px var(--bunch-pink), 0 0 22px rgb(255 60 172 / 40%); }
+
+:root[data-high-contrast="on"] { color-scheme: dark; --paper: #000; --surface: #000; --wash: #000; --ink: #fff; --muted: #fff; --line: #fff; --accent: #fff; --accent-ink: #000; --focus: #fff; }
+:root[data-high-contrast="on"] body { background: #000; }
+:root[data-high-contrast="on"] * { box-shadow: none !important; text-shadow: none !important; }
+:root[data-high-contrast="on"] .app-navigation.command-topbar, :root[data-high-contrast="on"] .bunch-verbbar, :root[data-high-contrast="on"] .panel, :root[data-high-contrast="on"] .return-review, :root[data-high-contrast="on"] .presence-panel, :root[data-high-contrast="on"] .option-card, :root[data-high-contrast="on"] .command-row, :root[data-high-contrast="on"] .fronting-records li, :root[data-high-contrast="on"] .profile-entry { background: #000; border-color: #fff; }
+:root[data-high-contrast="on"] button, :root[data-high-contrast="on"] .button, :root[data-high-contrast="on"] .command-button, :root[data-high-contrast="on"] .bunch-verb, :root[data-high-contrast="on"] .bunch-icon-button { background: #000; color: #fff; border-color: #fff; }
+
+@media (max-width: 760px) {
+  .shell, .command-shell, .command-app { padding: .55rem; }
+  .app-navigation.command-topbar { position: relative; }
+  .bunch-primary-bar { flex-wrap: wrap; gap: .35rem; }
+  .app-navigation .command-topnav { order: 3; flex-basis: 100%; }
+  .bunch-utilities { margin-left: auto; }
+  .bunch-private-pill { display: none; }
+  .bunch-verbbar { padding-inline: .55rem; }
+  .bunch-verb-hint { display: none; }
+}
