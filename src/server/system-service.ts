@@ -48,7 +48,14 @@ type AlterRow = QueryResultRow & {
   id: string;
   name: string;
   aliases: string[] | null;
+  cursor_created_at: string;
   pronouns: string | null;
+  species: string | null;
+  visual_description: string | null;
+  presentation: string | null;
+  signature_traits: string[];
+  style_tags: string[];
+  image_do_not_change: string[];
   self_described_gender: string | null;
   description: string | null;
   appearance_notes: string | null;
@@ -103,6 +110,8 @@ type NoteRow = QueryResultRow & {
 };
 
 const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a.description,
+  a.created_at::text as cursor_created_at,
+  a.species, a.visual_description, a.presentation, a.signature_traits, a.style_tags, a.image_do_not_change,
   appearance.appearance_notes, coalesce((select array_agg(ref.image_id order by ref.created_at, ref.image_id)
     from alter_appearance_reference ref where ref.owner_id = a.owner_id and ref.alter_id = a.id), '{}') as appearance_reference_image_ids,
   a.communication_guidance, a.strengths, a.boundaries, a.version, a.created_at, a.updated_at, a.archived_at,
@@ -152,6 +161,12 @@ function alterFromRow(row: AlterRow): AlterView {
     name: row.name,
     aliases: row.aliases ?? [],
     pronouns: row.pronouns ?? undefined,
+    species: row.species ?? undefined,
+    visualDescription: row.visual_description ?? undefined,
+    presentation: row.presentation ?? undefined,
+    signatureTraits: row.signature_traits ?? [],
+    styleTags: row.style_tags ?? [],
+    imageDoNotChange: row.image_do_not_change ?? [],
     selfDescribedGender: row.self_described_gender ?? undefined,
     description: row.description ?? undefined,
     appearanceNotes: row.appearance_notes ?? undefined,
@@ -358,7 +373,7 @@ export class SystemService {
     if (!input.includeArchived) where.push("a.archived_at is null");
     if (input.search) {
       values.push(`%${input.search}%`);
-      where.push(`(a.name ilike $${values.length} or exists (select 1 from alter_alias search_alias where search_alias.owner_id = a.owner_id and search_alias.alter_id = a.id and search_alias.alias ilike $${values.length}))`);
+      where.push(`(a.name ilike $${values.length} or a.species ilike $${values.length} or exists (select 1 from unnest(a.style_tags) tag where tag ilike $${values.length}) or exists (select 1 from alter_alias search_alias where search_alias.owner_id = a.owner_id and search_alias.alter_id = a.id and search_alias.alias ilike $${values.length}))`);
     }
     if (input.cursor) {
       const cursor = decodeCursor(input.cursor);
@@ -369,16 +384,21 @@ export class SystemService {
     const rows = await this.pool.query<AlterRow>(`${alterSelect} where ${where.join(" and ")} order by a.created_at desc, a.id desc limit $${values.length}`, values);
     const all = rows.rows.map(alterFromRow);
     const data = all.slice(0, input.limit);
-    return { data, nextCursor: all.length > input.limit ? encodeCursor(data[data.length - 1]) : undefined };
+    // PostgreSQL timestamps retain microseconds; Date/ISO conversion would
+    // truncate the page boundary and skip profiles sharing that millisecond.
+    const lastRow = rows.rows[input.limit - 1];
+    return { data, nextCursor: all.length > input.limit ? encodeCursor({ id: lastRow.id, createdAt: lastRow.cursor_created_at }) : undefined };
   }
 
   async createAlter(ownerId: string, raw: AlterCreate, source: RecordSource) {
     const input = alterCreateSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, "create_alter", async (client) => {
       const inserted = await client.query<{ id: string }>(`insert into alter_profile
-        (owner_id, name, pronouns, self_described_gender, description, communication_guidance, strengths, boundaries)
-        values ($1, $2, $3, $4, $5, $6, $7::text[], $8::text[]) returning id`,
-      [ownerId, input.name, input.pronouns ?? null, input.selfDescribedGender ?? null, input.description ?? null, input.communicationGuidance ?? null, input.strengths ?? [], input.boundaries ?? []]);
+        (owner_id, name, pronouns, self_described_gender, description, communication_guidance, strengths, boundaries,
+         species, visual_description, presentation, signature_traits, style_tags, image_do_not_change)
+        values ($1, $2, $3, $4, $5, $6, $7::text[], $8::text[], $9, $10, $11, $12::text[], $13::text[], $14::text[]) returning id`,
+      [ownerId, input.name, input.pronouns ?? null, input.selfDescribedGender ?? null, input.description ?? null, input.communicationGuidance ?? null, input.strengths ?? [], input.boundaries ?? [],
+        input.species ?? null, input.visualDescription ?? null, input.presentation ?? null, input.signatureTraits ?? [], input.styleTags ?? [], input.imageDoNotChange ?? []]);
       const alterId = inserted.rows[0].id;
       for (const item of normalizeAliases(input.aliases)) {
         await client.query("insert into alter_alias (owner_id, alter_id, alias, normalized_alias) values ($1, $2::uuid, $3, $4)", [ownerId, alterId, item.alias, item.normalized]);
@@ -598,6 +618,8 @@ export class SystemService {
       const updated = await client.query(`update alter_profile set
         name = $3, pronouns = $4, self_described_gender = $5, description = $6,
         communication_guidance = $7, strengths = $8::text[], boundaries = $9::text[],
+        species = $11, visual_description = $12, presentation = $13,
+        signature_traits = $14::text[], style_tags = $15::text[], image_do_not_change = $16::text[],
         version = version + 1, updated_at = now()
         where owner_id = $1 and id = $2::uuid and version = $10`, [
         ownerId, alterId,
@@ -609,6 +631,12 @@ export class SystemService {
         input.strengths ?? current.strengths,
         input.boundaries ?? current.boundaries,
         input.expectedVersion,
+        input.species === undefined ? current.species ?? null : input.species,
+        input.visualDescription === undefined ? current.visualDescription ?? null : input.visualDescription,
+        input.presentation === undefined ? current.presentation ?? null : input.presentation,
+        input.signatureTraits ?? current.signatureTraits ?? [],
+        input.styleTags ?? current.styleTags ?? [],
+        input.imageDoNotChange ?? current.imageDoNotChange ?? [],
       ]);
       if (!updated.rowCount) {
         const latest = await this.alterById(client, ownerId, alterId);

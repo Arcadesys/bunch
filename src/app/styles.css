@@ -1647,3 +1647,22 @@ h1, .command-hero h1 { color: var(--ink); }
   .bunch-verbbar { padding-inline: .55rem; }
   .bunch-verb-hint { display: none; }
 }
+
+/* Fieldsets must shrink with enlarged text and narrow phone viewports. */
+.command-main button { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+@media (max-width: 760px) {
+  .command-main button { padding-inline: 8px; }
+}
+.presence-panel form { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+[aria-label="Recent saved changes"] a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; overflow-wrap: anywhere; }
+.visual-identity { min-inline-size: 0; max-width: 100%; margin: 0; border: 2px solid currentColor; padding: 12px; grid-template-columns: minmax(0, 1fr); }
+.visual-identity legend { font-weight: 700; padding-inline: .4rem; }
+.visual-identity label, .visual-identity legend { overflow-wrap: anywhere; }
+.visual-identity input, .visual-identity textarea { border-color: var(--muted); }
+.profiles-page .profile-list > li:has(.profile-disclosure[open]) { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .profiles-page { padding-inline: 8px; }
+  .profiles-page .panel { padding-inline: 10px; }
+  .profiles-page .profile-entry { padding-inline: 8px; }
+  .profiles-page .visual-identity { padding-inline: 8px; }
+}

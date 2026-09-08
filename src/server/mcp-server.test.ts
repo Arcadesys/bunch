@@ -1,3 +1,4 @@
+import { imagePromptResultSchema } from "@/domain/image-prompt";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -148,7 +149,11 @@ test("Furry transform preparation keeps selected reference media out of model-vi
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const result = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
-    assert.deepEqual(result.structuredContent, { alter: { id: profile.id, name: profile.name, appearanceNotes: profile.appearanceNotes }, referenceCount: 1, snapshotRequired: true, mediaHandoff: "HOST_ADAPTER_REQUIRED" });
+    const prepared = imagePromptResultSchema.parse(result.structuredContent);
+    assert.equal(prepared.ready, true);
+    assert.equal(prepared.identities[0].alterId, profile.id);
+    assert.equal(prepared.identities[0].reliesOnReference, true);
+    assert.match(prepared.prompt, /Canonical visual identity/);
     assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|private-reference-key|image:read/);
     assert.match((result._meta?.referenceMedia as Array<{ src: string }>)[0].src, /\/api\/system\/images\/inline\/.*\?cap=/);
   } finally {
