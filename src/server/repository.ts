@@ -54,7 +54,7 @@ class MemorySystemRepository implements SystemRepository {
     const now = new Date().toISOString();
     const existing = profileId && this.profiles.find((profile) => profile.id === profileId && profile.ownerId === ownerId);
     if (existing) {
-      Object.assign(existing, input, { version: existing.version + 1, updatedAt: now });
+      Object.assign(existing, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { version: existing.version + 1, updatedAt: now });
       return structuredClone(existing);
     }
     const profile: AlterProfile = { id: randomUUID(), ownerId, ...input, images: [], version: 1, createdAt: now, updatedAt: now };
@@ -152,12 +152,17 @@ class NeonSystemRepository implements SystemRepository {
   async listProfiles(ownerId: string) {
     const sql = this.sql();
     const rows = await sql`select a.id, a.owner_id, a.name, a.self_described_gender, a.description, a.version, a.created_at, a.updated_at,
+      a.pronouns, a.species, a.visual_description, a.presentation, a.signature_traits, a.style_tags, a.image_do_not_change,
       coalesce(json_agg(json_build_object('id', i.id, 'storageKey', i.storage_key, 'contentType', i.content_type, 'isProfilePicture', i.is_profile_picture, 'createdAt', i.created_at) order by i.created_at desc, i.id desc) filter (where i.id is not null), '[]'::json) as images
       from alter_profile a left join private_image i on i.owner_id = a.owner_id and i.alter_id = a.id
       where a.owner_id = ${ownerId} and a.archived_at is null group by a.id order by a.created_at asc`;
     return rows.map((row) => {
       const images = (row.images as Array<Record<string, unknown>>).map((image) => ({ id: String(image.id), storageKey: String(image.storageKey), contentType: String(image.contentType), isProfilePicture: Boolean(image.isProfilePicture), createdAt: new Date(String(image.createdAt)).toISOString() }));
-      return { id: String(row.id), ownerId: String(row.owner_id), name: String(row.name), selfDescribedGender: row.self_described_gender ? String(row.self_described_gender) : undefined, description: row.description ? String(row.description) : undefined, profilePicture: images.find((image) => image.isProfilePicture), images, version: Number(row.version), createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString() };
+      return { id: String(row.id), ownerId: String(row.owner_id), name: String(row.name), selfDescribedGender: row.self_described_gender ? String(row.self_described_gender) : undefined, description: row.description ? String(row.description) : undefined,
+        pronouns: row.pronouns ? String(row.pronouns) : undefined, species: row.species ? String(row.species) : undefined,
+        visualDescription: row.visual_description ? String(row.visual_description) : undefined, presentation: row.presentation ? String(row.presentation) : undefined,
+        signatureTraits: (row.signature_traits ?? []) as string[], styleTags: (row.style_tags ?? []) as string[], imageDoNotChange: (row.image_do_not_change ?? []) as string[],
+        profilePicture: images.find((image) => image.isProfilePicture), images, version: Number(row.version), createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString() };
     });
   }
 
@@ -165,7 +170,10 @@ class NeonSystemRepository implements SystemRepository {
     await this.ensureOwner(ownerId);
     const sql = this.sql();
     if (profileId) {
-      const updated = await sql`update alter_profile set name = ${input.name}, self_described_gender = ${input.selfDescribedGender ?? null}, description = ${input.description ?? null}, version = version + 1, updated_at = now() where id = ${profileId}::uuid and owner_id = ${ownerId} returning id`;
+      const updated = await sql`update alter_profile set name = ${input.name},
+        self_described_gender = case when ${input.selfDescribedGender !== undefined} then ${input.selfDescribedGender ?? null} else self_described_gender end,
+        description = case when ${input.description !== undefined} then ${input.description ?? null} else description end,
+        version = version + 1, updated_at = now() where id = ${profileId}::uuid and owner_id = ${ownerId} returning id`;
       if (!updated.length) throw new Error("Profile not found.");
       const profile = (await this.listProfiles(ownerId)).find((candidate) => candidate.id === profileId);
       if (!profile) throw new Error("Profile not found.");

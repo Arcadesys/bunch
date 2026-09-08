@@ -13,7 +13,17 @@ const shortOptional = z.string().trim().max(500).optional();
 const textOptional = z.string().trim().max(5000).optional();
 const stringList = z.array(z.string().trim().min(1).max(500)).max(100);
 
+export const visualIdentitySchema = z.object({
+  species: shortOptional,
+  visualDescription: z.string().trim().max(1000).optional(),
+  presentation: shortOptional,
+  signatureTraits: stringList.optional(),
+  styleTags: stringList.optional(),
+  imageDoNotChange: stringList.optional(),
+});
+
 export const alterCreateSchema = z.object({
+  ...visualIdentitySchema.shape,
   requestId: uuidSchema,
   name: z.string().trim().min(1).max(120),
   aliases: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
@@ -26,6 +36,10 @@ export const alterCreateSchema = z.object({
 }).strict();
 
 export const alterPatchSchema = z.object({
+  ...visualIdentitySchema.shape,
+  species: z.string().trim().max(500).nullable().optional(),
+  visualDescription: z.string().trim().max(1000).nullable().optional(),
+  presentation: z.string().trim().max(500).nullable().optional(),
   requestId: uuidSchema,
   expectedVersion: z.number().int().positive(),
   name: z.string().trim().min(1).max(120).optional(),
@@ -118,6 +132,7 @@ export const listTodosSchema = listPageSchema.extend({
 }).strict();
 
 export const alterViewSchema = z.object({
+  ...visualIdentitySchema.shape,
   id: uuidSchema,
   name: z.string(),
   aliases: z.array(z.string()),

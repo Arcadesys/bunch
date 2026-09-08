@@ -58,6 +58,14 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - After generating a grounded summary, call `save_conversation_catch_up` with its alterId, exact startAt/endAt/timeZone, synthesis (including source links), and coverage gaps. Save for 30 days from creation; reuse the same requestId for retries so they never renew retention. Do not save raw transcripts or fabricated summaries when history is unavailable. Report success only after the save succeeds.
 - Retrieve retained summaries with `list_conversation_catch_ups` and `get_conversation_catch_up`; expired summaries are unavailable. These are historical syntheses, never new source evidence or proof of current facts. Use `delete_conversation_catch_up` when the user requests early deletion.
 
+
+## Canonical image preparation
+
+- Before any individual or group image generation, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
+- Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
+- Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.
+- `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
+
 ## Privacy boundary
 
 - Treat profiles, notes, todos, decisions, threads, fronting state, and photos as private owner-scoped records.
