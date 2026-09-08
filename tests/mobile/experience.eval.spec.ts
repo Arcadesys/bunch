@@ -61,8 +61,8 @@ for (const kind of ["note", "todo"]) {
 
 test("@eval switch-front action opens a selectable confirmation flow", async ({ page, harness }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Update hosting or fronting", exact: true }).click();
+  await page.getByRole("button", { name: "Set host or start side fronter", exact: true }).click();
   expect(harness.writes).toHaveLength(0);
   await expect(page.getByRole("combobox", { name: /front|alter|profile/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /confirm change/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /confirm side-fronter arrival/i })).toBeVisible();
 });

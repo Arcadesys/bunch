@@ -9,7 +9,7 @@ test("main task choices are visible before catch-up details on a phone", async (
     expect(rect!.y).toBeGreaterThanOrEqual(0);
     expect(rect!.y + rect!.height).toBeLessThanOrEqual(740);
   }
-  expect(await tasks.getByRole("link").count()).toBe(6);
+  expect(await tasks.getByRole("link").count()).toBe(7);
 });
 
 for (const enlarged of [false, true]) {
@@ -57,8 +57,8 @@ test("home tasks lead to catch-up and explicit hosting controls with a return pa
   await page.locator("#catch-up-records").getByRole("link", { name: "Back to Home actions" }).click();
   await page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Hosting & fronting" }).click();
   await expect(page.getByRole("heading", { name: "Hosting and fronting controls" })).toBeInViewport();
-  await page.getByRole("button", { name: "Update hosting or fronting" }).click();
-  await expect(page.getByRole("heading", { name: "Confirm hosting or fronting" })).toBeFocused();
+  await page.getByRole("button", { name: "Set host or start side fronter" }).click();
+  await expect(page.getByRole("heading", { name: "Set host or start a side fronter" })).toBeFocused();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.locator("#presence-controls").getByRole("link", { name: "Back to Home actions" }).click();
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeInViewport();
