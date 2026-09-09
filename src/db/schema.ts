@@ -36,6 +36,7 @@ export const appUser = pgTable("app_user", {
 });
 
 export const galleryShare = pgTable("gallery_share", {
+  showCurrentFronting: boolean("show_current_fronting").notNull().default(false),
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull().unique(),
