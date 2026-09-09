@@ -7,6 +7,15 @@ description: Use the private System MCP companion for explicit current-front swi
 
 Use the authenticated System MCP tools as the source of truth. Preserve alter names exactly and use stable IDs returned by the tools.
 
+## Hosted Demo system
+
+- For a demo or default walkthrough without sign-in, call `get_demo_system` on Bunch. The populated sample is served over the API, not bundled in the plugin.
+- Explore the sample with `list_demo_people`, `get_demo_person`, `list_demo_tasks`, `list_demo_notes`, `get_demo_presence`, `list_demo_history`, and `get_demo_catch_up`. Filter tasks by `relevantTo` and status, notes by author or `relevantTo`, and history by person and kind. Only Benny has a sample catch-up.
+- Label every sample response **Demo system**. Fenton, Benny, Dot, and their fixed fictional history are not the user's people or current presence. Demo reads do not save anything.
+- If the user wants their own system, call `connect_private_system` to authenticate, then refresh `tools/list` and use the private tools. Authenticated requests continue to use the verified owner's records.
+- Never replace failed authentication or a failed private-data request with sample data. Do not send demo IDs to mutation tools or claim a demo task was saved or completed.
+- In the sample, Fenton and Benny tease each other and really love each other; Dot is a kid and no relation to either. Fenton handles scheduling; Benny handles emotional writing. Fenton's thank-you reminder is for a gift the system received, not a gift from Benny. The gift, donor, and deadline are unspecified.
+
 ## Hosting, fronting episodes, and legacy catch-up
 
 - For “who was out when” or historical fronting questions, call list_fronting_history. Resolve a named profile with list_alters; use explicit-offset from/to instants for the requested local date range and follow nextCursor as before. Report kind and origin: HOSTING, FRONTING, or unclassified LEGACY_FRONT. A missing end means no end was recorded, and gaps do not prove absence.
