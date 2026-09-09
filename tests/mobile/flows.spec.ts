@@ -4,7 +4,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page).toHaveTitle("Bunch — your private companion");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("initial-viewport.png"), fullPage: false });
@@ -26,7 +26,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
 });
 
 test("defer is opt-in and next switch is an explicit return choice", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
@@ -38,7 +38,7 @@ test("defer is opt-in and next switch is an explicit return choice", async ({ pa
 });
 
 test("missing custom defer time sends no write", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
@@ -50,7 +50,7 @@ test("missing custom defer time sends no write", async ({ page, harness }) => {
 
 test("stale write is announced without false success or optimistic state", async ({ page, harness }) => {
   harness.writeStatus = 409;
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Mark reviewed", exact: true }).click();
@@ -60,7 +60,7 @@ test("stale write is announced without false success or optimistic state", async
 });
 
 test("navigation opens saved records and identifies the active page", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   const nav = page.getByRole("navigation", { name: "Bunch navigation" });
   for (const [label, path, type] of [["Todos", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
     await nav.getByRole("link", { name: "Options", exact: true }).click();
@@ -90,7 +90,7 @@ test("thread suggestion requires a separate confirmation and excludes transcript
 
 test("first-time and empty catch-up states render without writes", async ({ page, harness }) => {
   harness.session!.firstTime = true;
-  await page.goto("/");
+  await page.goto("/home");
   await page.locator(".catch-up-window > summary").click();
   await expect(page.getByText(/First catch-up for this experience/)).toBeVisible();
   harness.session = null;
