@@ -85,7 +85,7 @@ export function TenantInvitationControls() {
     } finally { setBusy(false); }
   }
   return <section className="tenant-invitation-controls" aria-labelledby="tenant-invitations-heading">
-    <h2 id="tenant-invitations-heading">Invite a new private system</h2>
+    <h2 id="tenant-invitations-heading" tabIndex={-1}>Invite a new private system</h2>
     <p>Create a one-use link for someone to make their own isolated Bunch account. Opening a link does not use it.</p>
     {message && <p className="pilot-notice" role="status">{message}</p>}
     {activation && !activation.open ? <form onSubmit={activate} className="tenant-activation-form">
