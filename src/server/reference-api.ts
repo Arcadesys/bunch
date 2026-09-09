@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { getDatabasePool } from "@/db/client";
 import { readPrivateImage } from "@/server/private-images";
 
-export type ReferenceImage = { id: string; storageKey: string; contentType: string; version: number; role: "profilePicture" | "appearanceReference" };
+export type ReferenceImage = { id: string; alterId: string; storageKey: string; contentType: string; version: number; role: "profilePicture" | "appearanceReference" };
 export type ReferenceProfile = {
   id: string; version: number; name: string; pronouns: string | null; species: string | null;
   visualDescription: string | null; presentation: string | null; signatureTraits: string[]; imageDoNotChange: string[];
@@ -66,8 +66,8 @@ class PostgresReferenceRepository implements ReferenceRepository {
 
   async imagesForSelection(ownerId: string, selectedAlterIds: string[]) {
     // Only profile pictures and explicitly selected appearance references are exportable.
-    const result = await this.pool().query("select i.id, i.storage_key, i.content_type, i.reference_version, case when i.is_profile_picture then 'profilePicture' else 'appearanceReference' end as role from private_image i join alter_profile a on a.id = i.alter_id and a.owner_id = i.owner_id where i.owner_id = $1 and i.alter_id = any($2::uuid[]) and (i.is_profile_picture = true or i.id = a.appearance_reference_image_id) order by i.id", [ownerId, selectedAlterIds]);
-    return result.rows.map((row) => ({ id: String(row.id), storageKey: String(row.storage_key), contentType: String(row.content_type), version: Number(row.reference_version), role: row.role as ReferenceImage["role"] }));
+    const result = await this.pool().query("select i.id, i.alter_id, i.storage_key, i.content_type, i.reference_version, case when i.is_profile_picture then 'profilePicture' else 'appearanceReference' end as role from private_image i join alter_profile a on a.id = i.alter_id and a.owner_id = i.owner_id where i.owner_id = $1 and i.alter_id = any($2::uuid[]) and (i.is_profile_picture = true or i.id = a.appearance_reference_image_id) order by i.id", [ownerId, selectedAlterIds]);
+    return result.rows.map((row) => ({ id: String(row.id), alterId: String(row.alter_id), storageKey: String(row.storage_key), contentType: String(row.content_type), version: Number(row.reference_version), role: row.role as ReferenceImage["role"] }));
   }
 
   async touch(credentialId: string) { await this.pool().query("update reference_credential set last_used_at = now() where id = $1::uuid and revoked_at is null", [credentialId]); }
@@ -102,26 +102,22 @@ export class ReferenceApiService {
     return { credential, profiles };
   }
 
-  async manifest(secret: string) {
+  async manifest(secret: string, origin: string) {
     const { credential, profiles } = await this.authorize(secret);
     const images = await this.repository.imagesForSelection(credential.ownerId, credential.selectedAlterIds);
     const imageManifest = await Promise.all(images.map(async (image) => {
       const stored = await this.imageReader(image.storageKey);
       const bytes = new Uint8Array(await new Response(stored.body).arrayBuffer());
-      return { id: image.id, version: image.version, contentType: image.contentType, sha256: sha256(bytes), role: image.role };
+      return { id: image.id, alterId: image.alterId, version: image.version, contentType: image.contentType, sha256: sha256(bytes) };
     }));
-    const byProfile = new Map<string, ReferenceImage[]>();
-    for (const image of images) {
-      // Discover the owning profile from the explicitly selected image IDs below.
-      // Image IDs are only connected through profile's selected/profile fields.
-      for (const profile of profiles) if (profile.profilePictureId === image.id || profile.appearanceReferenceImageId === image.id) byProfile.set(profile.id, [...(byProfile.get(profile.id) ?? []), image]);
-    }
-    return { version: 1, credentialId: credential.id, profiles: profiles.map((profile) => ({
+    return { origin, manifestVersion: 1, selectedAlterIds: credential.selectedAlterIds, alters: profiles.map((profile) => {
+      const alter = {
       id: profile.id, version: profile.version, name: profile.name, pronouns: profile.pronouns, species: profile.species,
       visualDescription: profile.visualDescription, presentation: profile.presentation, signatureTraits: profile.signatureTraits,
       imageDoNotChange: profile.imageDoNotChange,
-      images: imageManifest.filter((image) => (byProfile.get(profile.id) ?? []).some((candidate) => candidate.id === image.id)),
-    })) };
+      };
+      return { ...alter, sha256: sha256(JSON.stringify(alter)) };
+    }), images: imageManifest };
   }
 
   async image(secret: string, imageId: string) {

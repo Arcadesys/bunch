@@ -4,12 +4,11 @@ import { ReferenceApiService, type ReferenceCredential, type ReferenceImage, typ
 
 const owner = "auth0:owner";
 const selected = "11111111-1111-4111-8111-111111111111";
-const other = "22222222-2222-4222-8222-222222222222";
 const profile: ReferenceProfile = { id: selected, version: 7, name: "Mouse Arcade", pronouns: "they/them", species: "mouse", visualDescription: "soft gray fur", presentation: null, signatureTraits: ["round ears"], imageDoNotChange: ["tail"], profilePictureId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", appearanceReferenceImageId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" };
 const images: ReferenceImage[] = [
-  { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", storageKey: "mouse-profile", contentType: "image/png", version: 3, role: "profilePicture" },
-  { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", storageKey: "mouse-reference", contentType: "image/webp", version: 2, role: "appearanceReference" },
-  { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", storageKey: "unselected-gallery", contentType: "image/png", version: 1, role: "profilePicture" },
+  { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", alterId: selected, storageKey: "mouse-profile", contentType: "image/png", version: 3, role: "profilePicture" },
+  { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", alterId: selected, storageKey: "mouse-reference", contentType: "image/webp", version: 2, role: "appearanceReference" },
+  { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", alterId: selected, storageKey: "unselected-gallery", contentType: "image/png", version: 1, role: "profilePicture" },
 ];
 
 class MemoryReferenceRepository implements ReferenceRepository {
@@ -42,13 +41,18 @@ test("reference credentials store only a hash and issue a high-entropy secret on
   assert.ok(!JSON.stringify(await service.list(owner)).includes(issued.secret));
 });
 
-test("manifest contains only selected identity/reference fields, with stable image IDs, versions, and hashes", async () => {
+test("manifest exactly follows the Working Monkey reference contract", async () => {
   const { service } = fixture();
   const { secret } = await service.issue(owner, { label: "Working Monkey", selectedAlterIds: [selected] });
-  const manifest = await service.manifest(secret);
-  assert.equal(manifest.version, 1);
-  assert.deepEqual(manifest.profiles[0].images.map((image) => image.id), images.slice(0, 2).map((image) => image.id));
-  assert.equal(manifest.profiles[0].images[0].sha256, sha256(new Uint8Array([1, 2, 3])));
+  const manifest = await service.manifest(secret, "https://bunch.example");
+  assert.deepEqual(Object.keys(manifest).sort(), ["alters", "images", "manifestVersion", "origin", "selectedAlterIds"]);
+  assert.equal(manifest.origin, "https://bunch.example");
+  assert.equal(manifest.manifestVersion, 1);
+  assert.deepEqual(manifest.selectedAlterIds, [selected]);
+  assert.deepEqual(manifest.images.map((image) => image.id), images.slice(0, 2).map((image) => image.id));
+  assert.deepEqual(manifest.images.map((image) => image.alterId), [selected, selected]);
+  assert.equal(manifest.images[0].sha256, sha256(new Uint8Array([1, 2, 3])));
+  assert.match(manifest.alters[0].sha256, /^[a-f0-9]{64}$/);
   const serialized = JSON.stringify(manifest);
   for (const prohibited of ["note", "task", "presence", "history", "preference", "storageKey", "work"]) assert.equal(serialized.toLowerCase().includes(prohibited), false);
 });
@@ -65,8 +69,8 @@ test("revocation and lost selection deny every subsequent request", async () => 
   const { repository, service } = fixture();
   const issued = await service.issue(owner, { label: "Working Monkey", selectedAlterIds: [selected] });
   assert.equal(await service.revoke(owner, issued.id), true);
-  await assert.rejects(() => service.manifest(issued.secret), /invalid or revoked/i);
+  await assert.rejects(() => service.manifest(issued.secret, "https://bunch.example"), /invalid or revoked/i);
   const next = await service.issue(owner, { label: "Working Monkey 2", selectedAlterIds: [selected] });
   repository.profilesForSelection = async () => [];
-  await assert.rejects(() => service.manifest(next.secret), /selection is no longer available/i);
+  await assert.rejects(() => service.manifest(next.secret, "https://bunch.example"), /selection is no longer available/i);
 });

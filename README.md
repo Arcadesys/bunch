@@ -52,7 +52,7 @@ Authenticated routes mirror the MCP contracts under `/api/v1/alters` and `/api/v
 
 This API does **not** accept a `system:companion` MCP token and the credential cannot call `/mcp` or `/api/v1`. It exposes only:
 
-- `GET /api/reference/v1/manifest` — selected profile identity/visual fields plus selected reference image IDs, versions, roles, content types, and SHA-256 hashes.
+- `GET /api/reference/v1/manifest` — the versioned Working Monkey contract: configured `origin`, `manifestVersion`, `selectedAlterIds`, selected alter metadata/version/SHA-256, and flat image entries with `alterId`, ID, version, content type, and SHA-256.
 - `GET /api/reference/v1/images/:imageId` — bytes for an image named in that credential's current manifest.
 
 Both calls require `Authorization: Bearer <one-time credential>` and re-check the credential hash, owner, revocation state, active selected profile set, and image selection every time. Only a profile picture or explicitly selected appearance reference is exportable. Notes, tasks, preferences, decisions, presence/fronting/hosting, coverage, catch-up, review, history, activity, storage keys, and all work fields are absent by contract.
