@@ -1,6 +1,12 @@
-# System — private DID companion
+# Bunch — your private online companion
 
-This is an MCP-first, private-first vertical slice for `system.arcades.me`. ChatGPT is the main workflow; the web companion handles Google sign-in, authorization, and private image storage.
+Bunch is a private, online companion for notes, tasks, profiles, images, decisions, and catch-up. Its web companion and MCP connection use the same authenticated account.
+
+## Two companion experiences
+
+**Bunch** is the connected online service. **Working Monkeys** is a separate local-only Mac companion that can deliberately cache selected Bunch references for offline use; it never syncs local work back upstream. They are separate products, not a runtime switch.
+
+Hosting and fronting are separate explicit records. “Relevant to” links work to people without guessing responsibility, presence, or hosting. Catch-up is interval and source based; unavailable coverage is never presented as inactivity.
 
 ## Current win condition
 
