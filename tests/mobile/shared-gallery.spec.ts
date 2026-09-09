@@ -49,10 +49,10 @@ test("account share controls create links and revoke with an idempotency key", a
     return route.fulfill({ json: { data: { revoked: true } } });
   });
   await page.goto("/");
-  const shareSystem = page.getByRole("link", { name: "Share system", exact: true });
-  await expect(shareSystem).toBeVisible();
-  await shareSystem.press("Enter");
-  await expect(page).toHaveURL(/\/account$/);
+  const shareGallery = page.getByRole("link", { name: "Share photo gallery", exact: true });
+  await expect(shareGallery).toBeVisible();
+  await shareGallery.press("Enter");
+  await expect(page).toHaveURL(/\/account#gallery-share-heading$/);
   await expect(page.getByRole("heading", { name: "Share a read-only photo gallery" })).toBeVisible();
   await page.getByLabel("Link lifetime").selectOption("1w");
   await page.getByRole("button", { name: "Create gallery link" }).click();

@@ -48,6 +48,15 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
     }, 0);
     return () => clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    if (!loaded || !account || location.hash !== "#tenant-invitations-heading") return;
+    const target = document.getElementById("tenant-invitations-heading");
+    if (!target) return;
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "start" });
+      target.focus();
+    });
+  }, [account, loaded]);
   async function accept(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;

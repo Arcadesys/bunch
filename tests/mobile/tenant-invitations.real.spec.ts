@@ -31,8 +31,8 @@ test("@eval real local API: normal entry opens invitations, creates/copies, rede
   });
   const ownerPage = await ownerContext.newPage();
   await ownerPage.goto("/");
-  await ownerPage.getByRole("link", { name: "Share system" }).click();
-  await expect(ownerPage).toHaveURL(/\/account$/);
+  await ownerPage.getByRole("link", { name: "Invite another system" }).click();
+  await expect(ownerPage).toHaveURL(/\/account#tenant-invitations-heading$/);
   await expect(ownerPage.getByRole("heading", { name: "Invite a new private system" })).toBeVisible();
   await ownerPage.getByLabel("When did you verify this?").fill(localDateTime(new Date(Date.now() - 120_000)));
   await ownerPage.getByLabel("Capacity evidence").fill("Checked local capacity for three isolated systems.");

@@ -9,7 +9,7 @@ test("main task choices are visible before catch-up details on a phone", async (
     expect(rect!.y).toBeGreaterThanOrEqual(0);
     expect(rect!.y + rect!.height).toBeLessThanOrEqual(740);
   }
-  expect(await tasks.getByRole("link").count()).toBe(7);
+  expect(await tasks.getByRole("link").count()).toBe(8);
 });
 
 for (const enlarged of [false, true]) {
