@@ -1,7 +1,7 @@
 {
   "name": "diddy",
-  "version": "0.1.1",
-  "description": "Private, invite-only hosting, fronting, notes and catch-up for your system.",
+  "version": "0.1.2",
+  "description": "A hosted fictional Demo system, plus private hosting, fronting, notes and catch-up after sign-in.",
   "author": {
     "name": "Arcadesys"
   },
@@ -14,6 +14,7 @@
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": [
+      "Show the Demo system.",
       "Show my recorded hosting and fronting.",
       "Help me catch up using available conversations.",
       "Show my private notes."

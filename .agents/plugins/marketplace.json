@@ -1,0 +1,20 @@
+{
+  "name": "bunch",
+  "interface": {
+    "displayName": "Bunch"
+  },
+  "plugins": [
+    {
+      "name": "diddy",
+      "source": {
+        "source": "local",
+        "path": "./plugins/diddy"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
