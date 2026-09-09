@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 type AppPage = "CATCH_UP" | "BOARD" | "NOTES" | "THREADS" | "HISTORY" | "PROFILES" | "GALLERY" | "GROUP_PHOTO" | "OPTIONS";
 type IconName = "home" | "todos" | "notes" | "people" | "history" | "options" | "switch" | "review" | "update" | "glow" | "contrast";
 const destinations: { href: string; label: string; page: AppPage; icon: IconName }[] = [
-  { href: "/", label: "Home", page: "CATCH_UP", icon: "home" },
+  { href: "/home", label: "Home", page: "CATCH_UP", icon: "home" },
   { href: "/board", label: "Todos", page: "BOARD", icon: "todos" },
   { href: "/notes", label: "Notes", page: "NOTES", icon: "notes" },
   { href: "/profiles", label: "People", page: "PROFILES", icon: "people" },
@@ -44,7 +44,7 @@ export function AppNavigation({ current }: { current?: AppPage }) {
   useEffect(() => { document.documentElement.dataset.highContrast = highContrast ? "on" : "off"; try { window.localStorage.setItem("bunch-high-contrast", String(highContrast)); } catch { /* session-only */ } }, [highContrast]);
   useEffect(() => () => { delete document.documentElement.dataset.glow; delete document.documentElement.dataset.highContrast; }, []);
   useEffect(() => {
-    const shortcuts: Record<string, string> = { s: "/#presence-controls", r: "/#catch-up-records", u: "/board#create-record" };
+    const shortcuts: Record<string, string> = { s: "/home#presence-controls", r: "/home#catch-up-records", u: "/board#create-record" };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
       const href = shortcuts[event.key.toLowerCase()];
@@ -55,10 +55,10 @@ export function AppNavigation({ current }: { current?: AppPage }) {
   }, []);
   return <header className="app-navigation command-topbar">
     <div className="bunch-primary-bar">
-      <Link href="/" className="command-brand" aria-label="Bunch home"><Image src="/bunch-barrel-monkeys.png" alt="" width={32} height={32} priority />Bunch</Link>
+      <Link href="/home" className="command-brand" aria-label="Bunch home"><Image src="/bunch-barrel-monkeys.png" alt="" width={32} height={32} priority />Bunch</Link>
       <nav className="command-topnav" aria-label="Bunch navigation">{destinations.map(({ href, label, page, icon }) => <Link key={page} href={href} aria-current={current === page || current === "GALLERY" && page === "PROFILES" || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}><Icon name={icon} /><span>{label}</span></Link>)}</nav>
       <div className="bunch-utilities"><span className="bunch-private-pill" aria-label="Private records"><span>Private</span><span aria-hidden="true">•</span></span><button type="button" className="bunch-icon-button" onClick={() => setGlow(value => !value)} aria-pressed={glow} aria-label="Toggle glow"><Icon name="glow" /></button><button type="button" className="bunch-icon-button contrast" onClick={() => setHighContrast(value => !value)} aria-pressed={highContrast} aria-label="High contrast"><Icon name="contrast" /></button></div>
     </div>
-    <nav className="bunch-verbbar" aria-label="Bunch actions"><span className="bunch-verb-label">Do</span><Link className="bunch-verb switch" href="/#presence-controls"><Icon name="switch" />Switch <kbd>S</kbd></Link><Link className="bunch-verb review" href="/#catch-up-records"><Icon name="review" />Review <kbd>R</kbd></Link><Link className="bunch-verb update" href="/board#create-record"><Icon name="update" />Update <kbd>U</kbd></Link><span className="bunch-verb-hint">Esc closes panels</span></nav>
+    <nav className="bunch-verbbar" aria-label="Bunch actions"><span className="bunch-verb-label">Do</span><Link className="bunch-verb switch" href="/home#presence-controls"><Icon name="switch" />Switch <kbd>S</kbd></Link><Link className="bunch-verb review" href="/home#catch-up-records"><Icon name="review" />Review <kbd>R</kbd></Link><Link className="bunch-verb update" href="/board#create-record"><Icon name="update" />Update <kbd>U</kbd></Link><span className="bunch-verb-hint">Esc closes panels</span></nav>
   </header>;
 }

@@ -11,7 +11,7 @@ test("@eval explicit episode start leaves other episodes intact and opens select
   page,
   harness,
 }, testInfo) => {
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page
     .getByLabel("Side fronter profile", { exact: true })
@@ -44,7 +44,7 @@ test("@eval cancelling writes nothing and restores focus", async ({
   page,
   harness,
 }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page
     .getByLabel("Side fronter profile", { exact: true })
@@ -63,7 +63,7 @@ test("@eval hosting and episode ends preserve independent records", async ({
   page,
   harness,
 }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page.getByRole("button", { name: "Set host", exact: true }).click();
   await page
@@ -104,7 +104,7 @@ test("@eval stale host version requires reread and explicit reconfirmation", asy
   page,
   harness,
 }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page.getByRole("button", { name: "Set host", exact: true }).click();
   await page
@@ -144,7 +144,7 @@ test("@eval ambiguous retry applies once and prevents changed input", async ({
   harness,
 }) => {
   harness.loseSwitchResponse = true;
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page
     .getByLabel("Side fronter profile", { exact: true })
@@ -171,7 +171,7 @@ test("@eval profiles paginate and failed reads do not enable mutations", async (
 }) => {
   harness.profilePageSize = 1;
   harness.switchReadStatus = 401;
-  await page.goto("/");
+  await page.goto("/home");
   await page
     .getByRole("button", { name: "Set host or start side fronter", exact: true })
     .click();
@@ -192,7 +192,7 @@ test("@eval rapid confirmation sends one mutation", async ({
   harness,
 }) => {
   harness.switchDelay = 250;
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page
     .getByLabel("Side fronter profile", { exact: true })
@@ -223,7 +223,7 @@ test("@eval late initial catch-up cannot undo selected episode", async ({
     await gate;
     await route.fulfill({ json: { data: fixtureSession } });
   });
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page
     .getByLabel("Side fronter profile", { exact: true })
@@ -246,8 +246,8 @@ test("@eval controls are reachable before catch-up items and show both records",
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
-  await page.goto("/");
-  await expect(page).toHaveURL("http://127.0.0.1:3217/");
+  await page.goto("/home");
+  await expect(page).toHaveURL("http://127.0.0.1:3217/home");
   await expect(page).toHaveTitle(/your private companion/);
   const shortcut = page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Hosting & fronting" });
   await expect(shortcut).toBeInViewport();
@@ -266,7 +266,7 @@ test("@eval controls are reachable before catch-up items and show both records",
 });
 
 test("@eval saved change with failed reread retries reads without another mutation", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await open(page);
   await page.getByLabel("Side fronter profile", { exact: true }).selectOption(harness.profiles[1].id);
   let failRead = true;
