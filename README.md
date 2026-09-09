@@ -46,6 +46,24 @@ Run hosted natural-language acceptance with a real Auth0 access token issued for
 
 Authenticated routes mirror the MCP contracts under `/api/v1/alters` and `/api/v1/todos`, with item, archive, restore, erasure-preview, and permanent-delete routes. Current-front reads and switches are available at `/api/v1/fronting/current` and `/api/v1/fronting/switch`. Mutations require a UUID in `Idempotency-Key`; `ownerId` is always derived from the Auth0 session subject. Narrow note and coverage blocker routes live under `/api/v1/notes/:id/alter` and `/api/v1/coverage/:id`.
 
+## Laptop reference API (separate credential domain)
+
+`/account/reference-credentials` is an authenticated account screen for creating a high-entropy credential for a specific laptop and an explicit set of profiles. The plaintext credential is returned once over the signed-in same-origin request; Bunch stores only its SHA-256 hash. Revocation takes effect on the next request.
+
+This API does **not** accept a `system:companion` MCP token and the credential cannot call `/mcp` or `/api/v1`. It exposes only:
+
+- `GET /api/reference/v1/manifest` — selected profile identity/visual fields plus selected reference image IDs, versions, roles, content types, and SHA-256 hashes.
+- `GET /api/reference/v1/images/:imageId` — bytes for an image named in that credential's current manifest.
+
+Both calls require `Authorization: Bearer <one-time credential>` and re-check the credential hash, owner, revocation state, active selected profile set, and image selection every time. Only a profile picture or explicitly selected appearance reference is exportable. Notes, tasks, preferences, decisions, presence/fronting/hosting, coverage, catch-up, review, history, activity, storage keys, and all work fields are absent by contract.
+
+Release steps, deliberately not performed by this source change:
+
+1. Review and apply `drizzle/0011_reference_credentials.sql` through the normal Bunch migration process.
+2. Deploy Bunch with its existing private image storage configured, then sign in and issue a test credential from the account screen.
+3. Verify owner mismatch, deselection/archival, and revocation return `401`; verify the manifest and image hash match the bytes.
+4. Put the returned plaintext credential only in the laptop Keychain. Never copy it into `.env`, Working Monkey configuration, or logs.
+
 ## Database
 
 `src/db/schema.ts` is the Drizzle model. Runtime queries use `pg` with Vercel Fluid pool attachment and `DATABASE_URL`; `scripts/migrate.ts` uses `DATABASE_URL_UNPOOLED`. `db/baseline.sql` captures the original empty schema and `drizzle/0001_mcp_crud.sql` is the reviewed forward migration.

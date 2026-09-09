@@ -76,10 +76,34 @@ export const privateImage = pgTable("private_image", {
   storageKey: text("storage_key").notNull().unique(),
   contentType: text("content_type").notNull(),
   isProfilePicture: boolean("is_profile_picture").notNull().default(false),
+  referenceVersion: integer("reference_version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "private_image_owner_alter_fk" }).onDelete("cascade"),
   uniqueIndex("private_image_one_profile_picture").on(table.ownerId, table.alterId).where(sql`${table.isProfilePicture} = true`),
+]);
+
+// This credential domain is intentionally separate from companion/MCP OAuth.
+// A plaintext secret is shown once; only its SHA-256 digest is retained.
+export const referenceCredential = pgTable("reference_credential", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  label: text("label").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [index("reference_credential_owner_active_idx").on(table.ownerId, table.revokedAt)]);
+
+export const referenceCredentialAlter = pgTable("reference_credential_alter", {
+  credentialId: uuid("credential_id").notNull().references(() => referenceCredential.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  alterId: uuid("alter_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.credentialId, table.alterId] }),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "reference_credential_alter_owner_alter_fk" }).onDelete("cascade"),
+  index("reference_credential_alter_owner_idx").on(table.ownerId, table.alterId),
 ]);
 
 // A Group Photo remains editable: the original backplate, provisional scene map,

@@ -11,3 +11,4 @@
 \ir ../drizzle/0008_visual_identity.sql
 \ir ../drizzle/0009_group_photo_composer.sql
 \ir ../drizzle/0010_selected_appearance_reference.sql
+\ir ../drizzle/0011_reference_credentials.sql

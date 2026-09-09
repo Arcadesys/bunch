@@ -89,7 +89,7 @@ export default function SystemPage() {
   }
 
   return <main className="shell">
-    <header className="site-header"><div><p className="eyebrow">System · private coverage record</p><h1>Keep the record yours.</h1></div><div className="header-actions"><ThemeControl /><a className="button button-secondary" href="/auth/login">Sign in with Google</a></div></header>
+    <header className="site-header"><div><p className="eyebrow">System · private coverage record</p><h1>Keep the record yours.</h1></div><div className="header-actions"><ThemeControl /><a className="button button-secondary" href="/account/reference-credentials">Reference access</a><a className="button button-secondary" href="/auth/login">Sign in with Google</a></div></header>
     <p className="notice" role="status">{notice}</p>
 
     <section className="current-front" aria-labelledby="current-front-heading">
