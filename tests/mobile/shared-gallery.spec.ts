@@ -142,7 +142,7 @@ test("owner enables fronting on an existing stable link and visitors see refresh
     return r.fulfill({ json: { data: [share()] } });
   });
   await page.route("**/api/public/gallery/stable", r => r.fulfill(unavailable ? { status: 404 } : { json: { ...gallery, ...(enabled ? { currentFronting: { people, checkedAt: new Date().toISOString() } } : {}) } }));
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByRole("link", { name: "Share photo gallery", exact: true }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Share current fronting on this link" }).press("Enter");
