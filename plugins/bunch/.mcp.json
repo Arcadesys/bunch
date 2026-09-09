@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "diddy": {
+    "bunch": {
       "type": "http",
       "url": "https://system.thearcades.me/mcp"
     }

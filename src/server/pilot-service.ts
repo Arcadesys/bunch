@@ -93,6 +93,10 @@ export class PilotService {
       ).rows[0] ?? null
     );
   }
+  // An account with no pilot row is allowed only while the gate is off, which is what
+  // a freshly migrated database looks like. Turning the gate on therefore locks out
+  // every pre-existing account that was never enrolled - deliberate, and effectively
+  // one-way.
   async assertAccess(ownerId: string, bucket?: string) {
     const [account, policy] = await Promise.all([
       this.account(ownerId),

@@ -7,7 +7,7 @@ base=os.environ.copy()
 base.update(PGHOST=url.hostname,PGPORT=str(url.port or 5432),PGUSER=urllib.parse.unquote(url.username or os.environ.get('USER','')),PGPASSWORD=urllib.parse.unquote(url.password or ''),PGDATABASE=url.path[1:])
 target='pilot_restore_'+uuid.uuid4().hex
 owner='auth0:recovery-fixture:'+uuid.uuid4().hex
-folder=tempfile.mkdtemp(prefix='diddy-recovery-eval-')
+folder=tempfile.mkdtemp(prefix='bunch-recovery-eval-')
 runenv=base.copy()
 restore=url._replace(path='/'+target).geturl()
 runenv.update(DATABASE_URL_UNPOOLED=url.geturl(),PILOT_BACKUP_KEY=secrets.token_hex(32),PILOT_BACKUP_DIR=folder,PILOT_RESTORE_DATABASE_URL=restore)

@@ -12,6 +12,9 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    // This literal is the lock key itself, so it is frozen regardless of what the
+    // project is called. Changing it means a rolling deploy's old and new migrators
+    // would take different locks and could migrate concurrently.
     await client.query("select pg_advisory_xact_lock(hashtext('system-arcades-me:migrations'))");
     await client.query(`create table if not exists drizzle_migration (
       name text primary key,

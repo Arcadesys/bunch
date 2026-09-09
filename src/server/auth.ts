@@ -15,6 +15,10 @@ function e2ePilotIdentity(request?: Request): PilotIdentity | null {
     : null;
 }
 
+// Three accepted identity paths, in precedence order: the end-to-end test seam (which
+// cannot run in a production build), a real Auth0 session, and finally the local
+// walkthrough header. Every path returns an owner ID derived from an immutable
+// subject, never from anything the caller supplied as data.
 export async function requireOwnerId(request?: Request): Promise<string> {
   const e2e = e2ePilotIdentity(request);
   if (e2e) {

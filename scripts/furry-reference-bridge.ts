@@ -32,7 +32,7 @@ async function readRequest() {
 function isBridgeDirectory(directory: string) {
   const root = resolve(tmpdir());
   const target = resolve(directory);
-  return dirname(target) === root && basename(target).startsWith("diddy-furry-");
+  return dirname(target) === root && basename(target).startsWith("bunch-furry-");
 }
 
 async function main() {

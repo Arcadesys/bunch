@@ -14,6 +14,6 @@ test("materializes authorized reference metadata privately and removes it on cle
   await assert.rejects(stat(result.paths[0]));
 });
 
-test("rejects a non-DIDdy origin before fetching", async () => {
-  await assert.rejects(materializeAuthorizedReferenceMedia([{ ...media[0], src: "https://attacker.invalid/api/system/images/inline/id?cap=nope" }], "https://system.arcades.me"), /authorized DIDdy/);
+test("rejects a non-Bunch origin before fetching", async () => {
+  await assert.rejects(materializeAuthorizedReferenceMedia([{ ...media[0], src: "https://attacker.invalid/api/system/images/inline/id?cap=nope" }], "https://system.arcades.me"), /authorized Bunch/);
 });

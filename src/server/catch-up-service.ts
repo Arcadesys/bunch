@@ -153,6 +153,9 @@ export function getDemoCatchUpSession(ownerId = "demo:catch-up") {
   return session;
 }
 
+// A review layer over records that already exist. Marking a catch-up item reviewed
+// never edits the underlying note, todo, or decision - it only records that someone
+// arriving has now seen it.
 export class CatchUpService {
   constructor(private readonly pool: Pool = getDatabasePool()) {}
 
@@ -197,7 +200,7 @@ export class CatchUpService {
       "This handoff does not give System access to ChatGPT conversation history.",
       "Generate the catch-up now in ChatGPT: show the window and elapsedSeconds as a readable duration, then summarize what happened. A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
       "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
-      "For a FRONTING period, get_catch_up with periodId returns the session. Read every page with get_episode_records, then get_episode_review for its revision. Save using save_episode_review_v1 with that exact session and recipient, even when the previous end is unknown. Distinguish MEMORY and CONVERSATION references from DIDDY records; label missing context. Do not require invented dates. Other legacy catch-ups retain the original save operation.",
+      "For a FRONTING period, get_catch_up with periodId returns the session. Read every page with get_episode_records, then get_episode_review for its revision. Save using save_episode_review_v1 with that exact session and recipient, even when the previous end is unknown. Distinguish MEMORY and CONVERSATION references from records stored in Bunch, whose kind value is DIDDY; label missing context. Do not require invented dates. Other legacy catch-ups retain the original save operation.",
       "Keep conversation findings separate from current authenticated facts and real-world completion. For legacy or separately selected windows only, call save_conversation_catch_up with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
     ];
     if (ownerId.startsWith("demo:")) {

@@ -1249,7 +1249,7 @@ textarea:focus-visible {
   }
 }
 
-/* Shared orientation and a consistent reading path across DIDdy. */
+/* Shared orientation and a consistent reading path across Bunch. */
 .app-navigation {
   display: grid;
   grid-template-columns: 1fr auto;

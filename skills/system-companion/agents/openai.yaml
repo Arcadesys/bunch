@@ -8,6 +8,6 @@ dependencies:
       value: "system-companion"
       description: "Authenticated private System MCP server"
       transport: "streamable_http"
-      url: "https://system-arcades-me.vercel.app/mcp"
+      url: "https://system.thearcades.me/mcp"
 policy:
   allow_implicit_invocation: true

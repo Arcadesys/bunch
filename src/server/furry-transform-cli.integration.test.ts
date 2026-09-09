@@ -45,7 +45,7 @@ test("CLI bridge materializes and cleans up without echoing a capability", async
 });
 
 test("CLI keeper save sends bytes to the receipt-bound endpoint", async () => {
-  const result = await mkdtemp(join(tmpdir(), "diddy-furry-result-"));
+  const result = await mkdtemp(join(tmpdir(), "bunch-furry-result-"));
   const file = join(result, "keeper.png"); const bytes = Buffer.from([137, 80, 78, 71]); await writeFile(file, bytes);
   let requests = 0;
   const server = createServer(async (request, response) => { requests++; const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); assert.match(Buffer.concat(chunks).toString("binary"), /\x89PNG/); assert.equal(request.headers.authorization, "Bearer synthetic-capability"); response.writeHead(200, { "content-type": "application/json" }); response.end('{"stored":true}'); });
