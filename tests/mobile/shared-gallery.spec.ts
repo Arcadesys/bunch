@@ -48,7 +48,7 @@ test("account share controls create links and revoke with an idempotency key", a
     shares = [];
     return route.fulfill({ json: { data: { revoked: true } } });
   });
-  await page.goto("/");
+  await page.goto("/home");
   const shareGallery = page.getByRole("link", { name: "Share photo gallery", exact: true });
   await expect(shareGallery).toBeVisible();
   await shareGallery.press("Enter");

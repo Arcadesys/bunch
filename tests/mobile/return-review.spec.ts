@@ -8,7 +8,7 @@ test("saved review identifies memory gaps and reading makes no writes", async ({
     sourceClient: "ChatGPT", sourceReferences: [{kind:"DIDDY",reference:"Synthetic note"},{kind:"MEMORY",reference:"Unavailable"}],
     createdAt: "2026-09-06T01:00:00Z", expiresAt:"2026-10-06T01:00:00Z"
   } } } }));
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByText("More: saved review and coverage", { exact: true }).click();
   await expect(page.getByText(/A four-month review/)).toBeVisible();
   await expect(page.getByText(/ChatGPT memory was unavailable/)).toBeVisible();
@@ -20,7 +20,7 @@ test("saved review identifies memory gaps and reading makes no writes", async ({
 });
 
 test("missing review shows records and no generation status", async ({page}) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByText("More: saved review and coverage", { exact: true }).click();
   await expect(page.getByText("Review not yet saved.", {exact:true})).toBeVisible();
   await expect(page.getByRole("heading",{name:"Fixture todo",exact:true})).toBeVisible();

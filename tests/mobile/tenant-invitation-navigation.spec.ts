@@ -8,7 +8,7 @@ test("Home has a distinct, accessible path to tenant invitations", async ({ page
     json: { data: [], activation: { open: false, maxFriends: 3, reason: "Record current capacity and recovery evidence before opening invitations." } },
   }));
 
-  await page.goto("/");
+  await page.goto("/home");
   const invite = page.getByRole("link", { name: "Invite another system", exact: true });
   await expect(invite).toBeVisible();
   expect(await invite.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(64);
