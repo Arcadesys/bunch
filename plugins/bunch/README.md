@@ -14,3 +14,9 @@ Hosting and fronting remain separate. No switch is inferred from identity, silen
 Other systems cannot access your data. The hosting operator has technical administrator access. This is not end-to-end encryption. See `/account` for export, deletion, and recovery information.
 
 Invitations are closed unless the operator has opened them. Installing this package does not by itself grant membership.
+
+## Demo system
+
+The same hosted `/mcp` endpoint supports a read-only default walkthrough without sign-in. Ask for `get_demo_system` to fetch Fenton, Benny, Dot, fictional history, and shared tasks from Bunch. Nothing is stored locally or written to a real system. To use your own records, call `connect_private_system`, complete OAuth, and refresh the tool list. Invalid credentials remain errors; they never select demo data.
+
+[Install and explore the Demo system](../../docs/demo-install.md)

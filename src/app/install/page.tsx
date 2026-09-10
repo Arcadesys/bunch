@@ -16,6 +16,6 @@ export default function InstallPage() {
       <li>Tap <strong>Install Bunch</strong> above if available, or open Chrome’s <strong>More</strong> menu (three dots).</li>
       <li>Choose <strong>Add to home screen</strong>, then <strong>Install</strong>. If Chrome offers <strong>Create shortcut</strong> instead, that also gives you a home-screen link.</li>
     </ol><a className="install-help-link" href="https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=en">Google’s installation instructions</a></section>
-    <section className="panel"><h2>Ready for your first launch</h2><p>Tap the <strong>Bunch</strong> icon on your home screen. Sign in with your usual Google account if asked, then check that Catch-up and People open.</p><p>Bunch needs an internet connection. Installation does not make your records public.</p><Link className="button" href="/">Open Catch-up</Link></section>
+    <section className="panel"><h2>Ready for your first launch</h2><p>Tap the <strong>Bunch</strong> icon on your home screen. Sign in with your usual Google account if asked, then check that Catch-up and People open.</p><p>Bunch needs an internet connection. Installation does not make your records public.</p><Link className="button" href="/home">Open Catch-up</Link></section>
   </main>;
 }

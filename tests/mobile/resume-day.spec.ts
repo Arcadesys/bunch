@@ -6,7 +6,7 @@ test("saved records work without conversation history and offer one next step", 
   harness.session!.totalCount = harness.session!.items.length;
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page).toHaveTitle("Bunch — your private companion");
   await expect(page.getByText(/Conversation history is not read here/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Needs attention", exact: true })).toBeVisible();
@@ -28,7 +28,7 @@ test("saved records work without conversation history and offer one next step", 
 
 test("empty and failed states do not require an arrival", async ({ page, harness }) => {
   harness.session = null; harness.currentFront = null; harness.presence.fronting = [];
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByText(/No catch-up open\./)).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Todos", exact: true })).toBeVisible();
   harness.readStatus = 500;
@@ -41,7 +41,7 @@ test("empty and failed states do not require an arrival", async ({ page, harness
 });
 
 test("failed refresh preserves dated records and optional uncertainty does not write", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.locator(".presence-overview > summary").click();
   await expect(page.getByText(/Test Robin was last recorded starting fronting/)).toBeVisible();
   await page.getByText("Still accurate? Optional check", { exact: true }).click();
@@ -64,7 +64,7 @@ test("lost review save response retries with the same receipt and payload", asyn
     saved.items[1].version++;
     return route.fulfill({ json: { data: saved } });
   });
-  await page.goto("/");
+  await page.goto("/home");
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture todo", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
   await row.getByRole("button", { name: "Confirm defer" }).click();
@@ -78,7 +78,7 @@ test("lost review save response retries with the same receipt and payload", asyn
 
 test("unavailable conversation review leaves saved records usable", async ({ page }) => {
   await page.route("**/api/v1/catch-up/review?*", route => route.fulfill({ status: 503, json: { error: { message: "Conversation review unavailable." } } }));
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByRole("heading", { name: "Needs attention", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Fixture todo", exact: true })).toBeVisible();
   await page.getByText("More: saved review and coverage", { exact: true }).click();
@@ -87,7 +87,7 @@ test("unavailable conversation review leaves saved records usable", async ({ pag
 });
 
 test("authentication loss clears the previously loaded catch-up", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByRole("heading", { name: "Fixture todo", exact: true })).toBeVisible();
   harness.readStatus = 401;
   await page.getByRole("button", { name: "Refresh catch-up", exact: true }).click();

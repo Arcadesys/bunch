@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 
 test("@eval compact phone header keeps navigation and recipient in the first screen", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
 
   const appearance = page.getByRole("link", { name: "Options", exact: true });
@@ -21,7 +21,7 @@ test("@eval compact phone header keeps navigation and recipient in the first scr
 });
 
 test("@eval compact header controls reflow without horizontal overflow", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByRole("link", { name: "Options", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toBeVisible();
   const headerOverflow = await page.locator(".command-topbar").evaluate((header) => ({ client: header.clientWidth, scroll: header.scrollWidth }));

@@ -1,0 +1,20 @@
+{
+  "name": "bunch",
+  "interface": {
+    "displayName": "Bunch"
+  },
+  "plugins": [
+    {
+      "name": "bunch",
+      "source": {
+        "source": "local",
+        "path": "./plugins/bunch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

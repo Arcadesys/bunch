@@ -170,7 +170,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">
-        <Link href="/">Bunch</Link>
+        <Link href="/home">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/connect">Connect clients</a>
       </nav>
