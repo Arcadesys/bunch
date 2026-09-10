@@ -759,7 +759,8 @@ export class SystemService {
       (select count(*) from todo_assignee where owner_id = $1 and alter_id = $2::uuid) as todos,
       (select count(*) from system_note where owner_id = $1 and alter_id = $2::uuid) as notes,
       (select count(*) from coverage_assignment where owner_id = $1 and alter_id = $2::uuid) as coverage,
-      (select count(*) from private_image where owner_id = $1 and alter_id = $2::uuid) as images`, [ownerId, alterId]);
+      ((select count(*) from private_image where owner_id = $1 and alter_id = $2::uuid) +
+       (select count(*) from group_photo_render where owner_id=$1 and recipe->'profiles' @> jsonb_build_array(jsonb_build_object('id',$2::text)))) as images`, [ownerId, alterId]);
     const row = result.rows[0];
     return { host: Number(row.host), todos: Number(row.todos), notes: Number(row.notes), coverage: Number(row.coverage), images: Number(row.images) };
   }
@@ -786,8 +787,9 @@ export class SystemService {
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since the erasure preview.", { currentVersion: current.version });
       const blockers = await this.blockerCounts(client, ownerId, alterId);
       if (blockers.host + blockers.todos + blockers.notes + blockers.coverage > 0) throw new SystemError("ERASURE_BLOCKED", "Clear or reassign the host and resolve todo, note, and coverage references before erasing this alter.", { blockers });
-      const images = await client.query<{ storage_key: string }>("select storage_key from private_image where owner_id = $1 and alter_id = $2::uuid", [ownerId, alterId]);
+      const images = await client.query<{ storage_key: string }>("select storage_key from private_image where owner_id = $1 and alter_id = $2::uuid union select storage_key from group_photo_render where owner_id=$1 and storage_key is not null and recipe->'profiles' @> jsonb_build_array(jsonb_build_object('id',$2::text))", [ownerId, alterId]);
       await this.removePrivateImages(images.rows.map((row) => row.storage_key));
+      await client.query("delete from group_photo_render where owner_id=$1 and recipe->'profiles' @> jsonb_build_array(jsonb_build_object('id',$2::text))", [ownerId, alterId]);
       await client.query("update activity_event set actor_alter_id = null where owner_id = $1 and actor_alter_id = $2::uuid", [ownerId, alterId]);
       await client.query("delete from activity_event where owner_id = $1 and entity_type = 'ALTER' and entity_id = $2::uuid", [ownerId, alterId]);
       await client.query("delete from mutation_receipt where owner_id = $1 and result ->> 'id' = $2", [ownerId, alterId]);

@@ -30,3 +30,7 @@ Safe inspection found database and private Blob configuration in the main checko
 Next bounded step: resolve the application-callable generation provider and credential setup, implement its generation/result lifecycle with selected-reference preservation, and add a separate non-mocked Playwright test that calls the provider and independently verifies persistence and displayed image decoding. Do not treat the existing interaction suite as that acceptance test.
 
 The user subsequently authorized merge and deployment of this bounded composition change. Real generation remains a separate, explicitly unverified acceptance gap.
+
+## Finisher implementation follow-up
+
+The next implementation adds generation, persistence and reopening; current details and the still-open real-provider acceptance gate are in [group-photo-finisher.md](group-photo-finisher.md). The earlier checkpoint above records the state at the composition-only release.
