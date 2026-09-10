@@ -56,3 +56,28 @@ export function nearestOccupancyZone(analysis: SceneAnalysis, tokenX: number, to
     return distance < best.distance ? { zone, distance } : best;
   }, { zone: analysis.occupancyZones[0], distance: Number.POSITIVE_INFINITY }).zone;
 }
+
+export const arrangeActionSchema = z.enum(["forward", "backward", "front", "back"]);
+export type ArrangeAction = z.infer<typeof arrangeActionSchema>;
+
+/** Larger depth is nearer the viewer, matching the stage's stacking order. */
+export function arrangePlacements(placements: GroupPhotoPlacement[], alterId: string, action: ArrangeAction) {
+  const ordered = [...placements].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id));
+  const index = ordered.findIndex(item => item.alterId === alterId);
+  if (index < 0) throw new Error("Place that person before arranging them.");
+  const target = action === "front" ? ordered.length - 1 : action === "back" ? 0 :
+    Math.max(0, Math.min(ordered.length - 1, index + (action === "forward" ? 1 : -1)));
+  const [selected] = ordered.splice(index, 1);
+  ordered.splice(target, 0, selected);
+  return ordered.map((item, rank) => ({ ...item, depth: Math.round((rank + 1) * 100 / (ordered.length + 1)) }));
+}
+
+export function compositionGuidance(placements: GroupPhotoPlacement[]) {
+  return [
+    "Compose one cohesive group photo in the supplied scene. Token positions express approximate composition and social grouping, not exact poses or pasted cutouts.",
+    "Coordinates run left to right (x 0–100) and top to bottom (y 0–100). Keep nearby tokens together in that part of the scene: three tokens together on the left means those three people together on the left. Use natural poses, spacing, perspective, lighting and contact shadows. Do not spread a cluster across the scene.",
+    "Larger depth means nearer the viewer. Respect this order when people overlap; keep each person recognizable. Do not draw tokens, labels or staging guides.",
+    ...[...placements].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id)).map(p =>
+      `Person ${p.alterId}: x ${p.tokenX}%, y ${p.tokenY}%, layer depth ${p.depth}.`),
+  ].join("\n");
+}

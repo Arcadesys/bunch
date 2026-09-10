@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { getDatabasePool } from "@/db/client";
-import { groupPhotoPlacementInputSchema, groupPhotoProjectStatusSchema, provisionalSceneAnalysis, sceneAnalysisSchema, type GroupPhotoPlacementInput, type GroupPhotoProject, type SceneAnalysis } from "@/domain/group-photo";
+import { arrangeActionSchema, arrangePlacements, groupPhotoPlacementInputSchema, groupPhotoProjectStatusSchema, provisionalSceneAnalysis, sceneAnalysisSchema, type GroupPhotoPlacementInput, type GroupPhotoProject, type SceneAnalysis } from "@/domain/group-photo";
 import { SystemError } from "@/server/system-error";
 
 function iso(value: unknown) { return new Date(String(value)).toISOString(); }
@@ -48,6 +48,22 @@ export class GroupPhotoService {
       const result = await client.query("select backplate_storage_key, backplate_content_type from group_photo_project where owner_id = $1 and id = $2::uuid", [ownerId, projectId]);
       if (!result.rows[0]) throw new SystemError("NOT_FOUND", "Group Photo project not found.");
       return { storageKey: String(result.rows[0].backplate_storage_key), contentType: String(result.rows[0].backplate_content_type) };
+    });
+  }
+
+  async arrange(ownerId: string, projectId: string, alterId: string, rawAction: unknown, expectedVersion: number) {
+    const action = arrangeActionSchema.parse(rawAction);
+    return this.transaction(async client => {
+      const lock = await client.query("select version from group_photo_project where owner_id=$1 and id=$2::uuid for update", [ownerId, projectId]);
+      if (!lock.rows[0]) throw new SystemError("NOT_FOUND", "Group Photo project not found.");
+      if (Number(lock.rows[0].version) !== expectedVersion) throw new SystemError("CONFLICT", "This Group Photo changed. Reload it, then try again.");
+      const project = await this.read(client, ownerId, projectId);
+      if (!project.placements.some(p => p.alterId === alterId)) throw new SystemError("NOT_FOUND", "Place that person before arranging them.");
+      for (const placement of arrangePlacements(project.placements, alterId, action)) {
+        await client.query("update group_photo_placement set depth=$1, version=version+1, updated_at=now() where id=$2::uuid and owner_id=$3", [placement.depth, placement.id, ownerId]);
+      }
+      await client.query("update group_photo_project set version=version+1, updated_at=now() where id=$1::uuid and owner_id=$2", [projectId, ownerId]);
+      return this.read(client, ownerId, projectId);
     });
   }
 
