@@ -11,7 +11,7 @@ export async function GET() {
     return Response.json(result, {
       headers: {
         "Cache-Control": "private, no-store",
-        "Content-Disposition": 'attachment; filename="diddy-records.json"',
+        "Content-Disposition": 'attachment; filename="bunch-records.json"',
       },
     });
   });

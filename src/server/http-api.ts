@@ -1,3 +1,7 @@
+// Shared route plumbing: derive the owner from the session, reject cross-origin
+// mutations, and render every failure through one error shape so routes cannot leak
+// internal messages piecemeal.
+
 import { NextResponse } from "next/server";
 import { uuidSchema } from "@/domain/contracts";
 import { requireOwnerId } from "@/server/auth";

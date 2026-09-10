@@ -1,3 +1,7 @@
+// The zod primitives shared by the MCP tools, the /api/v1 routes, and database read
+// shapes. One definition serves all three, so changes here must be additive: a
+// narrowed shape rejects stored rows and cached tool descriptors alike.
+
 import { z } from "zod";
 
 export const uuidSchema = z.string().uuid();

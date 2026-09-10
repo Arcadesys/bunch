@@ -1,4 +1,4 @@
-name: DIDdy checks
+name: Working Monkeys checks
 on:
   pull_request:
   push:
@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: diddy_test
+          POSTGRES_USER: bunch_test
           POSTGRES_PASSWORD: local_ci_test
-          POSTGRES_DB: diddy_test
+          POSTGRES_DB: bunch_test
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready
@@ -23,8 +23,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      TEST_DATABASE_URL: postgres://diddy_test:local_ci_test@127.0.0.1:5432/diddy_test
-      DATABASE_URL_UNPOOLED: postgres://diddy_test:local_ci_test@127.0.0.1:5432/diddy_test
+      TEST_DATABASE_URL: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
+      DATABASE_URL_UNPOOLED: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
+      SYSTEM_PUBLIC_ORIGIN: http://127.0.0.1:3000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,7 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: diddy-browser-evidence
+          name: bunch-browser-evidence
           path: |
             test-results/playwright
             test-results/results.json
@@ -63,6 +64,6 @@ jobs:
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: diddy-plugin
+          name: bunch-plugin
           path: ${{ steps.package.outputs.archive }}
           if-no-files-found: error

@@ -1,3 +1,8 @@
+// Hosting and fronting are independent. Hosting is responsibility for the body and is
+// held by one profile at a time; fronting episodes describe who is present and may
+// overlap. Neither one implies the other, and a missing record never establishes
+// absence.
+
 import { z } from "zod";
 import { frontingSessionViewSchema, responseMetaSchema, uuidSchema } from "./contracts";
 

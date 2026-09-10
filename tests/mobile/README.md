@@ -69,14 +69,15 @@ files. Port 55439 and the container name must be unused; browser checks use 3217
 npm ci
 npx playwright install chromium
 # On Linux, use: npx playwright install --with-deps chromium
-docker run --detach --rm --name diddy-gate-postgres \
-  -e POSTGRES_USER=diddy_test -e POSTGRES_PASSWORD=local_ci_test \
-  -e POSTGRES_DB=diddy_test -p 127.0.0.1:55439:5432 postgres:16
-until docker exec diddy-gate-postgres pg_isready -U diddy_test -d diddy_test; do
+docker run --detach --rm --name bunch-gate-postgres \
+  -e POSTGRES_USER=bunch_test -e POSTGRES_PASSWORD=local_ci_test \
+  -e POSTGRES_DB=bunch_test -p 127.0.0.1:55439:5432 postgres:16
+until docker exec bunch-gate-postgres pg_isready -U bunch_test -d bunch_test; do
   sleep 1
 done
-export TEST_DATABASE_URL='postgres://diddy_test:local_ci_test@127.0.0.1:55439/diddy_test'
+export TEST_DATABASE_URL='postgres://bunch_test:local_ci_test@127.0.0.1:55439/bunch_test'
 export DATABASE_URL_UNPOOLED="$TEST_DATABASE_URL"
+export SYSTEM_PUBLIC_ORIGIN='http://127.0.0.1:3217'
 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/baseline.sql
 npm run db:migrate
 npm run lint
@@ -88,7 +89,7 @@ npm run build
 MOBILE_TEST_SERVER=production npm run test:browser
 npm run plugin:pack
 # Run after verification, including when an earlier check fails:
-docker stop diddy-gate-postgres
+docker stop bunch-gate-postgres
 unset TEST_DATABASE_URL DATABASE_URL_UNPOOLED
 ```
 
@@ -106,7 +107,7 @@ browser acceptance checks, not model-response quality evaluations.
 CI writes per-test failure screenshots and traces to `test-results/playwright`,
 a machine-readable report at `test-results/results.json`, and an HTML report in
 `playwright-report`.
-The `diddy-browser-evidence` Actions artifact is uploaded even after failure and
+The `bunch-browser-evidence` Actions artifact is uploaded even after failure and
 retained for seven days. If the browser step never starts, there may be no evidence
 to upload; the earlier failed step remains the diagnostic source.
 

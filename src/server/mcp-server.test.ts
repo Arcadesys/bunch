@@ -7,6 +7,11 @@ import { createMcpServer } from "@/server/mcp-server";
 import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
 
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
 test("MCP descriptors expose exact schemas and safety annotations", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const service = { getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
@@ -19,7 +24,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   try {
-    assert.equal(client.getServerVersion()?.name, "DIDdy");
+    assert.equal(client.getServerVersion()?.name, "Working Monkeys");
     const { tools } = await client.listTools();
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
@@ -38,7 +43,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal((handoff.structuredContent as { window?: { provenance?: string } }).window?.provenance, "USER_SELECTED");
     assert.ok(byName.get("open_private_photo_gallery")?.outputSchema?.properties?.url, "gallery fallback must return a URL");
     const gallery = await client.callTool({ name: "open_private_photo_gallery", arguments: {} });
-    assert.deepEqual(gallery.structuredContent, { url: "https://system-arcades-me.vercel.app/gallery" });
+    assert.deepEqual(gallery.structuredContent, { url: "https://bunch.example/gallery" });
     for (const name of ["erase_alter", "erase_todo", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.destructiveHint, true, `${name} must be destructive`);
     for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
     for (const name of ["set_catch_up_item_state", "suggest_important_thread", "confirm_important_thread"]) {
@@ -70,12 +75,12 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const html = "text" in content ? content.text : "";
     const legacyHtml = legacyWidgetContents.map((result) => "text" in result.contents[0] ? result.contents[0].text : "");
     assert.deepEqual(content._meta?.ui, {
-      csp: { connectDomains: ["https://system-arcades-me.vercel.app"], resourceDomains: ["https://system-arcades-me.vercel.app"] },
+      csp: { connectDomains: ["https://bunch.example"], resourceDomains: ["https://bunch.example"] },
       prefersBorder: true,
     });
     assert.deepEqual(content._meta?.["openai/widgetCSP"], {
-      connect_domains: ["https://system-arcades-me.vercel.app"],
-      resource_domains: ["https://system-arcades-me.vercel.app"],
+      connect_domains: ["https://bunch.example"],
+      resource_domains: ["https://bunch.example"],
     });
     assert.match(html, /Bunch/);
     assert.match(html, /Catch-up tasks/);

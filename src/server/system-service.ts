@@ -276,6 +276,10 @@ function readPreviewToken(token: string) {
   }
 }
 
+// The transactional core shared by the MCP tools and the /api/v1 routes, so both
+// surfaces enforce the same rules. Mutations carry an expected version and a request
+// ID: a stale version is rejected, and a retried request ID replays the recorded
+// receipt instead of applying the change twice.
 export class SystemService {
   constructor(
     private readonly pool: Pool = getDatabasePool(),

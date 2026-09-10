@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "diddy",
+      "name": "bunch",
       "source": {
         "source": "local",
-        "path": "./plugins/diddy"
+        "path": "./plugins/bunch"
       },
       "policy": {
         "installation": "AVAILABLE",

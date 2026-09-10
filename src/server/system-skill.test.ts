@@ -8,6 +8,11 @@ import { createMcpServer } from "@/server/mcp-server";
 import { SYSTEM_SKILL_TEXT, SYSTEM_SKILL_URI, systemSkillEntry } from "@/server/system-skill";
 import type { SystemService } from "@/server/system-service";
 
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
 const skillListResultSchema = z.object({
   skills: z.array(z.object({
     uri: z.string(),

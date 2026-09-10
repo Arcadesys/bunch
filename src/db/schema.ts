@@ -1,3 +1,7 @@
+// The Drizzle model of record for every table. Migrations are NOT generated from it:
+// drizzle/*.sql are hand-reviewed forward-only files applied by scripts/migrate.ts,
+// and drizzle-kit is used only to check this model against them.
+
 import {
   boolean,
   bigint,

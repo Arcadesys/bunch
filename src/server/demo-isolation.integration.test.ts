@@ -8,6 +8,11 @@ import { createMcpServer } from "./mcp-server";
 import { handleMcpRequest } from "./mcp-http";
 import { COMPANION_SCOPE, verifyCompanionAccessToken } from "./mcp-authorization";
 
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 integration("signed MCP tokens still read only their own database records alongside the public demo", async () => {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });

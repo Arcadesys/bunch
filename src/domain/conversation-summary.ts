@@ -14,6 +14,11 @@ const summaryInput = z.object({
 export const saveConversationSummarySchema = summaryInput.refine(v => Date.parse(v.endAt) >= Date.parse(v.startAt), {
   path: ["endAt"], message: "endAt must be on or after startAt.",
 });
+// "DIDDY" is a frozen persisted literal meaning "a record stored in Bunch". Stored
+// rows are re-parsed through this schema on every read, and cached ChatGPT tool
+// descriptors still send it, so narrowing or renaming it breaks reads of existing
+// data and rejects older clients. It is never shown to anyone: the UI renders it
+// as "Bunch record".
 export const conversationSummarySchema = summaryInput.omit({ requestId: true }).extend({
   startAt: isoTimestampSchema.nullable(),
   catchUpSessionId: uuidSchema.nullish(), revision: z.number().int().positive().nullish(),
