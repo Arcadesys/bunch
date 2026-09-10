@@ -76,3 +76,36 @@ test("direct placement keeps three people together and supports Arrange and keyb
   await expect(page.getByRole("list", { name: "Layer order, back to front" }).locator("li")).toHaveText(["Test Robin", "Test Wren", "Test Finch"]);
   await page.screenshot({ path: testInfo.outputPath("direct-placement.png"), fullPage: true });
 });
+
+test("finisher shows progress, a saved image and the same result after reopening", async ({ page }, testInfo) => {
+  const id = "70000000-0000-4000-8000-000000000002";
+  const renderId = "90000000-0000-4000-8000-000000000002";
+  const project: GroupPhotoProject = { id, backplateContentType: "image/png", status: "READY", version: 2, createdAt: "2026-09-09", updatedAt: "2026-09-09", sceneAnalysis: provisionalSceneAnalysis(), placements: [{ id: "80000000-0000-4000-8000-000000000001", alterId: "20000000-0000-4000-8000-000000000001", tokenX: 20, tokenY: 60, depth: 50, version: 1, relationHints: [], createdAt: "2026-09-09", updatedAt: "2026-09-09" }] };
+  let started = false, reads = 0;
+  await page.route("**/api/v1/group-photos", route => route.fulfill({ json: { data: [{ id, createdAt: project.createdAt }], meta: { finisherAvailable: true } } }));
+  await page.route(`**/api/v1/group-photos/${id}`, route => {
+    if (started) reads++;
+    return route.fulfill({ json: { data: { ...project, renders: started ? [{ id: renderId, state: reads >= 2 ? "COMPLETE" : "RUNNING", sourceVersion: 2, createdAt: project.createdAt, width: 800, height: 500 }] : [] }, meta: {} } });
+  });
+  const fixtureImage = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="#193049"/><text x="80" y="240" font-size="40" fill="white">UI TEST IMAGE — NOT GENERATED</text></svg>';
+  await page.route(`**/api/v1/group-photos/${id}/backplate`, route => route.fulfill({ contentType: "image/svg+xml", body: fixtureImage }));
+  await page.route(`**/api/v1/group-photos/${id}/renders/${renderId}/image`, route => route.fulfill({ contentType: "image/svg+xml", body: fixtureImage }));
+  await page.route(`**/api/v1/group-photos/${id}/renders`, route => {
+    expect(route.request().headers()["idempotency-key"]).toMatch(/^[a-f0-9-]{36}$/);
+    expect(route.request().postDataJSON()).toMatchObject({ expectedVersion: 2 });
+    started = true;
+    return route.fulfill({ status: 202, json: { data: { id: renderId, state: "QUEUED", sourceVersion: 2, createdAt: project.createdAt }, meta: {} } });
+  });
+  await page.goto(`/group-photo?project=${id}`);
+  await page.getByRole("button", { name: "Finish photo", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Finishing photo…", exact: true })).toBeDisabled();
+  await expect(page.getByRole("img", { name: "Finished group photo", exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("link", { name: "Download finished photo" })).toBeVisible();
+  await page.getByRole("link", { name: "Start or reopen another scene" }).click();
+  await page.getByRole("link", { name: /Open scene 1/ }).click();
+  const image = page.getByRole("img", { name: "Finished group photo", exact: true });
+  await expect(image).toBeVisible();
+  expect(await image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(800);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath("finisher-ui.png"), fullPage: true });
+});

@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import { type Pool, type PoolClient } from "pg";
 import { getDatabasePool } from "@/db/client";
 import { arrangeActionSchema, arrangePlacements, groupPhotoPlacementInputSchema, groupPhotoProjectStatusSchema, provisionalSceneAnalysis, sceneAnalysisSchema, type GroupPhotoPlacementInput, type GroupPhotoProject, type SceneAnalysis } from "@/domain/group-photo";
 import { SystemError } from "@/server/system-error";
@@ -6,8 +6,9 @@ import { SystemError } from "@/server/system-error";
 function iso(value: unknown) { return new Date(String(value)).toISOString(); }
 
 export class GroupPhotoService {
+  constructor(readonly pool: Pool = getDatabasePool()) {}
   private async transaction<T>(run: (client: PoolClient) => Promise<T>) {
-    const client = await getDatabasePool().connect();
+    const client = await this.pool.connect();
     try { await client.query("begin"); const result = await run(client); await client.query("commit"); return result; }
     catch (error) { await client.query("rollback"); throw error; }
     finally { client.release(); }
@@ -39,6 +40,11 @@ export class GroupPhotoService {
       const created = await client.query("insert into group_photo_project (owner_id, backplate_storage_key, backplate_content_type, scene_analysis, status) values ($1, $2, $3, $4::jsonb, 'READY') returning id", [ownerId, input.storageKey, input.contentType, JSON.stringify(analysis)]);
       return this.read(client, ownerId, String(created.rows[0].id));
     });
+  }
+
+  async list(ownerId: string) {
+    const rows = await this.pool.query("select id,created_at from group_photo_project where owner_id=$1 order by updated_at desc limit 30", [ownerId]);
+    return rows.rows.map(row => ({ id: String(row.id), createdAt: iso(row.created_at) }));
   }
 
   async get(ownerId: string, projectId: string) { return this.transaction((client) => this.read(client, ownerId, projectId)); }

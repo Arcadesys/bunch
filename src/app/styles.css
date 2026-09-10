@@ -1690,3 +1690,9 @@ h1, .command-hero h1 { color: var(--ink); }
   .profiles-page .profile-entry { padding-inline: 8px; }
   .profiles-page .visual-identity { padding-inline: 8px; }
 }
+
+.photo-finisher { margin-bottom: 1.5rem; }
+.photo-finisher > button { min-height: 52px; font-size: 1.15rem; padding: .7rem 1rem; background: #24243c; color: #fff; border: 2px solid #fff; }
+.finished-photo { margin: 1.5rem 0 0; }
+.finished-photo img { display: block; width: 100%; height: auto; border: 2px solid var(--ink); border-radius: 12px; }
+.finished-photo a, .recent-scenes a { display: inline-block; padding: .75rem; min-height: 48px; font-size: 1.1rem; }

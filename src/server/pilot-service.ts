@@ -44,6 +44,9 @@ const unavailable = () =>
     "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "group_photo_render",
+  "group_photo_placement",
+  "group_photo_project",
   "gallery_share",
   "conversation_summary",
   "catch_up_entry",
@@ -329,6 +332,7 @@ export class PilotService {
           const clean = { ...row };
           delete clean.owner_id;
           delete clean.storage_key;
+          delete clean.backplate_storage_key;
           return clean;
         });
       }

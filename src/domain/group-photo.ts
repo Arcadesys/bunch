@@ -31,7 +31,7 @@ export const groupPhotoPlacementInputSchema = z.object({
 export type GroupPhotoPlacementInput = z.infer<typeof groupPhotoPlacementInputSchema>;
 
 export type GroupPhotoPlacement = GroupPhotoPlacementInput & { id: string; version: number; createdAt: string; updatedAt: string };
-export type GroupPhotoProject = { id: string; backplateContentType: string; sceneAnalysis: SceneAnalysis; status: z.infer<typeof groupPhotoProjectStatusSchema>; version: number; createdAt: string; updatedAt: string; placements: GroupPhotoPlacement[] };
+export type GroupPhotoProject = { id: string; backplateContentType: string; sceneAnalysis: SceneAnalysis; status: z.infer<typeof groupPhotoProjectStatusSchema>; version: number; createdAt: string; updatedAt: string; placements: GroupPhotoPlacement[]; renders?: GroupPhotoRender[] };
 
 // This is intentionally a conservative fallback, not a claim that a vision
 // model understood the image. A later provider replaces this artifact in place.
@@ -81,3 +81,9 @@ export function compositionGuidance(placements: GroupPhotoPlacement[]) {
       `Person ${p.alterId}: x ${p.tokenX}%, y ${p.tokenY}%, layer depth ${p.depth}.`),
   ].join("\n");
 }
+
+export type GroupPhotoRender = {
+  id: string; sourceVersion: number; state: "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED";
+  createdAt: string; finishedAt: string | null; errorMessage: string | null;
+  width: number | null; height: number | null; contentHash: string | null;
+};
