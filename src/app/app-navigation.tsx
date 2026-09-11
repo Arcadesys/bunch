@@ -55,7 +55,7 @@ export function AppNavigation({ current }: { current?: AppPage }) {
   }, []);
   return <header className="app-navigation command-topbar">
     <div className="bunch-primary-bar">
-      <Link href="/home" className="command-brand" aria-label="Bunch home"><Image src="/bunch-barrel-monkeys.png" alt="" width={32} height={32} priority />Bunch</Link>
+      <Link href="/home" className="command-brand" aria-label="Austen Tucker-Crowder home"><Image src="/bunch-barrel-monkeys.png" alt="" width={32} height={32} priority />Austen Tucker-Crowder</Link>
       <nav className="command-topnav" aria-label="Bunch navigation">{destinations.map(({ href, label, page, icon }) => <Link key={page} href={href} aria-current={current === page || current === "GALLERY" && page === "PROFILES" || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}><Icon name={icon} /><span>{label}</span></Link>)}</nav>
       <div className="bunch-utilities"><span className="bunch-private-pill" aria-label="Private records"><span>Private</span><span aria-hidden="true">•</span></span><button type="button" className="bunch-icon-button" onClick={() => setGlow(value => !value)} aria-pressed={glow} aria-label="Toggle glow"><Icon name="glow" /></button><button type="button" className="bunch-icon-button contrast" onClick={() => setHighContrast(value => !value)} aria-pressed={highContrast} aria-label="High contrast"><Icon name="contrast" /></button></div>
     </div>
