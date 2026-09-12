@@ -12,6 +12,9 @@ import {
   listNotesSchema,
   listTodosSchema,
   noteCreateSchema,
+  notePatchSchema,
+  checklistCreateSchema,
+  checklistPatchSchema,
   setAlterAppearanceSchema,
   setProfilePictureSchema,
   todoCreateSchema,
@@ -26,6 +29,9 @@ import {
   type ListNotesInput,
   type ListTodosInput,
   type NoteCreate,
+  type NotePatch,
+  type ChecklistCreate,
+  type ChecklistPatch,
   type NoteView,
   type RecordSource,
   type ProfileImageView,
@@ -80,6 +86,8 @@ type TodoRow = QueryResultRow & {
   due_on: string | null;
   priority: TodoView["priority"] | null;
   assignee_alter_ids: string[] | null;
+  checklist: Array<{ id: string; title: string; completed: boolean; position: number }> | null;
+  note_ids: string[] | null;
   coverage_id: string | null;
   version: number;
   created_at: Date | string;
@@ -104,6 +112,8 @@ type NoteRow = QueryResultRow & {
   coverage_id: string | null;
   actor_alter_id: string | null;
   actor_alter_name: string | null;
+  gift_images: Array<{ imageId: string; contentType: string; createdAt: string }> | null;
+  task_ids: string[] | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -130,11 +140,21 @@ const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a
 const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on, t.priority, t.coverage_id,
   t.version, t.created_at, t.updated_at, t.archived_at,
   coalesce((select array_agg(ta.alter_id order by ta.alter_id) from todo_assignee ta
-    where ta.owner_id = t.owner_id and ta.todo_id = t.id), '{}') as assignee_alter_ids
+    where ta.owner_id = t.owner_id and ta.todo_id = t.id), '{}') as assignee_alter_ids,
+  coalesce((select jsonb_agg(jsonb_build_object('id', ci.id, 'title', ci.title, 'completed', ci.completed, 'position', ci.position) order by ci.position, ci.id)
+    from todo_checklist_item ci where ci.owner_id = t.owner_id and ci.todo_id = t.id), '[]'::jsonb) as checklist,
+  coalesce((select array_agg(ref.note_id order by ref.created_at, ref.note_id) from todo_note_reference ref
+    where ref.owner_id = t.owner_id and ref.todo_id = t.id), '{}') as note_ids
   from system_todo t`;
 
 const noteSelect = `select n.id, n.body, n.alter_id, recipient.name as alter_name, n.coverage_id,
   created_actor.actor_alter_id, actor.name as actor_alter_name,
+  coalesce((select jsonb_agg(jsonb_build_object('imageId', gift.image_id, 'contentType', image.content_type,
+    'createdAt', gift.created_at) order by gift.created_at asc, gift.image_id asc)
+    from system_note_gift_image gift join private_image image on image.owner_id = gift.owner_id and image.id = gift.image_id
+    where gift.owner_id = n.owner_id and gift.note_id = n.id), '[]'::jsonb) as gift_images,
+  coalesce((select array_agg(ref.todo_id order by ref.created_at, ref.todo_id) from todo_note_reference ref
+    where ref.owner_id = n.owner_id and ref.note_id = n.id), '{}') as task_ids,
   n.version, n.created_at, n.updated_at
   from system_note n
   left join alter_profile recipient on recipient.owner_id = n.owner_id and recipient.id = n.alter_id
@@ -194,6 +214,8 @@ function todoFromRow(row: TodoRow): TodoView {
     priority: row.priority ?? undefined,
     assigneeAlterIds: row.assignee_alter_ids ?? [],
     coverageId: row.coverage_id ?? undefined,
+    checklist: row.checklist ?? [],
+    noteIds: row.note_ids ?? [],
     version: row.version,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
@@ -221,6 +243,8 @@ function noteFromRow(row: NoteRow): NoteView {
     coverageId: row.coverage_id ?? undefined,
     actorAlterId: row.actor_alter_id ?? undefined,
     actorAlterName: row.actor_alter_name ?? undefined,
+    giftImages: (row.gift_images ?? []).map((gift) => ({ imageId: gift.imageId, contentType: gift.contentType as ProfileImageView["contentType"], createdAt: asIso(gift.createdAt) })),
+    taskIds: row.task_ids ?? [],
     version: row.version,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
@@ -605,9 +629,16 @@ export class SystemService {
         const coverage = await client.query("select 1 from coverage_assignment where owner_id = $1 and id = $2::uuid", [ownerId, input.coverageId]);
         if (!coverage.rowCount) throw new SystemError("VALIDATION_ERROR", "The coverage record does not belong to this owner.");
       }
+      if (input.giftImageIds?.length) {
+        const gifts = await client.query<{ id: string }>("select id from private_image where owner_id = $1 and id = any($2::uuid[])", [ownerId, input.giftImageIds]);
+        if (gifts.rowCount !== input.giftImageIds.length) throw new SystemError("VALIDATION_ERROR", "An image gift is not available in this System's private gallery.");
+      }
       const inserted = await client.query<{ id: string }>(`insert into system_note (owner_id, body, alter_id, coverage_id)
         values ($1, $2, $3::uuid, $4::uuid) returning id`, [ownerId, input.body, input.alterId ?? null, input.coverageId ?? null]);
       const noteId = inserted.rows[0].id;
+      for (const imageId of input.giftImageIds ?? []) {
+        await client.query("insert into system_note_gift_image (owner_id, note_id, image_id) values ($1, $2::uuid, $3::uuid)", [ownerId, noteId, imageId]);
+      }
       await this.activity(client, ownerId, "NOTE", noteId, "CREATED", source, Object.keys(input).filter((key) => key !== "requestId"), input.requestId, undefined, undefined, input.actorAlterId);
       return this.noteById(client, ownerId, noteId);
     });
@@ -810,6 +841,12 @@ export class SystemService {
     return todoFromRow(row.rows[0]);
   }
 
+  private async lockTodo(client: PoolClient, ownerId: string, todoId: string, expectedVersion: number) {
+    const locked = await client.query<{ version: number }>("select version from system_todo where owner_id = $1 and id = $2::uuid for update", [ownerId, todoId]);
+    if (!locked.rows[0]) throw new SystemError("NOT_FOUND", "Todo not found.");
+    if (locked.rows[0].version !== expectedVersion) throw new SystemError("CONFLICT", "The todo changed since it was read.", { currentVersion: locked.rows[0].version });
+  }
+
   async getTodo(ownerId: string, todoId: string, includeArchived = false) {
     const client = await this.pool.connect();
     try { return await this.todoById(client, ownerId, todoId, includeArchived); } finally { client.release(); }
@@ -856,6 +893,32 @@ export class SystemService {
     for (const alterId of assigneeIds) await client.query("insert into todo_assignee (owner_id, todo_id, alter_id) values ($1, $2::uuid, $3::uuid)", [ownerId, todoId, alterId]);
   }
 
+  private async validateNoteLinks(client: PoolClient, ownerId: string, noteIds: string[]) {
+    const unique = [...new Set(noteIds)];
+    if (!unique.length) return unique;
+    const found = await client.query("select id from system_note where owner_id = $1 and id = any($2::uuid[])", [ownerId, unique]);
+    if (found.rowCount !== unique.length) throw new SystemError("VALIDATION_ERROR", "One or more linked notes do not belong to this owner.");
+    return unique;
+  }
+
+  private async validateTodoIds(client: PoolClient, ownerId: string, todoIds: string[]) {
+    const unique = [...new Set(todoIds)];
+    if (!unique.length) return unique;
+    const found = await client.query("select id from system_todo where owner_id = $1 and id = any($2::uuid[])", [ownerId, unique]);
+    if (found.rowCount !== unique.length) throw new SystemError("VALIDATION_ERROR", "One or more linked tasks do not belong to this owner.");
+    return unique;
+  }
+
+  private async replaceTodoNotes(client: PoolClient, ownerId: string, todoId: string, noteIds: string[]) {
+    await client.query("delete from todo_note_reference where owner_id = $1 and todo_id = $2::uuid", [ownerId, todoId]);
+    for (const noteId of noteIds) await client.query("insert into todo_note_reference (owner_id, todo_id, note_id) values ($1, $2::uuid, $3::uuid)", [ownerId, todoId, noteId]);
+  }
+
+  private async replaceNoteTodos(client: PoolClient, ownerId: string, noteId: string, todoIds: string[]) {
+    await client.query("delete from todo_note_reference where owner_id = $1 and note_id = $2::uuid", [ownerId, noteId]);
+    for (const todoId of todoIds) await client.query("insert into todo_note_reference (owner_id, todo_id, note_id) values ($1, $2::uuid, $3::uuid)", [ownerId, todoId, noteId]);
+  }
+
   async createTodo(ownerId: string, raw: TodoCreate, source: RecordSource) {
     const input = todoCreateSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, "create_todo", async (client) => {
@@ -874,8 +937,10 @@ export class SystemService {
   async updateTodo(ownerId: string, todoId: string, raw: TodoPatch, source: RecordSource) {
     const input = todoPatchSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, `update_todo:${todoId}`, async (client) => {
+      if (input.noteIds !== undefined) await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`todo-note-links:${ownerId}`]);
       const current = await this.todoById(client, ownerId, todoId);
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The todo changed since it was read.", { currentVersion: current.version });
+      await this.lockTodo(client, ownerId, todoId, input.expectedVersion);
       const assignees = await this.validateTodoLinks(client, ownerId, input.assigneeAlterIds ?? current.assigneeAlterIds, input.coverageId === undefined ? current.coverageId : input.coverageId);
       const changed = Object.keys(input).filter((key) => !["requestId", "expectedVersion"].includes(key));
       const updated = await client.query(`update system_todo set title = $3, details = $4, status = $5::todo_status,
@@ -896,6 +961,13 @@ export class SystemService {
         throw new SystemError("CONFLICT", "The todo changed since it was read.", { currentVersion: latest.version });
       }
       if (input.assigneeAlterIds) await this.replaceAssignees(client, ownerId, todoId, assignees);
+      if (input.noteIds !== undefined) {
+        const noteIds = await this.validateNoteLinks(client, ownerId, input.noteIds);
+        const affected = [...new Set([...current.noteIds, ...noteIds])].sort();
+        if (affected.length) await client.query("select id from system_note where owner_id = $1 and id = any($2::uuid[]) order by id for update", [ownerId, affected]);
+        await this.replaceTodoNotes(client, ownerId, todoId, noteIds);
+        if (affected.length) await client.query("update system_note set version = version + 1, updated_at = now() where owner_id = $1 and id = any($2::uuid[])", [ownerId, affected]);
+      }
       await this.activity(client, ownerId, "TODO", todoId, "UPDATED", source, changed, input.requestId, current.status, input.status ?? current.status);
       return this.todoById(client, ownerId, todoId);
     });
@@ -919,14 +991,118 @@ export class SystemService {
   async eraseTodo(ownerId: string, todoId: string, raw: { requestId: string; expectedVersion: number }, source: RecordSource) {
     const input = versionMutationSchema.parse(raw);
     return this.mutate(ownerId, input.requestId, `erase_todo:${todoId}`, async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`todo-note-links:${ownerId}`]);
       const current = await this.todoById(client, ownerId, todoId);
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The todo changed since it was read.", { currentVersion: current.version });
+      if (current.noteIds.length) {
+        await client.query("select id from system_note where owner_id = $1 and id = any($2::uuid[]) order by id for update", [ownerId, current.noteIds.slice().sort()]);
+        await client.query("update system_note set version = version + 1, updated_at = now() where owner_id = $1 and id = any($2::uuid[])", [ownerId, current.noteIds]);
+      }
       await client.query("delete from activity_event where owner_id = $1 and entity_type = 'TODO' and entity_id = $2::uuid", [ownerId, todoId]);
       await client.query("delete from mutation_receipt where owner_id = $1 and result ->> 'id' = $2", [ownerId, todoId]);
       const removed = await client.query("delete from system_todo where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, todoId, input.expectedVersion]);
       if (!removed.rowCount) throw new SystemError("CONFLICT", "The todo changed during erasure.");
       await this.activity(client, ownerId, "TODO", todoId, "ERASED", source, [], input.requestId, current.status);
       return { id: todoId, erased: true as const };
+    });
+  }
+
+  async createChecklistItem(ownerId: string, todoId: string, raw: ChecklistCreate, source: RecordSource) {
+    const input = checklistCreateSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `create_checklist_item:${todoId}`, async client => {
+      await this.lockTodo(client, ownerId, todoId, input.expectedVersion);
+      const next = input.position ?? Number((await client.query("select coalesce(max(position) + 1, 0) as position from todo_checklist_item where owner_id = $1 and todo_id = $2::uuid", [ownerId, todoId])).rows[0].position);
+      await client.query("set constraints todo_checklist_item_position_key deferred");
+      await client.query("update todo_checklist_item set position = position + 1 where owner_id = $1 and todo_id = $2::uuid and position >= $3", [ownerId, todoId, next]);
+      await client.query("insert into todo_checklist_item (owner_id, todo_id, title, position) values ($1, $2::uuid, $3, $4)", [ownerId, todoId, input.title, next]);
+      await client.query("update system_todo set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, todoId, input.expectedVersion]);
+      await this.activity(client, ownerId, "TODO", todoId, "CHECKLIST_CREATED", source, ["checklist"], input.requestId);
+      return this.todoById(client, ownerId, todoId);
+    });
+  }
+
+  async updateChecklistItem(ownerId: string, todoId: string, itemId: string, raw: ChecklistPatch, source: RecordSource) {
+    const input = checklistPatchSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `update_checklist_item:${todoId}:${itemId}`, async client => {
+      await this.lockTodo(client, ownerId, todoId, input.expectedVersion);
+      const todo = await this.todoById(client, ownerId, todoId);
+      const item = await client.query<{ title: string; completed: boolean; position: number }>("select title, completed, position from todo_checklist_item where owner_id = $1 and todo_id = $2::uuid and id = $3::uuid", [ownerId, todoId, itemId]);
+      if (!item.rows[0]) throw new SystemError("NOT_FOUND", "Checklist item not found.");
+      const current = item.rows[0];
+      if (input.position !== undefined && input.position !== current.position) {
+        await client.query("set constraints todo_checklist_item_position_key deferred");
+        const target = Math.min(input.position, todo.checklist.length - 1);
+        if (target < current.position) await client.query("update todo_checklist_item set position = position + 1 where owner_id = $1 and todo_id = $2::uuid and position >= $3 and position < $4", [ownerId, todoId, target, current.position]);
+        else await client.query("update todo_checklist_item set position = position - 1 where owner_id = $1 and todo_id = $2::uuid and position > $3 and position <= $4", [ownerId, todoId, current.position, target]);
+        await client.query("update todo_checklist_item set title = $4, completed = $5, position = $6, updated_at = now() where owner_id = $1 and todo_id = $2::uuid and id = $3::uuid", [ownerId, todoId, itemId, input.title ?? current.title, input.completed ?? current.completed, target]);
+      } else await client.query("update todo_checklist_item set title = $4, completed = $5, updated_at = now() where owner_id = $1 and todo_id = $2::uuid and id = $3::uuid", [ownerId, todoId, itemId, input.title ?? current.title, input.completed ?? current.completed]);
+      await client.query("update system_todo set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, todoId, input.expectedVersion]);
+      await this.activity(client, ownerId, "TODO", todoId, "CHECKLIST_UPDATED", source, ["checklist"], input.requestId);
+      return this.todoById(client, ownerId, todoId);
+    });
+  }
+
+  async eraseChecklistItem(ownerId: string, todoId: string, itemId: string, raw: { requestId: string; expectedVersion: number }, source: RecordSource) {
+    const input = versionMutationSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `erase_checklist_item:${todoId}:${itemId}`, async client => {
+      await this.lockTodo(client, ownerId, todoId, input.expectedVersion);
+      const removed = await client.query<{ position: number }>("delete from todo_checklist_item where owner_id = $1 and todo_id = $2::uuid and id = $3::uuid returning position", [ownerId, todoId, itemId]);
+      if (!removed.rows[0]) throw new SystemError("NOT_FOUND", "Checklist item not found.");
+      await client.query("set constraints todo_checklist_item_position_key deferred");
+      await client.query("update todo_checklist_item set position = position - 1 where owner_id = $1 and todo_id = $2::uuid and position > $3", [ownerId, todoId, removed.rows[0].position]);
+      await client.query("update system_todo set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, todoId, input.expectedVersion]);
+      await this.activity(client, ownerId, "TODO", todoId, "CHECKLIST_ERASED", source, ["checklist"], input.requestId);
+      return this.todoById(client, ownerId, todoId);
+    });
+  }
+
+  async getNote(ownerId: string, noteId: string) {
+    const client = await this.pool.connect();
+    try { return await this.noteById(client, ownerId, noteId); } finally { client.release(); }
+  }
+
+  async updateNote(ownerId: string, noteId: string, raw: NotePatch, source: RecordSource) {
+    const input = notePatchSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `update_note:${noteId}`, async client => {
+      if (input.taskIds !== undefined) await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`todo-note-links:${ownerId}`]);
+      const current = await this.noteById(client, ownerId, noteId);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The note changed since it was read.", { currentVersion: current.version });
+      const locked = await client.query<{ version: number }>("select version from system_note where owner_id = $1 and id = $2::uuid for update", [ownerId, noteId]);
+      if (!locked.rows[0] || locked.rows[0].version !== input.expectedVersion) throw new SystemError("CONFLICT", "The note changed since it was read.", { currentVersion: locked.rows[0]?.version });
+      if (input.body !== undefined) {
+        const updated = await client.query("update system_note set body = $3, version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $4", [ownerId, noteId, input.body, input.expectedVersion]);
+        if (!updated.rowCount) throw new SystemError("CONFLICT", "The note changed since it was read.");
+      }
+      if (input.taskIds !== undefined) {
+        const taskIds = await this.validateTodoIds(client, ownerId, input.taskIds);
+        const affected = [...new Set([...current.taskIds, ...taskIds])].sort();
+        if (affected.length) await client.query("select id from system_todo where owner_id = $1 and id = any($2::uuid[]) order by id for update", [ownerId, affected]);
+        await this.replaceNoteTodos(client, ownerId, noteId, taskIds);
+        if (affected.length) await client.query("update system_todo set version = version + 1, updated_at = now() where owner_id = $1 and id = any($2::uuid[])", [ownerId, affected]);
+      }
+      // A link-only edit still changes the note's reference view and must advance its version.
+      if (input.body === undefined) await client.query("update system_note set version = version + 1, updated_at = now() where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, noteId, input.expectedVersion]);
+      await this.activity(client, ownerId, "NOTE", noteId, "UPDATED", source, Object.keys(input).filter(key => !["requestId", "expectedVersion"].includes(key)), input.requestId);
+      return this.noteById(client, ownerId, noteId);
+    });
+  }
+
+  async eraseNote(ownerId: string, noteId: string, raw: { requestId: string; expectedVersion: number }, source: RecordSource) {
+    const input = versionMutationSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, `erase_note:${noteId}`, async client => {
+      await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`todo-note-links:${ownerId}`]);
+      const current = await this.noteById(client, ownerId, noteId);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The note changed since it was read.", { currentVersion: current.version });
+      if (current.taskIds.length) {
+        await client.query("select id from system_todo where owner_id = $1 and id = any($2::uuid[]) order by id for update", [ownerId, current.taskIds.slice().sort()]);
+        await client.query("update system_todo set version = version + 1, updated_at = now() where owner_id = $1 and id = any($2::uuid[])", [ownerId, current.taskIds]);
+      }
+      await client.query("delete from activity_event where owner_id = $1 and entity_type = 'NOTE' and entity_id = $2::uuid", [ownerId, noteId]);
+      await client.query("delete from mutation_receipt where owner_id = $1 and result ->> 'id' = $2", [ownerId, noteId]);
+      const removed = await client.query("delete from system_note where owner_id = $1 and id = $2::uuid and version = $3", [ownerId, noteId, input.expectedVersion]);
+      if (!removed.rowCount) throw new SystemError("CONFLICT", "The note changed during erasure.");
+      await this.activity(client, ownerId, "NOTE", noteId, "ERASED", source, [], input.requestId);
+      return { id: noteId, erased: true as const, removedTaskReferences: current.taskIds.length };
     });
   }
 

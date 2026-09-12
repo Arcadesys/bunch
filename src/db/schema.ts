@@ -168,6 +168,18 @@ export const systemNote = pgTable("system_note", {
   foreignKey({ columns: [table.ownerId, table.coverageId], foreignColumns: [coverageAssignment.ownerId, coverageAssignment.id], name: "system_note_owner_coverage_fk" }).onDelete("restrict"),
 ]);
 
+export const systemNoteGiftImage = pgTable("system_note_gift_image", {
+  ownerId: text("owner_id").notNull(),
+  noteId: uuid("note_id").notNull(),
+  imageId: uuid("image_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.noteId, table.imageId] }),
+  foreignKey({ columns: [table.ownerId, table.noteId], foreignColumns: [systemNote.ownerId, systemNote.id], name: "system_note_gift_image_owner_note_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.imageId], foreignColumns: [privateImage.ownerId, privateImage.id], name: "system_note_gift_image_owner_image_fk" }).onDelete("cascade"),
+  index("system_note_gift_image_owner_note_created_idx").on(table.ownerId, table.noteId, table.createdAt, table.imageId),
+]);
+
 export const systemTodo = pgTable("system_todo", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
@@ -195,6 +207,25 @@ export const todoAssignee = pgTable("todo_assignee", {
   primaryKey({ columns: [table.ownerId, table.todoId, table.alterId] }),
   foreignKey({ columns: [table.ownerId, table.todoId], foreignColumns: [systemTodo.ownerId, systemTodo.id], name: "todo_assignee_owner_todo_fk" }).onDelete("cascade"),
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "todo_assignee_owner_alter_fk" }).onDelete("restrict"),
+]);
+
+export const todoChecklistItem = pgTable("todo_checklist_item", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull(), todoId: uuid("todo_id").notNull(),
+  title: text("title").notNull(), completed: boolean("completed").notNull().default(false), position: integer("position").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("todo_checklist_item_owner_id_key").on(table.ownerId, table.id), unique("todo_checklist_item_position_key").on(table.ownerId, table.todoId, table.position),
+  foreignKey({ columns: [table.ownerId, table.todoId], foreignColumns: [systemTodo.ownerId, systemTodo.id], name: "todo_checklist_item_owner_todo_fk" }).onDelete("cascade"),
+  index("todo_checklist_item_owner_todo_position_idx").on(table.ownerId, table.todoId, table.position, table.id),
+]);
+
+export const todoNoteReference = pgTable("todo_note_reference", {
+  ownerId: text("owner_id").notNull(), todoId: uuid("todo_id").notNull(), noteId: uuid("note_id").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerId, table.todoId, table.noteId] }),
+  foreignKey({ columns: [table.ownerId, table.todoId], foreignColumns: [systemTodo.ownerId, systemTodo.id], name: "todo_note_reference_owner_todo_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.ownerId, table.noteId], foreignColumns: [systemNote.ownerId, systemNote.id], name: "todo_note_reference_owner_note_fk" }).onDelete("cascade"),
+  index("todo_note_reference_owner_note_idx").on(table.ownerId, table.noteId, table.todoId),
 ]);
 
 export const activityEvent = pgTable("activity_event", {

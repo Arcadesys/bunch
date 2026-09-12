@@ -1,2 +1,5 @@
-import { CatchUpCommandCenter } from "../catch-up-command-center";
-export default function NotesPage() { return <CatchUpCommandCenter initialView="NOTES" />; }
+import { NoteJournal } from "./note-journal";
+
+export default function NotesPage() {
+  return <NoteJournal />;
+}

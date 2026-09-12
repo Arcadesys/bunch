@@ -32,6 +32,7 @@ type Harness = {
   presence: {hosting: PresencePeriod | null; fronting: PresencePeriod[]};
   saved: Record<string, StoredRecord[]>;
   session: CatchUpSession | null; readStatus: number; writeStatus: number; writes: Write[]; unexpected: string[];
+  loseRecordResponse: boolean;
   currentFront: FrontingSessionView | null; profiles: { id: string; name: string }[];
   switchReadStatus: number; switchDelay: number; loseSwitchResponse: boolean; switchCount: number;
   profilePageSize: number; profileReads: number;
@@ -43,16 +44,18 @@ export const test = base.extend<{ harness: Harness }>({
     const harness: Harness = {
       host:null, presence:{hosting:null,fronting:[{id:"60000000-0000-4000-8000-000000000001",alterId:fixtureSession.alterId,alterName:fixtureSession.alterName,startedAt:stamp,version:1,kind:"FRONTING",origin:"EXPLICIT"}]},
       saved: {
-        todos: [{ id: "40000000-0000-4000-8000-000000000002", title: "Fixture todo", status: "BLOCKED", priority: "NORMAL", assigneeAlterIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
-        notes: [{ id: "40000000-0000-4000-8000-000000000001", body: "Fixture note", version: 1, updatedAt: stamp, createdAt: stamp }],
+        todos: [{ id: "40000000-0000-4000-8000-000000000002", title: "Fixture todo", status: "BLOCKED", priority: "NORMAL", assigneeAlterIds: [], checklist: [], noteIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
+        notes: [{ id: "40000000-0000-4000-8000-000000000001", body: "Fixture note", giftImages: [], taskIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
         "important-threads": [{ id: "40000000-0000-4000-8000-000000000004", title: "Fixture thread", url: "https://example.invalid/approved-thread", approvedSummary: "Synthetic saved summary", keyDecisionOrAction: "Review this record", recipients: [], status: "CONFIRMED", version: 1, updatedAt: stamp, createdAt: stamp }],
       },
-      session: structuredClone(fixtureSession), readStatus: 200, writeStatus: 200, writes: [], unexpected: [],
+      session: structuredClone(fixtureSession), readStatus: 200, writeStatus: 200, writes: [], unexpected: [], loseRecordResponse: false,
       currentFront: { id: "60000000-0000-4000-8000-000000000001", alterId: fixtureSession.alterId, alterName: fixtureSession.alterName, startedAt: fixtureSession.startedAt, version: 1 },
       profiles: [{ id: fixtureSession.alterId, name: "Test Robin" }, { id: "20000000-0000-4000-8000-000000000002", name: "Test Finch" }],
       switchReadStatus: 200, switchDelay: 0, loseSwitchResponse: false, switchCount: 0,
       profilePageSize: 100, profileReads: 0,
     };
+    let recordSequence = 20;
+    const recordReceipts = new Map<string, unknown>();
     const switchReceipts = new Map<string, unknown>();
     await context.route("**/*", async (route) => {
       const request = route.request();
@@ -83,10 +86,12 @@ export const test = base.extend<{ harness: Harness }>({
       const recordKind = url.pathname.split("/")[3];
       if (harness.saved[recordKind] && request.method() === "GET") {
         if (harness.readStatus !== 200) return reply(null, harness.readStatus);
+        const id = url.pathname.split("/")[4];
+        if (id) { const record = harness.saved[recordKind].find(item => item.id === id); return reply(record, record ? 200 : 404); }
         return route.fulfill({ json: { data: harness.saved[recordKind], meta: {} } });
       }
-      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes|todos(?:\/[^/]+)?|fronting\/switch|hosting\/current|presence\/fronting\/(start|end)|important-threads(?:\/[^/]+\/confirm)?)$/;
-      if (!allowed.test(url.pathname) || !["POST", "PATCH"].includes(request.method())) {
+      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes(?:\/[^/]+)?|todos(?:\/[^/]+(?:\/checklist(?:\/[^/]+)?)?)?|fronting\/switch|hosting\/current|presence\/fronting\/(start|end)|important-threads(?:\/[^/]+\/confirm)?)$/;
+      if (!allowed.test(url.pathname) || !["POST", "PATCH", "DELETE"].includes(request.method())) {
         harness.unexpected.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({ status: 501, json: { error: { message: "Unmocked API blocked by test harness." } } });
       }
@@ -137,18 +142,66 @@ export const test = base.extend<{ harness: Harness }>({
       }
       if (harness.saved[recordKind]) {
         const records = harness.saved[recordKind];
-        if (request.method() === "PATCH" || url.pathname.endsWith("/confirm")) {
-          const record = records.find((item) => item.id === url.pathname.split("/")[4]);
+        const parts = url.pathname.split("/");
+        const recordId = parts[4];
+        const key = request.headers()["idempotency-key"];
+        if (key && recordReceipts.has(key)) return reply(recordReceipts.get(key));
+        const finish = (value: unknown) => {
+          if (key) recordReceipts.set(key, structuredClone(value));
+          if (harness.loseRecordResponse) {
+            harness.loseRecordResponse = false;
+            return route.abort("failed");
+          }
+          return reply(value);
+        };
+        const bump = (record: StoredRecord) => { record.version += 1; record.updatedAt = new Date().toISOString(); };
+        if (recordId) {
+          const record = records.find(item => item.id === recordId);
           if (!record) return reply(null, 404);
           if (record.version !== body.expectedVersion) return reply(null, 409);
-          Object.assign(record, { status: body.status ?? "CONFIRMED", version: record.version + 1 });
-          return reply(record);
+          if (parts[5] === "checklist") {
+            const checklist = (record.checklist ?? []) as Array<{id: string; title: string; completed: boolean; position: number}>;
+            record.checklist = checklist;
+            const item = checklist.find(entry => entry.id === parts[6]);
+            if (request.method() === "POST") checklist.push({ id: `70000000-0000-4000-8000-${String(++recordSequence).padStart(12, "0")}`, title: body.title, completed: false, position: checklist.length });
+            else if (!item) return reply(null, 404);
+            else if (request.method() === "DELETE") checklist.splice(checklist.indexOf(item), 1);
+            else Object.assign(item, Object.fromEntries(Object.entries(body).filter(([field]) => !["expectedVersion", "requestId"].includes(field))));
+            checklist.forEach((entry, index) => { entry.position = index; });
+            bump(record);
+            return finish(record);
+          }
+          const oppositeKind = recordKind === "todos" ? "notes" : "todos";
+          const ownLink = recordKind === "todos" ? "noteIds" : "taskIds";
+          const oppositeLink = recordKind === "todos" ? "taskIds" : "noteIds";
+          if (request.method() === "DELETE") {
+            for (const other of harness.saved[oppositeKind] ?? []) {
+              const links = (other[oppositeLink] ?? []) as string[];
+              if (links.includes(recordId)) { other[oppositeLink] = links.filter(id => id !== recordId); bump(other); }
+            }
+            records.splice(records.indexOf(record), 1);
+            return finish({ id: recordId, erased: true, removedTaskReferences: ((record.taskIds ?? []) as string[]).length });
+          }
+          if (Array.isArray(body[ownLink])) {
+            const links = body[ownLink] as string[];
+            for (const other of harness.saved[oppositeKind] ?? []) {
+              const previous = (other[oppositeLink] ?? []) as string[];
+              const has = links.includes(other.id);
+              if (has !== previous.includes(recordId)) { other[oppositeLink] = has ? [...previous, recordId] : previous.filter(id => id !== recordId); bump(other); }
+            }
+          }
+          Object.assign(record, Object.fromEntries(Object.entries(body).filter(([field]) => !["expectedVersion", "requestId"].includes(field))));
+          if (url.pathname.endsWith("/confirm")) record.status = "CONFIRMED";
+          bump(record);
+          return finish(record);
         }
-        const id = `50000000-0000-4000-8000-${String(records.length + 1).padStart(12, "0")}`;
+        const id = `50000000-0000-4000-8000-${String(++recordSequence).padStart(12, "0")}`;
         const record: StoredRecord = { ...body, id, version: 1, updatedAt: stamp, createdAt: stamp };
+        if (recordKind === "todos") Object.assign(record, { checklist: [], noteIds: [], assigneeAlterIds: body.assigneeAlterIds ?? [], status: body.status ?? "OPEN" });
+        if (recordKind === "notes") Object.assign(record, { giftImages: [], taskIds: [], alterName: harness.profiles.find(profile => profile.id === body.alterId)?.name });
         if (recordKind === "important-threads") Object.assign(record, { status: "SUGGESTED", recipients: (body.recipientAlterIds as string[]).map((id) => harness.profiles.find((profile) => profile.id === id)?.name ?? id) });
         records.unshift(record);
-        return reply(record);
+        return finish(record);
       }
       if (request.method() === "PATCH" && harness.session) {
         const item = harness.session.items.find((candidate) => url.pathname.endsWith(candidate.entryId));
