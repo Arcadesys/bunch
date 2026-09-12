@@ -184,10 +184,15 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
     assert.equal(note.replayed, false);
     assert.equal(note.data.alterName, "Beacon");
     assert.equal(note.data.actorAlterName, "Aster");
+    const gifted = await service.createNote(ownerA, { requestId: requestId(), body: "A picture for you", alterId: second.data.id, actorAlterId: created.data.id, giftImageIds: [firstImageId, secondImageId] }, "MCP");
+    assert.deepEqual(gifted.data.giftImages.map((gift) => gift.imageId).sort(), [firstImageId, secondImageId].sort());
+    assert.equal((await pool.query("select count(*) from system_note_gift_image where owner_id = $1 and note_id = $2::uuid", [ownerA, gifted.data.id])).rows[0].count, "2");
+    await assert.rejects(() => service.createNote(ownerA, { requestId: requestId(), body: "No recipient", giftImageIds: [firstImageId] }, "MCP"), /Choose a recipient/);
+    await assert.rejects(() => service.createNote(ownerA, { requestId: requestId(), body: "Foreign gift", alterId: second.data.id, giftImageIds: [foreignImageId] }, "MCP"), (error) => error instanceof SystemError && error.code === "VALIDATION_ERROR");
     const noteReplay = await service.createNote(ownerA, { requestId: noteRequest, body: "Ignored retry" }, "MCP");
     assert.equal(noteReplay.replayed, true);
     assert.deepEqual(noteReplay.data, note.data);
-    assert.equal((await service.listNotes(ownerA, { alterId: second.data.id, actorAlterId: created.data.id })).data[0].id, note.data.id);
+    assert.ok((await service.listNotes(ownerA, { alterId: second.data.id, actorAlterId: created.data.id })).data.some((candidate) => candidate.id === note.data.id));
     await assert.rejects(() => service.createNote(ownerA, { requestId: requestId(), body: "Cross-owner actor", actorAlterId: foreign.data.id }, "MCP"), (error) => error instanceof SystemError && error.code === "VALIDATION_ERROR");
 
     const zero = await service.createTodo(ownerA, { requestId: requestId(), title: "System-wide" }, "MCP");
@@ -255,6 +260,66 @@ integrationTest("alter and todo contracts enforce lifecycle, ownership, idempote
     await pool.query("delete from alter_profile where owner_id = any($1::text[])", [owners]).catch(() => undefined);
     await pool.query("delete from system_preference where owner_id = any($1::text[])", [owners]).catch(() => undefined);
     await pool.query("delete from app_user where id = any($1::text[])", [owners]).catch(() => undefined);
+    await pool.end();
+  }
+});
+
+integrationTest("checklists and note references are owner-scoped, versioned, and preserve their opposite record", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 4 });
+  const service = new SystemService(pool);
+  const owner = `test:${randomUUID()}`;
+  const other = `test:${randomUUID()}`;
+  try {
+    const note = await service.createNote(owner, { requestId: randomUUID(), body: "Independent journal note" }, "WEB");
+    const createdTask = await service.createTodo(owner, { requestId: randomUUID(), title: "Board task" }, "WEB");
+    const task = await service.updateTodo(owner, createdTask.data.id, { requestId: randomUUID(), expectedVersion: createdTask.data.version, noteIds: [note.data.id] }, "WEB");
+    assert.deepEqual(task.data.noteIds, [note.data.id]);
+    assert.deepEqual((await service.getNote(owner, note.data.id)).taskIds, [task.data.id]);
+    const item = await service.createChecklistItem(owner, task.data.id, { requestId: randomUUID(), expectedVersion: task.data.version, title: "First step" }, "WEB");
+    assert.equal(item.data.status, "INBOX");
+    assert.equal(item.data.checklist[0].completed, false);
+    const secondItem = await service.createChecklistItem(owner, task.data.id, { requestId: randomUUID(), expectedVersion: item.data.version, title: "Second step" }, "WEB");
+    const reordered = await service.updateChecklistItem(owner, task.data.id, secondItem.data.checklist[1].id, { requestId: randomUUID(), expectedVersion: secondItem.data.version, position: 0 }, "WEB");
+    assert.deepEqual(reordered.data.checklist.map(item => item.title), ["Second step", "First step"]);
+    const completed = await service.updateChecklistItem(owner, task.data.id, reordered.data.checklist[1].id, { requestId: randomUUID(), expectedVersion: reordered.data.version, completed: true }, "WEB");
+    assert.equal(completed.data.checklist.find((candidate) => candidate.title === "First step")?.completed, true);
+    await assert.rejects(() => service.updateChecklistItem(owner, task.data.id, completed.data.checklist[0].id, { requestId: randomUUID(), expectedVersion: item.data.version, completed: false }, "WEB"), (error) => error instanceof SystemError && error.code === "CONFLICT");
+    const concurrent = await Promise.allSettled([
+      service.createChecklistItem(owner, task.data.id, { requestId: randomUUID(), expectedVersion: completed.data.version, title: "Only one wins" }, "WEB"),
+      service.createChecklistItem(owner, task.data.id, { requestId: randomUUID(), expectedVersion: completed.data.version, title: "Stale concurrent write" }, "WEB"),
+    ]);
+    assert.deepEqual(concurrent.map(result => result.status).sort(), ["fulfilled", "rejected"]);
+    const afterConcurrent = await service.getTodo(owner, task.data.id);
+    const afterEraseItem = await service.eraseChecklistItem(owner, task.data.id, afterConcurrent.checklist[0].id, { requestId: randomUUID(), expectedVersion: afterConcurrent.version }, "WEB");
+    assert.equal(afterEraseItem.data.checklist.length, afterConcurrent.checklist.length - 1);
+    assert.deepEqual(afterEraseItem.data.checklist.map((candidate) => candidate.position), [0, 1]);
+    const foreign = await service.createTodo(other, { requestId: randomUUID(), title: "Foreign task" }, "WEB");
+    await assert.rejects(() => service.updateNote(owner, note.data.id, { requestId: randomUUID(), expectedVersion: note.data.version + 1, taskIds: [foreign.data.id] }, "WEB"), (error) => error instanceof SystemError && error.code === "VALIDATION_ERROR");
+    const secondNote = await service.createNote(owner, { requestId: randomUUID(), body: "Concurrent reference note" }, "WEB");
+    const secondTaskCreated = await service.createTodo(owner, { requestId: randomUUID(), title: "Concurrent reference task" }, "WEB");
+    const secondTask = await service.updateTodo(owner, secondTaskCreated.data.id, { requestId: randomUUID(), expectedVersion: secondTaskCreated.data.version, noteIds: [secondNote.data.id] }, "WEB");
+    const freshSecondNote = await service.getNote(owner, secondNote.data.id);
+    const opposing = await Promise.allSettled([
+      service.updateTodo(owner, secondTask.data.id, { requestId: randomUUID(), expectedVersion: secondTask.data.version, noteIds: [] }, "WEB"),
+      service.updateNote(owner, secondNote.data.id, { requestId: randomUUID(), expectedVersion: freshSecondNote.version, taskIds: [] }, "WEB"),
+    ]);
+    assert.deepEqual(opposing.map((result) => result.status).sort(), ["fulfilled", "rejected"]);
+    const rejected = opposing.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    assert.ok(rejected?.reason instanceof SystemError && rejected.reason.code === "CONFLICT");
+    const cleared = await service.updateNote(owner, note.data.id, { requestId: randomUUID(), expectedVersion: note.data.version + 1, taskIds: [] }, "WEB");
+    assert.deepEqual(cleared.data.taskIds, []);
+    assert.deepEqual((await service.getTodo(owner, task.data.id)).noteIds, []);
+    const relinked = await service.updateTodo(owner, task.data.id, { requestId: randomUUID(), expectedVersion: (await service.getTodo(owner, task.data.id)).version, noteIds: [note.data.id] }, "WEB");
+    assert.deepEqual(relinked.data.noteIds, [note.data.id]);
+    const refreshedNote = await service.getNote(owner, note.data.id);
+    const removed = await service.eraseNote(owner, note.data.id, { requestId: randomUUID(), expectedVersion: refreshedNote.version }, "WEB");
+    assert.equal(removed.data.removedTaskReferences, 1);
+    assert.equal((await service.getTodo(owner, task.data.id)).noteIds.length, 0);
+    assert.ok((await service.getTodo(owner, task.data.id)).checklist.length > 0);
+    await service.eraseTodo(owner, task.data.id, { requestId: randomUUID(), expectedVersion: (await service.getTodo(owner, task.data.id)).version }, "WEB");
+    assert.equal((await service.getTodo(other, foreign.data.id)).title, "Foreign task");
+  } finally {
+    await pool.query("delete from app_user where id = any($1::text[])", [[owner, other]]).catch(() => undefined);
     await pool.end();
   }
 });
