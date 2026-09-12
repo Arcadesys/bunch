@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppNavigation } from "../app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
@@ -62,7 +63,10 @@ export function NoteJournal() {
   const [draft, setDraft] = useState<NoteDraft>(emptyDraft);
   const [busy, setBusy] = useState(false);
   const retry = useRef(0);
+  const loaded = useRef(false);
+  const initialFragmentHandled = useRef(false);
   const editorHeading = useRef<HTMLHeadingElement>(null);
+  const feedback = useRef<HTMLParagraphElement>(null);
   const receipts = useRef(new Map<string, string>());
 
   async function mutate(url: string, method: "POST" | "PATCH" | "DELETE", body: Record<string, unknown>) {
@@ -96,6 +100,8 @@ export function NoteJournal() {
       });
   };
   useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
     const generation = ++retry.current;
     void loadJournal().then(([nextNotes, nextTodos, nextProfiles]) => {
       if (generation !== retry.current) return;
@@ -107,11 +113,22 @@ export function NoteJournal() {
     });
   }, []);
 
+  useEffect(() => {
+    if (state !== "ready" || initialFragmentHandled.current || window.location.hash !== "#create-record") return;
+    initialFragmentHandled.current = true;
+    document.getElementById("create-record")?.scrollIntoView();
+    requestAnimationFrame(() => editorHeading.current?.focus({ preventScroll: true }));
+  }, [state]);
+
+  useEffect(() => {
+    if (notice) feedback.current?.scrollIntoView({ block: "nearest" });
+  }, [notice]);
+
   const tasksById = useMemo(() => new Map(todos.map((todo) => [todo.id, todo])), [todos]);
   const profileImages = useMemo(() => profiles.flatMap((profile) => (profile.images ?? []).map((image, index) => ({ ...image, label: `${profile.name} · picture ${index + 1}` }))), [profiles]);
   const edit = (note: NoteView) => {
     setDraft({ id: note.id, version: note.version, body: note.body, recipient: note.alterId ?? "", giftImageIds: note.giftImages.map((gift) => gift.imageId), taskIds: [...note.taskIds] });
-    document.getElementById("note-editor")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    document.getElementById("create-record")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     requestAnimationFrame(() => editorHeading.current?.focus());
   };
 
@@ -177,14 +194,14 @@ export function NoteJournal() {
   }
 
   return <main className={`command-shell ${styles.shell}`}><AppNavigation current="NOTES" /><section className={`command-main ${styles.main}`}>
-    <header className={styles.hero}><p className="command-kicker">Private Bunch journal</p><h1>Notes</h1><p>Keep a note in one place, name its recipient and author, and link the tasks it supports.</p><a className="command-button" href="#note-editor" onClick={() => requestAnimationFrame(() => editorHeading.current?.focus())}>Leave a note</a></header>
-    <p className={`command-notice ${styles.notice}`} role="status" aria-live="polite">{state === "loading" ? "Loading private notes…" : notice}</p>
+    <header className={styles.hero}><p className="command-kicker">Private Bunch journal</p><h1>Notes</h1><p>Keep a note in one place, name its recipient and author, and link the tasks it supports.</p><a className="command-button" href="#create-record" onClick={() => requestAnimationFrame(() => editorHeading.current?.focus())}>Leave a note</a></header>
+    <p className={`command-notice ${styles.notice}`}>{state === "loading" ? "Loading private notes…" : notice}</p>
     <button className="command-button secondary" disabled={state === "loading" || busy} onClick={reload}>Refresh notes</button>
     {state === "unauthorized" ? <p className={styles.problem}><a href="/auth/login">Sign in to view your saved notes</a></p> : null}
     {state === "error" ? <div className={styles.problem}><p>Notes could not be loaded. This does not mean there are no notes.</p><button className="command-button" onClick={reload}>Retry notes</button></div> : null}
     {state === "ready" ? <>
       <section className={styles.layout} aria-label="Saved Notes journal">
-        <section className={styles.records}><h2>Saved notes</h2>{notes.length === 0 ? <p className={styles.empty}>No saved notes yet.</p> : notes.map((note) => <article key={note.id} id={`record-${note.id}`} className={styles.note}>
+        <section id="saved-records" className={styles.records}><h2>Saved notes</h2>{notes.length === 0 ? <p className={styles.empty}>No saved notes yet.</p> : notes.map((note) => <article key={note.id} id={`record-${note.id}`} className={styles.note}>
           <div className={styles.noteHeader}><h3>Note for {note.alterName ?? (note.alterId ? "a linked profile" : "System-wide")}</h3><p>Updated {timestamp(note.updatedAt)}</p></div>
           <p className={styles.body}>{note.body}</p>
           <p className={styles.author}>{note.actorAlterName ? `Written by ${note.actorAlterName}` : "Author not separately recorded"}</p>
@@ -192,12 +209,13 @@ export function NoteJournal() {
           {note.giftImages.length ? <section aria-label="Image gifts"><h4>Private image gifts</h4><div className={styles.gifts}>{note.giftImages.map((gift, index) => <figure key={gift.imageId}><Image src={`/api/system/gallery-images/${encodeURIComponent(gift.imageId)}`} alt={`Private image gift ${index + 1} for ${note.alterName ?? "the recipient"}`} width={240} height={240} unoptimized /><figcaption>Private image gift {index + 1}</figcaption></figure>)}</div></section> : null}
           <div className={styles.actions}><button className="command-button" disabled={busy} onClick={() => edit(note)}>Edit note</button><button className="command-button secondary" disabled={busy} onClick={() => void erase(note)}>Delete note</button></div>
         </article>)}</section>
-        <section id="note-editor" className={styles.editor} aria-labelledby="editor-heading"><h2 id="editor-heading" ref={editorHeading} tabIndex={-1}>{draft.id ? "Edit note" : "Leave a note"}</h2><form onSubmit={save}>
+        <section id="create-record" className={styles.editor} aria-labelledby="editor-heading"><h2 id="editor-heading" ref={editorHeading} tabIndex={-1}>{draft.id ? "Edit note" : "Leave a note"}</h2><form onSubmit={save}>
           <div><label htmlFor="journal-note-body">Note</label><textarea id="journal-note-body" name="body" value={draft.body} onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))} disabled={busy} required rows={6} maxLength={5000} /></div>
           <label>Recipient<select name="recipient" value={draft.recipient} onChange={(event) => setDraft((current) => ({ ...current, recipient: event.target.value }))} disabled={busy || Boolean(draft.id)}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select>{draft.id ? <span className="optional">Recipient and gifts are preserved while editing this note.</span> : null}</label>
           <fieldset disabled={busy}><legend>Linked tasks <span className="optional">optional</span></legend><p>Select every Board task this note supports. Task links update both records.</p>{todos.map((task) => <label className={styles.choice} key={task.id}><input type="checkbox" checked={draft.taskIds.includes(task.id)} onChange={() => toggleTask(task.id)} /> {task.title}</label>)}{draft.taskIds.filter((id) => !tasksById.has(id)).map((id) => <label className={styles.choice} key={id}><input type="checkbox" checked disabled /> Unavailable linked task ({id})</label>)}</fieldset>
           <fieldset disabled={busy || Boolean(draft.id)}><legend>Image gifts <span className="optional">optional</span></legend><p>{draft.id ? "Image gifts are fixed after creation." : "Choose up to eight private gallery images. A gift needs one recipient; it stays private to this System."}</p>{profileImages.length ? profileImages.map((image) => <label className={styles.choice} key={image.id}><input type="checkbox" checked={draft.giftImageIds.includes(image.id)} onChange={() => toggleGift(image.id)} disabled={Boolean(draft.id) || (!draft.giftImageIds.includes(image.id) && draft.giftImageIds.length >= 8)} /> {image.label}</label>) : <p>No private gallery images are available.</p>}</fieldset>
           <div className={styles.actions}><button className="command-button" disabled={busy}>{draft.id ? "Save changes" : "Save note"}</button>{draft.id ? <button className="command-button secondary" type="button" disabled={busy} onClick={() => setDraft(emptyDraft())}>Cancel edit</button> : null}</div>
+          <div className="form-feedback"><p ref={feedback} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p><div className="task-return-links"><a href="#saved-records">View saved notes</a><Link href="/home">Back to Home</Link></div></div>
         </form></section>
       </section>
     </> : null}

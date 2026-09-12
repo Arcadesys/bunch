@@ -1,5 +1,6 @@
 "use client";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AppNavigation } from "../app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import styles from "./board.module.css";
@@ -42,7 +43,8 @@ export function Board() {
     [drafts, setDrafts] = useState<Record<string, string>>({});
   const title = useRef<HTMLInputElement>(null),
     receipts = useRef(new Map<string, string>()),
-    focusAfterMove = useRef<string | undefined>(undefined);
+    focusAfterMove = useRef<string | undefined>(undefined),
+    feedback = useRef<HTMLParagraphElement>(null);
   const load = async () => {
     try {
       const [a, b, c] = await Promise.all([
@@ -176,7 +178,7 @@ export function Board() {
       receipts.current.delete(receiptKey);
       put(p.data);
       form.reset();
-      setNotice("Todo saved to Board.");
+      setNotice("Todo saved to Todos.");
       title.current?.focus();
     } catch (x) {
       setError(x instanceof Error ? x.message : "Unable to save task.");
@@ -193,6 +195,9 @@ export function Board() {
           )
           .join(", ")
       : "System-wide";
+  useEffect(() => {
+    if (notice && notice !== "Loading Board…" && notice !== "Board loaded.") feedback.current?.scrollIntoView({ block: "nearest" });
+  }, [notice]);
   return (
     <main className={styles.shell}>
       <AppNavigation current="BOARD" />
@@ -200,7 +205,7 @@ export function Board() {
         <header className={styles.hero}>
           <div>
             <p>PRIVATE TASK BOARD</p>
-            <h1>Board</h1>
+            <h1>Todos</h1>
             <p>
               Move work by its actual state. Tasks stay in chronological record
               order.
@@ -210,7 +215,7 @@ export function Board() {
             Add a todo
           </a>
         </header>
-        <p className={styles.status} role="status" aria-live="polite">
+        <p className={`command-notice ${styles.status}`}>
           {notice}
         </p>
         {error && (
@@ -231,7 +236,7 @@ export function Board() {
         )}
         {loadState === "ready" && (
           <>
-            <section className={styles.columns} aria-label="Task board">
+            <section id="saved-records" className={styles.columns} aria-label="Task board">
               {cols.map(([name, statuses, target]) => (
                 <section
                   className={styles.column}
@@ -371,6 +376,7 @@ export function Board() {
                 <button className="command-button" disabled={busy}>
                   Save todo
                 </button>
+                <div className="form-feedback"><p ref={feedback} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p><div className="task-return-links"><a href="#saved-records">View saved todos</a><Link href="/home">Back to Home</Link></div></div>
               </form>
             </section>
           </>
