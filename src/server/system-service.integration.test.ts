@@ -323,3 +323,28 @@ integrationTest("checklists and note references are owner-scoped, versioned, and
     await pool.end();
   }
 });
+
+
+integrationTest("moving a dated todo preserves its ISO due date through updates and reload", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 2 });
+  const service = new SystemService(pool, async () => undefined);
+  const owner = `test:${randomUUID()}`;
+  try {
+    const created = await service.createTodo(owner, {
+      requestId: randomUUID(), title: "Dated drag regression", dueOn: "2026-09-07", status: "INBOX",
+    }, "WEB");
+    assert.equal(created.data.dueOn, "2026-09-07");
+    let todo = created.data;
+    for (const status of ["IN_PROGRESS", "BLOCKED", "DONE", "OPEN"] as const) {
+      const moved = await service.updateTodo(owner, todo.id, {
+        requestId: randomUUID(), expectedVersion: todo.version, status,
+      }, "WEB");
+      todo = await service.getTodo(owner, moved.data.id);
+      assert.equal(todo.status, status);
+      assert.equal(todo.dueOn, "2026-09-07");
+    }
+  } finally {
+    await pool.query("delete from app_user where id = $1", [owner]);
+    await pool.end();
+  }
+});
