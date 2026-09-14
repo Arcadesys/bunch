@@ -13,13 +13,15 @@ async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
 
 function PhotoCard({ photo }: { photo: GeneratedPhoto }) {
   const [failed, setFailed] = useState(false);
+  const caption = photo.description.length > 120 ? `${photo.description.slice(0, 117)}…` : photo.description;
   return <li className="generated-photo-card">
-    <a className="generated-photo-preview" href={photo.imageUrl} aria-label={`Open full image: ${photo.description}`}>
-      {failed ? <span>Preview unavailable. Open the full image to try again.</span> : <Image src={photo.imageUrl} alt={photo.description} width={photo.width ?? 1024} height={photo.height ?? 1024} unoptimized onError={() => setFailed(true)} />}
+    <a className="generated-photo-preview" href={photo.imageUrl} aria-label={`Open full image: ${caption}`}>
+      {failed ? <span>Preview unavailable. Open the full image to try again.</span> : <Image src={photo.imageUrl} alt={caption} width={photo.width ?? 1024} height={photo.height ?? 1024} unoptimized onError={() => setFailed(true)} />}
     </a>
     <div className="generated-photo-caption">
       <p className="eyebrow">{photo.kind === "group" ? "Group photo" : "Generated image"}</p>
-      <h2>{photo.description}</h2>
+      <h2>{caption}</h2>
+      {caption !== photo.description && <details><summary>Read full prompt</summary><p>{photo.description}</p></details>}
       <p><time dateTime={photo.createdAt}>{new Date(photo.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></p>
       <div className="actions"><a className="button button-secondary" href={photo.imageUrl}>View full image</a><a className="button button-secondary" href={photo.sourceUrl}>Reopen scene</a><a className="button button-secondary" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a></div>
     </div>
