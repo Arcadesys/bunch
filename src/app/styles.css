@@ -1632,6 +1632,45 @@ body {
 .bunch-verb kbd { padding: 1px 5px; border: 1px solid rgb(255 138 0 / 45%); border-radius: 4px; color: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .6rem; }
 .bunch-verb-hint { margin-left: auto; color: var(--muted); font-size: .7rem; white-space: nowrap; }
 
+/* Switching is the most frequent action in Bunch, so it is the one control in
+   the header that carries the primary gradient and a larger target. */
+.bunch-switch-action {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 52px;
+  padding: .3rem .8rem;
+  border: 2px solid rgb(255 60 172 / 70%);
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--bunch-orange), var(--bunch-pink));
+  color: #fff;
+  font-size: .95rem;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+.bunch-switch-action svg { width: 22px; height: 22px; flex: 0 0 22px; }
+.bunch-switch-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.bunch-switch-word { display: inline-flex; align-items: center; gap: .3rem; letter-spacing: -.01em; }
+.bunch-switch-word kbd { padding: 0 4px; border: 1px solid rgb(255 255 255 / 70%); border-radius: 4px; color: #fff; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .6rem; font-weight: 600; }
+/* A long name can never widen the header: the presence line clips instead.
+   The host is the primary fact, so the fronter list gives up width first. */
+.bunch-switch-presence { display: flex; gap: .4rem; min-width: 0; max-width: 34ch; overflow: hidden; font-size: .7rem; font-weight: 600; white-space: nowrap; }
+.bunch-switch-presence span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bunch-switch-presence span + span { flex-shrink: 4; padding-left: .4rem; border-left: 1px solid rgb(255 255 255 / 45%); }
+.bunch-switch-action:hover { filter: brightness(1.08); }
+.bunch-switch-action:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.bunch-switch-notice { margin: 0; padding: .5rem .75rem; border-top: 1px solid rgb(255 138 0 / 16%); color: var(--ink); font-size: .8rem; font-weight: 600; }
+
+.bunch-switch-dialog { max-width: min(38rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem); padding: 1rem; border: 2px solid rgb(255 60 172 / 55%); border-radius: 14px; background: var(--surface); color: var(--ink); overflow: auto; }
+.bunch-switch-dialog::backdrop { background: rgb(4 4 12 / 72%); }
+/* The dialog is narrower than the Home section, so its controls stack. */
+.bunch-switch-dialog .command-create { margin: 0; padding: 14px; }
+.bunch-switch-dialog .command-create form { display: grid; grid-template-columns: minmax(0, 1fr); }
+.bunch-switch-dialog .presence-action-picker { grid-template-columns: minmax(0, 1fr); }
+
 .panel, .return-review, .presence-panel, .option-card, .command-row, .fronting-records li, .profile-entry { border-color: rgb(255 138 0 / 24%); border-radius: 12px; background: var(--surface); box-shadow: 0 6px 24px rgb(255 60 172 / 5%); }
 button, .button, .command-button { border-color: rgb(255 60 172 / 62%); background: linear-gradient(135deg, var(--bunch-orange), var(--bunch-pink)); color: #fff; }
 .button-secondary, .command-button.secondary { border-color: rgb(255 138 0 / 30%); background: var(--wash); color: var(--ink); }
@@ -1643,11 +1682,17 @@ h1, .command-hero h1 { color: var(--ink); }
 :root[data-high-contrast="on"] * { box-shadow: none !important; text-shadow: none !important; }
 :root[data-high-contrast="on"] .app-navigation.command-topbar, :root[data-high-contrast="on"] .bunch-verbbar, :root[data-high-contrast="on"] .panel, :root[data-high-contrast="on"] .return-review, :root[data-high-contrast="on"] .presence-panel, :root[data-high-contrast="on"] .option-card, :root[data-high-contrast="on"] .command-row, :root[data-high-contrast="on"] .fronting-records li, :root[data-high-contrast="on"] .profile-entry { background: #000; border-color: #fff; }
 :root[data-high-contrast="on"] button, :root[data-high-contrast="on"] .button, :root[data-high-contrast="on"] .command-button, :root[data-high-contrast="on"] .bunch-verb, :root[data-high-contrast="on"] .bunch-icon-button { background: #000; color: #fff; border-color: #fff; }
+:root[data-high-contrast="on"] .bunch-switch-action, :root[data-high-contrast="on"] .bunch-switch-dialog { background: #000; color: #fff; border-color: #fff; }
+:root[data-high-contrast="on"] .bunch-switch-word kbd, :root[data-high-contrast="on"] .bunch-switch-presence span + span { border-color: #fff; }
 
 @media (max-width: 760px) {
   .shell, .command-shell, .command-app { padding: .55rem; }
   .app-navigation.command-topbar { position: relative; }
   .bunch-primary-bar { flex-wrap: wrap; gap: .35rem; }
+  .bunch-switch-action { order: 2; flex-basis: 100%; justify-content: center; }
+  /* Phones have the full row, so both names are spelled out rather than clipped. */
+  .bunch-switch-presence { flex-direction: column; align-items: center; max-width: 100%; }
+  .bunch-switch-presence span + span { padding-left: 0; border-left: 0; }
   .app-navigation .command-topnav { order: 3; flex-basis: 100%; }
   .bunch-utilities { margin-left: auto; }
   .bunch-private-pill { display: none; }
