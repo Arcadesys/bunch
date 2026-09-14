@@ -39,6 +39,8 @@ export default function ImagesPage() {
     setAvailable(typeof rendersPayload.meta?.available === "boolean" ? rendersPayload.meta.available : null);
   }, []);
 
+  // load only updates state after network responses; there is no synchronous derived-state update.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load().catch(error => setNotice(error instanceof Error ? error.message : "Could not load private image tools.")); }, [load]);
   const pending = renders.some(render => render.state === "QUEUED" || render.state === "RUNNING");
   useEffect(() => {
