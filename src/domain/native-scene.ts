@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { uuidSchema } from "./contracts";
 
-export const nativeSceneInputSchema = z.object({
-  scene: z.string().trim().min(1).max(5000),
-  alterNames: z.array(z.string().trim().min(1).max(120)).max(12).default([]),
-  requestId: uuidSchema,
-  format: z.enum(["square", "landscape", "portrait"]).default("square"),
-}).strict();
+export const nativeSceneInputSchema = z
+  .object({
+    scene: z.string().trim().min(1).max(5000),
+    alterNames: z.array(z.string().trim().min(1).max(120)).max(12).default([]),
+    requestId: uuidSchema,
+    format: z.enum(["square", "landscape", "portrait"]).default("square"),
+  })
+  .strict();
 export type NativeSceneInput = z.infer<typeof nativeSceneInputSchema>;
 
 export const nativeSceneRenderSchema = z.object({
@@ -23,4 +25,8 @@ export const nativeSceneRenderSchema = z.object({
 });
 export type NativeSceneRender = z.infer<typeof nativeSceneRenderSchema>;
 
-export const nativeSceneSizes = { square: "1024x1024", landscape: "1536x1024", portrait: "1024x1536" } as const;
+export const nativeSceneSizes = {
+  square: "1024x1024",
+  landscape: "1536x1024",
+  portrait: "1024x1536",
+} as const;
