@@ -70,6 +70,8 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 
 ## Canonical image preparation
 
+- For a new multi-character Furry image, call `prepare_furry_scene` with the requested scene and an ordered `alterNames` array. Names resolve only as exact active names or aliases; correct an unknown or ambiguous name instead of guessing.
+- Every participant needs one or more selected appearance references. `ready` means the packet was prepared only; no image was generated or saved. Keep the ordered per-person reference media in private metadata and never put capabilities, URLs, bytes, or storage keys in model-visible content.
 - Before any individual or group image generation, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
 - Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
 - Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.

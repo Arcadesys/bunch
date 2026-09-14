@@ -6,6 +6,12 @@ export const imagePromptInputSchema = z.object({
   alters: z.union([z.literal("all"), z.array(uuidSchema).min(1).max(100)]),
 }).strict();
 
+/** Participants resolve owner-scoped by exact active name or alias. */
+export const furrySceneInputSchema = z.object({
+  scene: z.string().trim().min(1).max(5000),
+  alterNames: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+}).strict();
+
 export const imagePromptResultSchema = z.object({
   ready: z.boolean(),
   status: z.enum(["READY", "NEEDS_INFORMATION"]),
@@ -14,6 +20,7 @@ export const imagePromptResultSchema = z.object({
   identities: z.array(visualIdentitySchema.extend({
     alterId: uuidSchema, alterName: z.string(), profileVersion: z.number().int().positive(),
     pronouns: z.string().optional(),
+    appearanceNotes: z.string().optional(),
     referenceImageIds: z.array(uuidSchema),
     reliesOnReference: z.boolean(),
     missingFields: z.array(z.enum(["species", "visualDescription"])),
@@ -31,7 +38,7 @@ export function buildAlterImagePrompt(scene: string, alters: AlterView[]) {
     return {
       alterId: alter.id, alterName: alter.name, profileVersion: alter.version,
       species: alter.species, visualDescription: alter.visualDescription, presentation: alter.presentation,
-      pronouns: alter.pronouns, signatureTraits: alter.signatureTraits ?? [], styleTags: alter.styleTags ?? [],
+      pronouns: alter.pronouns, appearanceNotes: alter.appearanceNotes, signatureTraits: alter.signatureTraits ?? [], styleTags: alter.styleTags ?? [],
       imageDoNotChange: alter.imageDoNotChange ?? [], referenceImageIds: alter.appearanceReferenceImageIds ?? [],
       reliesOnReference: missingFields.length > 0 && Boolean(alter.appearanceReferenceImageIds?.length), missingFields,
       ready: missingFields.length === 0 || Boolean(alter.appearanceReferenceImageIds?.length),
@@ -48,7 +55,7 @@ export function buildAlterImagePrompt(scene: string, alters: AlterView[]) {
     `Scene request: ${JSON.stringify(scene)}`,
     ...identities.map((identity) => [
       `Person: ${JSON.stringify(identity.alterName)} (${identity.alterId}, profile version ${identity.profileVersion})`,
-      `Canonical visual identity: ${JSON.stringify({ species: identity.species, visualDescription: identity.visualDescription, presentation: identity.presentation, pronouns: identity.pronouns, signatureTraits: identity.signatureTraits })}`,
+      `Canonical visual identity: ${JSON.stringify({ species: identity.species, visualDescription: identity.visualDescription, presentation: identity.presentation, pronouns: identity.pronouns, appearanceNotes: identity.appearanceNotes, signatureTraits: identity.signatureTraits })}`,
       identity.preservationInstructions,
       `Optional style suggestions, subordinate to canonical identity: ${JSON.stringify(identity.styleTags)}`,
       ...(identity.referenceImageIds.length ? [`Use the attached appearance reference associated with alter ${identity.alterId}. Recorded identity takes precedence; use the reference to fill missing visual details.`] : []),
