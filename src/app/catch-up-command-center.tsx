@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/catch-up";
-import { AppNavigation } from "./app-navigation";
+import { AppNavigation, PRESENCE_CHANGED_EVENT } from "./app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import { CurrentFrontSummary } from "./current-front-summary";
 import { SavedReturnReview } from "./saved-return-review";
@@ -126,6 +126,15 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
+  // A change confirmed from the navigation header refreshes this page too,
+  // because each page mounts its own navigation and shares no state with it.
+  const latestPresenceChanged = useRef(presenceChanged);
+  useEffect(() => { latestPresenceChanged.current = presenceChanged; });
+  useEffect(() => {
+    const onPresenceChanged = (event: Event) => latestPresenceChanged.current((event as CustomEvent<{ periodId?: string }>).detail?.periodId);
+    window.addEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+    return () => window.removeEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+  }, []);
 
   const primaryItems = useMemo(() => {
     const urgency = (item: CatchUpItem) => Number(/BLOCKED/.test(item.statusLabel ?? "")) * 4 + Number(/HIGH/.test(item.statusLabel ?? "")) * 2 + Number(Boolean(item.dueOn && new Date(`${item.dueOn}T23:59:59`).getTime() < new Date(session?.windowEnd ?? 0).getTime()));

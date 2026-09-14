@@ -30,7 +30,8 @@ test("direct placement keeps three people together and supports Arrange and keyb
   const stage = page.getByLabel("Photo staging area", { exact: true });
   await expect(stage).toBeVisible();
   for (const [index, person] of people.entries()) {
-    await page.getByRole("button", { name: new RegExp(person.name) }).click();
+    // Scoped to the tray: the navigation header also names recorded people.
+    await page.locator(".people-tray").getByRole("button", { name: new RegExp(person.name) }).click();
     const bounds = await stage.boundingBox();
     await stage.click({ position: { x: bounds!.width * .2, y: bounds!.height * (.25 + index * .3) } });
     await expect(page.getByRole("status")).toContainText(`${person.name} placed`);
