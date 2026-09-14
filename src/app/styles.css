@@ -1696,3 +1696,14 @@ h1, .command-hero h1 { color: var(--ink); }
 .finished-photo { margin: 1.5rem 0 0; }
 .finished-photo img { display: block; width: 100%; height: auto; border: 2px solid var(--ink); border-radius: 12px; }
 .finished-photo a, .recent-scenes a { display: inline-block; padding: .75rem; min-height: 48px; font-size: 1.1rem; }
+
+/* Saved generated photos: large, uncropped previews and wrapping controls. */
+.generated-photo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 24px; padding: 0; list-style: none; }
+.generated-photo-card { min-width: 0; overflow: hidden; border: 2px solid var(--line); border-radius: 16px; background: var(--surface); }
+.generated-photo-preview { display: grid; place-items: center; min-height: 160px; background: var(--paper); }
+.generated-photo-preview img { display: block; width: 100%; height: auto; max-height: 540px; object-fit: contain; }
+.generated-photo-preview span { padding: 24px; }
+.generated-photo-caption { padding: 20px; overflow-wrap: anywhere; }
+.generated-photo-caption h2 { font-size: 1.25rem; line-height: 1.5; margin: 8px 0; }
+.generated-photo-caption .actions { gap: 12px; }
+.generated-photo-caption .button { min-height: 48px; }
