@@ -6,6 +6,15 @@ import { test, expect } from "./fixtures";
 const switchButton = (page: Page) => page.getByRole("button", { name: /^Switch\./ });
 const formHeading = (page: Page) => page.getByRole("heading", { name: "Set host or start a side fronter" });
 
+// The click and keyboard handlers are attached by effects, so a test that acts
+// straight after goto can beat hydration. A settled presence read proves the
+// client is live, because only an effect can replace the loading label.
+async function liveHeader(page: Page) {
+  const trigger = switchButton(page);
+  await expect(trigger).not.toHaveAccessibleName("Switch. Reading hosting and fronting.");
+  return trigger;
+}
+
 test("header Switch records a side fronter without leaving the current page", async ({ page, harness }) => {
   await page.goto("/board");
   const trigger = switchButton(page);
@@ -31,7 +40,7 @@ test("header Switch records a side fronter without leaving the current page", as
 
 test("header Switch closes on Escape without writing and restores focus", async ({ page, harness }) => {
   await page.goto("/board");
-  await switchButton(page).click();
+  await (await liveHeader(page)).click();
   await expect(formHeading(page)).toBeFocused();
 
   await page.keyboard.press("Escape");
@@ -42,6 +51,7 @@ test("header Switch closes on Escape without writing and restores focus", async 
 
 test("the S shortcut opens the switch form from any page", async ({ page }) => {
   await page.goto("/notes");
+  await liveHeader(page);
   await page.keyboard.press("s");
   await expect(formHeading(page)).toBeFocused();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
