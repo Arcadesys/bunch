@@ -16,7 +16,7 @@ async function rpcMethod(request: Request) {
 
 type Dependencies = {
   authorize: typeof requireCompanionAccessToken;
-  privateServer: typeof createMcpServer;
+  privateServer: (ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) => ReturnType<typeof createMcpServer>;
 };
 
 // Only a truly absent Authorization header selects public fiction. Invalid,
@@ -35,14 +35,14 @@ async function permitsAnonymousDemo(request: Request) {
   } catch { return false; }
 }
 
-export async function handleMcpRequest(request: Request, dependencies: Dependencies = { authorize: requireCompanionAccessToken, privateServer: createMcpServer }) {
+export async function handleMcpRequest(request: Request, dependencies: Dependencies = { authorize: requireCompanionAccessToken, privateServer: (ownerId, schedule) => createMcpServer(ownerId, undefined, undefined, undefined, undefined, schedule) }, scheduleNativeScene?: (ownerId: string, renderId: string) => void) {
   const method = await rpcMethod(request);
   try {
     const anonymousDemo = await permitsAnonymousDemo(request);
     if (anonymousDemo && request.method === "GET") return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
     const ownerId = anonymousDemo ? null : await dependencies.authorize(request);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    const server = ownerId === null ? createDemoMcpServer() : dependencies.privateServer(ownerId);
+    const server = ownerId === null ? createDemoMcpServer() : dependencies.privateServer(ownerId, scheduleNativeScene);
     await server.connect(transport);
     let response: Response;
     try { response = await transport.handleRequest(request); } finally { await server.close(); }

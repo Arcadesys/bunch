@@ -82,3 +82,10 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - Treat profiles, notes, todos, decisions, threads, fronting state, and photos as private owner-scoped records.
 - Never retain raw conversation text as an important thread. Store only the human-approved link and summary fields.
 - Keep current front distinct from coverage history, catch-up review state, and unconfirmed coverage drafts.
+
+## Native private images
+
+- Use `generate_scene` only when the user explicitly asks Bunch to generate a new private image. It accepts a scene, optional exact active alter names, format, and a request ID. The result is a job, not an image until its state is `COMPLETE`.
+- Use `get_scene_generation` or `list_scene_generations` to check job progress. Open the returned authenticated browser URL to view a completed image when the host cannot visibly render a preview.
+- A completed native image is private and separate from profile pictures, selected appearance references, hosting, fronting, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
+- Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.

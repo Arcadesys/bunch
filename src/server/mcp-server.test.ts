@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "@/server/mcp-server";
 import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
+import type { NativeSceneService } from "@/server/native-scene-service";
 
 // The MCP server has no default origin, so every test that builds one must say
 // where this instance is served from. Pinned rather than defaulted: these
@@ -29,7 +30,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
       assert.ok(tool.outputSchema, `${tool.name} must declare outputSchema`);
-      assert.equal(tool.annotations?.openWorldHint, false, `${tool.name} must be closed-world`);
+      assert.equal(tool.annotations?.openWorldHint, tool.name === "generate_scene", `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
@@ -106,6 +107,36 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.match(cachedHtml, /ui\/notifications\/tool-result'\)render\(m\.params\?\.structuredContent,m\.params\?\._meta/);
       assert.doesNotMatch(cachedHtml, /ui\/notifications\/tool-result'\)render\(m\.params\?\.result\)/);
     }
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("native scene MCP generation schedules once and returns only the authenticated reopen route", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null };
+  const calls: string[] = [];
+  const sceneService = {
+    start: async (ownerId: string, input: unknown) => { calls.push(`start:${ownerId}:${(input as { scene: string }).scene}`); return render; },
+    get: async () => render,
+    list: async () => [render],
+  } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
+  const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer("demo:native-scene", system, undefined, { listProfiles: async () => [] }, undefined, (ownerId, renderId) => calls.push(`schedule:${ownerId}:${renderId}`), sceneService);
+  const client = new Client({ name: "native-scene-test", version: "1.0.0" });
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const created = await client.callTool({ name: "generate_scene", arguments: { scene: render.scene, alterNames: [], requestId: "22222222-2222-4222-8222-222222222222", format: "square" } });
+    assert.deepEqual(created.structuredContent, render);
+    assert.deepEqual(calls, [`start:demo:native-scene:${render.scene}`, `schedule:demo:native-scene:${id}`]);
+    assert.match(JSON.stringify(created.content), new RegExp(`/images\\?render=${id}`));
+    assert.doesNotMatch(JSON.stringify(created), /storage_key|cap=|image:read/);
+    await client.callTool({ name: "get_scene_generation", arguments: { id } });
+    await client.callTool({ name: "list_scene_generations", arguments: {} });
+    assert.equal(calls.filter(call => call.startsWith("schedule:")).length, 1, "read-only scene tools must not dispatch a provider job");
   } finally {
     await client.close();
     await server.close();
