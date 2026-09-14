@@ -79,6 +79,7 @@ export class GroupPhotoRenderService {
       if (!locked.rows[0]) throw new SystemError("NOT_FOUND", "Scene not found.");
       if (Number(locked.rows[0].version) !== expectedVersion || project.version !== expectedVersion) throw new SystemError("CONFLICT", "Your scene changed. Reload it before finishing.");
       if ((await c.query("select 1 from group_photo_render where owner_id=$1 and state in ('QUEUED','RUNNING')", [ownerId])).rowCount) throw new SystemError("CONFLICT", "A photo is already finishing. Wait for it before starting another.");
+      if ((await c.query("select 1 from native_scene_render where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at >= now()-interval '6 minutes'", [ownerId])).rowCount) throw new SystemError("CONFLICT", "An image is already generating. Wait for it before finishing another photo.");
       const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL, JSON.stringify(recipe)]);
       return renderView(result.rows[0]);
     });

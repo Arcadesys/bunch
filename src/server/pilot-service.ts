@@ -44,6 +44,7 @@ const unavailable = () =>
     "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "native_scene_render",
   "group_photo_render",
   "group_photo_placement",
   "group_photo_project",
@@ -348,6 +349,9 @@ export class PilotService {
         id: row.id,
         downloadUrl: `/api/v1/account/images/${row.id}`,
       }));
+      const generatedImages = (
+        await c.query("select id from native_scene_render where owner_id=$1 and state='COMPLETE' order by created_at", [ownerId])
+      ).rows.map(row => ({ id: row.id, downloadUrl: `/api/v1/account/generated-images/${row.id}` }));
       const preferences = (
         await c.query("select time_zone from app_user where id=$1", [ownerId])
       ).rows[0];
@@ -358,6 +362,7 @@ export class PilotService {
         preferences,
         data,
         images,
+        generatedImages,
       };
     });
   }

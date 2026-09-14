@@ -119,6 +119,12 @@ export const groupPhotoRender = pgTable("group_photo_render", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), startedAt: timestamp("started_at", { withTimezone: true }), finishedAt: timestamp("finished_at", { withTimezone: true }),
 }, table => [foreignKey({ columns: [table.ownerId, table.projectId], foreignColumns: [groupPhotoProject.ownerId, groupPhotoProject.id] }).onDelete("cascade"), unique().on(table.ownerId, table.requestId), uniqueIndex("group_photo_render_one_active_owner").on(table.ownerId).where(sql`${table.state} in ('QUEUED','RUNNING')`), index("group_photo_render_project_created").on(table.ownerId, table.projectId, table.createdAt)]);
 
+export const nativeSceneRender = pgTable("native_scene_render", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }), requestId: uuid("request_id").notNull(),
+  state: text("state").notNull().default("QUEUED"), model: text("model").notNull(), recipe: jsonb("recipe").notNull(), storageKey: text("storage_key").unique(), contentType: text("content_type"), contentHash: text("content_hash"), width: integer("width"), height: integer("height"), errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), startedAt: timestamp("started_at", { withTimezone: true }), finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, table => [unique().on(table.ownerId, table.requestId), uniqueIndex("native_scene_render_one_active_owner").on(table.ownerId).where(sql`${table.state} in ('QUEUED','RUNNING')`), index("native_scene_render_owner_created").on(table.ownerId, table.createdAt)]);
+
 export const coverageAssignment = pgTable("coverage_assignment", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
