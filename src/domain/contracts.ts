@@ -1,3 +1,7 @@
+// The zod primitives shared by the MCP tools, the /api/v1 routes, and database read
+// shapes. One definition serves all three, so changes here must be additive: a
+// narrowed shape rejects stored rows and cached tool descriptors alike.
+
 import { z } from "zod";
 
 export const uuidSchema = z.string().uuid();
@@ -6,6 +10,9 @@ export const todoStatusSchema = z.enum(["INBOX", "OPEN", "IN_PROGRESS", "BLOCKED
 export const todoPrioritySchema = z.enum(["LOW", "NORMAL", "HIGH"]);
 export const recordSourceSchema = z.enum(["MCP", "WEB", "SYSTEM"]);
 export const isoTimestampSchema = z.string().datetime({ offset: true });
+export const galleryShareLifetimeSchema = z.enum(["1h", "2h", "4h", "1d", "1w", "forever"]);
+export const galleryShareFrontingSchema = z.object({ showCurrentFronting: z.boolean() }).strict();
+export const galleryShareCreateSchema = z.object({ duration: galleryShareLifetimeSchema }).strict();
 
 const shortOptional = z.string().trim().max(500).optional();
 const textOptional = z.string().trim().max(5000).optional();
@@ -71,6 +78,7 @@ export const todoPatchSchema = z.object({
   priority: todoPrioritySchema.nullable().optional(),
   assigneeAlterIds: z.array(uuidSchema).max(100).optional(),
   coverageId: uuidSchema.nullable().optional(),
+  noteIds: z.array(uuidSchema).max(100).optional(),
 }).strict().refine((value) => Object.keys(value).some((key) => !["requestId", "expectedVersion"].includes(key)), "Provide at least one field to update.");
 
 export const noteCreateSchema = z.object({
@@ -79,7 +87,19 @@ export const noteCreateSchema = z.object({
   alterId: uuidSchema.optional(),
   coverageId: uuidSchema.optional(),
   actorAlterId: uuidSchema.optional(),
-}).strict();
+  giftImageIds: z.array(uuidSchema).max(8).optional(),
+}).strict().refine((value) => !value.giftImageIds?.length || Boolean(value.alterId), "Choose a recipient before adding an image gift.")
+  .refine((value) => new Set(value.giftImageIds ?? []).size === (value.giftImageIds?.length ?? 0), "Choose each image gift only once.");
+
+export const notePatchSchema = z.object({
+  requestId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+  body: z.string().trim().min(1).max(5000).optional(),
+  taskIds: z.array(uuidSchema).max(100).optional(),
+}).strict().refine((value) => Object.keys(value).some((key) => !["requestId", "expectedVersion"].includes(key)), "Provide at least one field to update.");
+
+export const checklistCreateSchema = z.object({ requestId: uuidSchema, expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(500), position: z.number().int().nonnegative().optional() }).strict();
+export const checklistPatchSchema = z.object({ requestId: uuidSchema, expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(500).optional(), completed: z.boolean().optional(), position: z.number().int().nonnegative().optional() }).strict().refine((value) => Object.keys(value).some((key) => !["requestId", "expectedVersion"].includes(key)), "Provide at least one field to update.");
 
 export const frontingSwitchSchema = z.object({
   requestId: uuidSchema,
@@ -111,6 +131,15 @@ export const setProfilePictureSchema = z.object({
   expectedVersion: z.number().int().positive(),
   requestId: uuidSchema,
 }).strict();
+export const setAlterAppearanceSchema = z.object({
+  appearanceNotes: z.string().trim().max(5000).nullable().optional(),
+  referenceImageIds: z.array(uuidSchema).max(12),
+  expectedVersion: z.number().int().positive(),
+  requestId: uuidSchema,
+}).strict();
+export const prepareFurryTransformSchema = z.object({
+  alterName: z.string().trim().min(1).max(120),
+}).strict();
 export const listTodosSchema = listPageSchema.extend({
   status: z.array(todoStatusSchema).max(6).optional(),
   assigneeAlterId: uuidSchema.optional(),
@@ -128,13 +157,14 @@ export const alterViewSchema = z.object({
   pronouns: z.string().optional(),
   selfDescribedGender: z.string().optional(),
   description: z.string().optional(),
+  appearanceNotes: z.string().optional(),
   communicationGuidance: z.string().optional(),
   strengths: z.array(z.string()),
   boundaries: z.array(z.string()),
   imageCount: z.number().int().nonnegative(),
   profilePicture: profileImageViewSchema.optional(),
-  appearanceReference: profileImageViewSchema.optional(),
   images: z.array(profileImageViewSchema),
+  appearanceReferenceImageIds: z.array(uuidSchema),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -150,6 +180,8 @@ export const todoViewSchema = z.object({
   priority: todoPrioritySchema.optional(),
   assigneeAlterIds: z.array(uuidSchema),
   coverageId: uuidSchema.optional(),
+  checklist: z.array(z.object({ id: uuidSchema, title: z.string(), completed: z.boolean(), position: z.number().int().nonnegative() })),
+  noteIds: z.array(uuidSchema),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -173,6 +205,8 @@ export const noteViewSchema = z.object({
   coverageId: uuidSchema.optional(),
   actorAlterId: uuidSchema.optional(),
   actorAlterName: z.string().optional(),
+  giftImages: z.array(z.object({ imageId: uuidSchema, contentType: z.enum(["image/jpeg", "image/png", "image/webp"]), createdAt: z.string().datetime() })),
+  taskIds: z.array(uuidSchema),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -196,6 +230,9 @@ export type AlterPatch = z.infer<typeof alterPatchSchema>;
 export type TodoCreate = z.infer<typeof todoCreateSchema>;
 export type TodoPatch = z.infer<typeof todoPatchSchema>;
 export type NoteCreate = z.infer<typeof noteCreateSchema>;
+export type NotePatch = z.infer<typeof notePatchSchema>;
+export type ChecklistCreate = z.infer<typeof checklistCreateSchema>;
+export type ChecklistPatch = z.infer<typeof checklistPatchSchema>;
 export type AlterView = z.infer<typeof alterViewSchema>;
 export type TodoView = z.infer<typeof todoViewSchema>;
 export type NoteView = z.infer<typeof noteViewSchema>;
@@ -203,6 +240,7 @@ export type FrontingSwitch = z.infer<typeof frontingSwitchSchema>;
 export type FrontingSessionView = z.infer<typeof frontingSessionViewSchema>;
 export type ProfileImageView = z.infer<typeof profileImageViewSchema>;
 export type SetProfilePicture = z.infer<typeof setProfilePictureSchema>;
+export type SetAlterAppearance = z.infer<typeof setAlterAppearanceSchema>;
 export type TodoStatus = z.infer<typeof todoStatusSchema>;
 export type TodoPriority = z.infer<typeof todoPrioritySchema>;
 export type RecordSource = z.infer<typeof recordSourceSchema>;

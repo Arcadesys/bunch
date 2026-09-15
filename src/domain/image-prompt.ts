@@ -6,6 +6,12 @@ export const imagePromptInputSchema = z.object({
   alters: z.union([z.literal("all"), z.array(uuidSchema).min(1).max(100)]),
 }).strict();
 
+/** Participants resolve owner-scoped by exact active name or alias. */
+export const furrySceneInputSchema = z.object({
+  scene: z.string().trim().min(1).max(5000),
+  alterNames: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+}).strict();
+
 export const imagePromptResultSchema = z.object({
   ready: z.boolean(),
   status: z.enum(["READY", "NEEDS_INFORMATION"]),
@@ -14,7 +20,8 @@ export const imagePromptResultSchema = z.object({
   identities: z.array(visualIdentitySchema.extend({
     alterId: uuidSchema, alterName: z.string(), profileVersion: z.number().int().positive(),
     pronouns: z.string().optional(),
-    referenceImageId: uuidSchema.optional(),
+    appearanceNotes: z.string().optional(),
+    referenceImageIds: z.array(uuidSchema),
     reliesOnReference: z.boolean(),
     missingFields: z.array(z.enum(["species", "visualDescription"])),
     ready: z.boolean(),
@@ -31,10 +38,10 @@ export function buildAlterImagePrompt(scene: string, alters: AlterView[]) {
     return {
       alterId: alter.id, alterName: alter.name, profileVersion: alter.version,
       species: alter.species, visualDescription: alter.visualDescription, presentation: alter.presentation,
-      pronouns: alter.pronouns, signatureTraits: alter.signatureTraits ?? [], styleTags: alter.styleTags ?? [],
-      imageDoNotChange: alter.imageDoNotChange ?? [], referenceImageId: alter.appearanceReference?.id,
-      reliesOnReference: missingFields.length > 0 && Boolean(alter.appearanceReference), missingFields,
-      ready: missingFields.length === 0 || Boolean(alter.appearanceReference),
+      pronouns: alter.pronouns, appearanceNotes: alter.appearanceNotes, signatureTraits: alter.signatureTraits ?? [], styleTags: alter.styleTags ?? [],
+      imageDoNotChange: alter.imageDoNotChange ?? [], referenceImageIds: alter.appearanceReferenceImageIds ?? [],
+      reliesOnReference: missingFields.length > 0 && Boolean(alter.appearanceReferenceImageIds?.length), missingFields,
+      ready: missingFields.length === 0 || Boolean(alter.appearanceReferenceImageIds?.length),
       preservationInstructions: `Preserve recorded species, palette and identity traits. Keep unchanged: ${(alter.imageDoNotChange ?? []).join(", ") || "recorded visual identity"}. Canonical identity takes precedence over conflicting scene wording, reference details and style suggestions.`,
     };
   });
@@ -48,10 +55,10 @@ export function buildAlterImagePrompt(scene: string, alters: AlterView[]) {
     `Scene request: ${JSON.stringify(scene)}`,
     ...identities.map((identity) => [
       `Person: ${JSON.stringify(identity.alterName)} (${identity.alterId}, profile version ${identity.profileVersion})`,
-      `Canonical visual identity: ${JSON.stringify({ species: identity.species, visualDescription: identity.visualDescription, presentation: identity.presentation, pronouns: identity.pronouns, signatureTraits: identity.signatureTraits })}`,
+      `Canonical visual identity: ${JSON.stringify({ species: identity.species, visualDescription: identity.visualDescription, presentation: identity.presentation, pronouns: identity.pronouns, appearanceNotes: identity.appearanceNotes, signatureTraits: identity.signatureTraits })}`,
       identity.preservationInstructions,
       `Optional style suggestions, subordinate to canonical identity: ${JSON.stringify(identity.styleTags)}`,
-      ...(identity.referenceImageId ? [`Use the selected appearance reference associated with alter ${identity.alterId}. Recorded identity takes precedence; use the reference to fill missing visual details.`] : []),
+      ...(identity.referenceImageIds.length ? [`Use the attached appearance reference associated with alter ${identity.alterId}. Recorded identity takes precedence; use the reference to fill missing visual details.`] : []),
     ].join("\n")),
     ...(ready ? [] : ["NEEDS INFORMATION: Do not generate this group until the missing identity information is resolved."]),
   ].join("\n\n");

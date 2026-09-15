@@ -7,7 +7,8 @@ import { Pool } from "pg";
 
 // This is intentionally not a rehearsal of the incomplete historical migration
 // chain. It creates only the real prerequisite tables queried by the reference
-// API, applies the shipped 0010 and 0011 SQL migrations, and drops its own DB.
+// API, applies the shipped appearance-reference and reference-credential SQL
+// migrations, and drops its own DB.
 const adminDatabaseUrl = process.env.BUNCH_REFERENCE_TEST_DATABASE_URL;
 const integrationTest = adminDatabaseUrl ? test : test.skip;
 
@@ -78,8 +79,8 @@ integrationTest("reference API uses real migrations and denies unselected, archi
     await admin.query(`create database ${quotedDatabaseName(databaseName)}`);
     database = new Pool({ connectionString: databaseUrl, max: 2 });
     await database.query(prerequisiteSchema);
-    await database.query(await readFile(join(process.cwd(), "drizzle/0010_selected_appearance_reference.sql"), "utf8"));
-    await database.query(await readFile(join(process.cwd(), "drizzle/0011_reference_credentials.sql"), "utf8"));
+    await database.query(await readFile(join(process.cwd(), "drizzle/0011_alter_appearance_references.sql"), "utf8"));
+    await database.query(await readFile(join(process.cwd(), "drizzle/0020_reference_credentials.sql"), "utf8"));
 
     const ownerId = `test-reference-owner:${randomUUID()}`;
     const otherOwnerId = `test-reference-other:${randomUUID()}`;
@@ -104,7 +105,7 @@ integrationTest("reference API uses real migrations and denies unselected, archi
       galleryImageId, storageKeys[2],
       otherImageId, otherOwnerId, otherAlterId, storageKeys[3],
     ]);
-    await database.query("update alter_profile set appearance_reference_image_id = $1::uuid where id = $2::uuid", [appearanceImageId, selectedAlterId]);
+    await database.query("insert into alter_appearance_reference (owner_id, alter_id, image_id) values ($1, $2::uuid, $3::uuid)", [ownerId, selectedAlterId, appearanceImageId]);
 
     await mkdir(uploadDirectory, { recursive: true });
     await Promise.all([

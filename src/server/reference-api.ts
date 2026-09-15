@@ -6,7 +6,7 @@ export type ReferenceImage = { id: string; alterId: string; storageKey: string; 
 export type ReferenceProfile = {
   id: string; version: number; name: string; pronouns: string | null; species: string | null;
   visualDescription: string | null; presentation: string | null; signatureTraits: string[]; imageDoNotChange: string[];
-  profilePictureId: string | null; appearanceReferenceImageId: string | null;
+  profilePictureId: string | null; appearanceReferenceImageIds: string[];
 };
 export type ReferenceCredential = { id: string; ownerId: string; label: string; selectedAlterIds: string[]; createdAt: string; revokedAt: string | null; lastUsedAt: string | null };
 export type IssuedReferenceCredential = ReferenceCredential & { secret: string };
@@ -60,13 +60,24 @@ class PostgresReferenceRepository implements ReferenceRepository {
   }
 
   async profilesForSelection(ownerId: string, selectedAlterIds: string[]) {
-    const result = await this.pool().query("select a.id, a.version, a.name, a.pronouns, a.species, a.visual_description, a.presentation, a.signature_traits, a.image_do_not_change, a.appearance_reference_image_id, (select i.id from private_image i where i.owner_id = a.owner_id and i.alter_id = a.id and i.is_profile_picture = true) as profile_picture_id from alter_profile a where a.owner_id = $1 and a.archived_at is null and a.id = any($2::uuid[]) order by a.id", [ownerId, selectedAlterIds]);
-    return result.rows.map((row) => ({ id: String(row.id), version: Number(row.version), name: String(row.name), pronouns: row.pronouns, species: row.species, visualDescription: row.visual_description, presentation: row.presentation, signatureTraits: row.signature_traits ?? [], imageDoNotChange: row.image_do_not_change ?? [], profilePictureId: row.profile_picture_id ? String(row.profile_picture_id) : null, appearanceReferenceImageId: row.appearance_reference_image_id ? String(row.appearance_reference_image_id) : null }));
+    const result = await this.pool().query(`select a.id, a.version, a.name, a.pronouns, a.species, a.visual_description, a.presentation,
+      a.signature_traits, a.image_do_not_change,
+      (select i.id from private_image i where i.owner_id = a.owner_id and i.alter_id = a.id and i.is_profile_picture = true) as profile_picture_id,
+      coalesce((select array_agg(ref.image_id order by ref.created_at, ref.image_id)
+        from alter_appearance_reference ref where ref.owner_id = a.owner_id and ref.alter_id = a.id), '{}') as appearance_reference_image_ids
+      from alter_profile a where a.owner_id = $1 and a.archived_at is null and a.id = any($2::uuid[]) order by a.id`, [ownerId, selectedAlterIds]);
+    return result.rows.map((row) => ({ id: String(row.id), version: Number(row.version), name: String(row.name), pronouns: row.pronouns, species: row.species, visualDescription: row.visual_description, presentation: row.presentation, signatureTraits: row.signature_traits ?? [], imageDoNotChange: row.image_do_not_change ?? [], profilePictureId: row.profile_picture_id ? String(row.profile_picture_id) : null, appearanceReferenceImageIds: (row.appearance_reference_image_ids as string[] | null)?.map(String) ?? [] }));
   }
 
   async imagesForSelection(ownerId: string, selectedAlterIds: string[]) {
     // Only profile pictures and explicitly selected appearance references are exportable.
-    const result = await this.pool().query("select i.id, i.alter_id, i.storage_key, i.content_type, i.reference_version, case when i.is_profile_picture then 'profilePicture' else 'appearanceReference' end as role from private_image i join alter_profile a on a.id = i.alter_id and a.owner_id = i.owner_id where i.owner_id = $1 and i.alter_id = any($2::uuid[]) and (i.is_profile_picture = true or i.id = a.appearance_reference_image_id) order by i.id", [ownerId, selectedAlterIds]);
+    const result = await this.pool().query(`select distinct on (i.id)
+      i.id, i.alter_id, i.storage_key, i.content_type, i.reference_version,
+      case when i.is_profile_picture then 'profilePicture' else 'appearanceReference' end as role
+      from private_image i
+      left join alter_appearance_reference ref on ref.owner_id = i.owner_id and ref.alter_id = i.alter_id and ref.image_id = i.id
+      where i.owner_id = $1 and i.alter_id = any($2::uuid[]) and (i.is_profile_picture = true or ref.image_id is not null)
+      order by i.id, case when i.is_profile_picture then 0 else 1 end`, [ownerId, selectedAlterIds]);
     return result.rows.map((row) => ({ id: String(row.id), alterId: String(row.alter_id), storageKey: String(row.storage_key), contentType: String(row.content_type), version: Number(row.reference_version), role: row.role as ReferenceImage["role"] }));
   }
 

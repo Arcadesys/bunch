@@ -4,7 +4,7 @@ import { ReferenceApiService, type ReferenceCredential, type ReferenceImage, typ
 
 const owner = "auth0:owner";
 const selected = "11111111-1111-4111-8111-111111111111";
-const profile: ReferenceProfile = { id: selected, version: 7, name: "Mouse Arcade", pronouns: "they/them", species: "mouse", visualDescription: "soft gray fur", presentation: null, signatureTraits: ["round ears"], imageDoNotChange: ["tail"], profilePictureId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", appearanceReferenceImageId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" };
+const profile: ReferenceProfile = { id: selected, version: 7, name: "Mouse Arcade", pronouns: "they/them", species: "mouse", visualDescription: "soft gray fur", presentation: null, signatureTraits: ["round ears"], imageDoNotChange: ["tail"], profilePictureId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", appearanceReferenceImageIds: ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"] };
 const images: ReferenceImage[] = [
   { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", alterId: selected, storageKey: "mouse-profile", contentType: "image/png", version: 3, role: "profilePicture" },
   { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", alterId: selected, storageKey: "mouse-reference", contentType: "image/webp", version: 2, role: "appearanceReference" },

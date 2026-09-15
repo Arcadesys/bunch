@@ -24,3 +24,10 @@ export async function POST(request: Request) {
     }
   });
 }
+
+export async function GET(request: Request) {
+  return apiResponse(async () => {
+    const ownerId = await apiOwner(request);
+    return NextResponse.json({ data: await getGroupPhotoService().list(ownerId), meta: { finisherAvailable: Boolean(process.env.OPENAI_API_KEY?.trim()) } }, { headers: { "Cache-Control": "private, no-store" } });
+  });
+}

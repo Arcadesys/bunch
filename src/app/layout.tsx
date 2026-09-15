@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { InstallProvider } from "./install-provider";
 import "./styles.css";
 
 const themeScript = `(() => {
@@ -11,10 +12,14 @@ const themeScript = `(() => {
 })();`;
 
 export const metadata: Metadata = {
-  title: "System — private coverage record",
-  description: "A private, user-confirmed coverage record.",
+  title: "Bunch — your private companion",
+  description: "A private, user-confirmed catch-up for notes, todos, decisions, threads, and switch history.",
+  icons: { icon: "/bunch-barrel-monkeys.png", apple: "/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Bunch", statusBarStyle: "default" },
   robots: { index: false, follow: false },
 };
+
+export const viewport: Viewport = { themeColor: "#19121f" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -22,7 +27,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body><InstallProvider>{children}</InstallProvider></body>
     </html>
   );
 }
