@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 
-export type SystemErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "ERASURE_BLOCKED" | "UNAUTHORIZED";
+export type SystemErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "ERASURE_BLOCKED" | "UNAUTHORIZED" | "FORBIDDEN" | "RATE_LIMITED" | "QUOTA_EXCEEDED";
 
 export class SystemError extends Error {
   constructor(public readonly code: SystemErrorCode, public readonly userMessage: string, public readonly details?: Record<string, unknown>) {

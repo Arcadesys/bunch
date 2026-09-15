@@ -1,0 +1,69 @@
+name: Working Monkeys checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bunch_test
+          POSTGRES_PASSWORD: local_ci_test
+          POSTGRES_DB: bunch_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
+      DATABASE_URL_UNPOOLED: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
+      SYSTEM_PUBLIC_ORIGIN: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/baseline.sql
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run typecheck:browser
+      - run: npm run test:ci
+      - run: python3 scripts/test-pilot-recovery.py
+      - run: npm run build
+      - run: npm run test:browser
+        env:
+          MOBILE_TEST_SERVER: production
+      - name: Upload browser test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bunch-browser-evidence
+          path: |
+            test-results/playwright
+            test-results/results.json
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Package portable plugin
+        id: package
+        run: |
+          archive=$(npm run --silent plugin:pack)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bunch-plugin
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error

@@ -4,15 +4,26 @@ export type PrivateImage = {
   id: string;
   storageKey: string;
   contentType: string;
+  isProfilePicture: boolean;
+  createdAt: string;
 };
 
 export type AlterProfile = {
+  pronouns?: string;
+  species?: string;
+  visualDescription?: string;
+  presentation?: string;
+  signatureTraits?: string[];
+  styleTags?: string[];
+  imageDoNotChange?: string[];
   id: string;
   ownerId: string;
   name: string;
   selfDescribedGender?: string;
   description?: string;
+  profilePicture?: PrivateImage;
   images: PrivateImage[];
+  version: number;
   createdAt: string;
   updatedAt: string;
 };

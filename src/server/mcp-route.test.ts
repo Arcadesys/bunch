@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addOAuthSecuritySchemes } from "@/app/mcp/route";
+import { addOAuthSecuritySchemes } from "@/server/mcp-http";
 import { COMPANION_SCOPE } from "@/server/mcp-authorization";
 
 test("hosted MCP tool descriptors declare the OAuth scope", async () => {

@@ -1,61 +1,100 @@
-# System — private DID companion
+# Bunch
 
-This is an MCP-first, private-first vertical slice for `system.arcades.me`. ChatGPT is the main workflow; the web companion handles Google sign-in, authorization, and private image storage.
+A private companion for people who keep shared records: who is present, who was
+present, and what the next person needs to know.
 
-## Current win condition
+Bunch is built around one idea — **nothing is inferred**. It records what someone
+explicitly says, and a gap in the record means nothing was written down, never
+that nobody was there.
 
-1. Sign in with Google (or deliberately use local demo mode).
-2. Use the ChatGPT app to send and retrieve private profiles, notes, to-dos, preferences, and images.
-3. Create a draft coverage suggestion with concise reasons.
-4. Confirm, change, or reject the draft in ChatGPT.
-5. Ask the ChatGPT MCP app for recorded coverage during last week.
+It has two front doors onto the same records:
 
-Only **confirmed** assignments are returned by the coverage-handoff tool. The MCP app sends and retrieves user-authorized profiles, notes, to-dos, preferences, and image metadata; it never returns image bytes, access tokens, or raw ChatGPT conversation text.
+- a **web app** for browsing, editing, and account control
+- an **MCP server** so an AI assistant can read and write the same records under
+  the same rules
 
-## Local development
+**Working Monkeys** is the engine underneath — the MCP server, the record
+services, and the database. Bunch is what you see; Working Monkeys is what runs.
 
-```bash
+## Getting started
+
+**[SETUP.md](SETUP.md)** walks through running it locally. The short version:
+
+```sh
 npm install
-cp .env.example .env.local
+cp .env.example .env.local     # set DATABASE_URL and SYSTEM_DEMO_MODE=true
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/baseline.sql
+npm run db:migrate
 npm run dev
 ```
 
-With `SYSTEM_DEMO_MODE=true`, the local UI sends `x-system-demo: local`; it is an intentionally visible walkthrough mode. Set it to `false` before any real deployment. Production authentication uses Auth0 Universal Login with only its Google social connection enabled.
+Demo mode removes the sign-in and cloud-storage requirements. It does **not**
+remove the database requirement — there is no database-free mode.
 
-The app uses `private-uploads/` only for the local walkthrough. In a configured production environment it uses Vercel Private Blob; the database keeps only the opaque Blob pathname and the owner-authorized route streams the file with private, no-cache headers.
+## Documentation
 
-## ChatGPT app
+| | |
+|---|---|
+| [SETUP.md](SETUP.md) | Run it locally, or deploy it for real |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit, and which strings are frozen |
+| [docs/](docs/) | Reference notes on the presence model, invitations, and visual identity |
+| [tests/mobile/README.md](tests/mobile/README.md) | Accessibility checks and the full CI gate |
 
-The MCP endpoint is `/mcp` and follows the Apps SDK interactive-decoupled pattern. Alter and todo writes share one transactional service with the authenticated `/api/v1` routes.
+## What it records
+
+**Hosting** is responsibility for the body; one profile holds it at a time.
+**Fronting** is presence in the moment, and episodes may overlap. The two are
+tracked independently, and neither implies the other.
+
+Around that: profiles, notes, todos, decisions, important threads, a private
+image gallery with shareable links, and a catch-up view that shows an arriving
+profile what changed since they were last around.
+
+## The MCP surface
+
+The endpoint is `/mcp`, following the Apps SDK interactive-decoupled pattern.
+Tool writes and authenticated `/api/v1` writes share one transactional service,
+so both paths enforce the same rules.
 
 - `list_alters`, `get_alter`, `create_alter`, `update_alter`, `archive_alter`, `restore_alter`, `preview_erase_alter`, `erase_alter`
 - `list_todos`, `get_todo`, `create_todo`, `update_todo`, `archive_todo`, `restore_todo`, `erase_todo`
 - `set_note_alter`, `reassign_coverage`, `erase_coverage_record` — narrow erasure-blocker resolution
-- `get_companion_state` + `render_system_companion` — primary interactive ChatGPT companion
-- `get_current_front` + `switch_current_front` — timestamped, optimistic, retry-safe fronting handoffs
-- `save_system_note`, `save_system_preference` — existing explicit ChatGPT-to-System handoffs
-- `prepare_private_image_upload` — a profile-bound, one-minute capability used only by the ChatGPT widget to transfer a selected image into private storage
-- `suggest_coverage_draft` + `resolve_coverage_draft` — inspectable, confirmed-only history gate
-- `get_recorded_coverage` — confirmed history and a concise “go talk to $ALTER” handoff
+- `get_companion_state` + `render_system_companion` — the interactive catch-up widget
+- `get_current_front` + `switch_current_front` — timestamped, optimistic, retry-safe handoffs
+- `get_current_presence`, `set_system_host` — hosting and fronting as independent lifecycles
+- `save_system_note`, `save_system_preference` — explicit assistant-to-app handoffs
+- `prepare_private_image_upload` — a profile-bound, one-minute capability used only to move a selected image into private storage
+- `suggest_coverage_draft` + `resolve_coverage_draft` — an inspectable, confirmed-only history gate
+- `get_recorded_coverage` — confirmed history only
 
-Every tool has an output schema and closed-world annotation. Reads are marked read-only; retry-safe CRUD uses request UUIDs; permanent erasure is marked destructive. Hosted tool descriptors require the `system:companion` OAuth scope. The endpoint validates Auth0 JWT signatures, issuer, audience, expiry, and scope before deriving the same immutable Auth0 subject used by the website session.
+Every tool has an output schema and a closed-world annotation. Reads are marked
+read-only, retry-safe writes take request UUIDs, and permanent erasure is marked
+destructive. The endpoint validates JWT signature, issuer, audience, expiry, and
+scope before deriving the same immutable subject the website session uses.
 
-Run hosted natural-language acceptance with a real Auth0 access token issued for the MCP resource: `HOSTED_MCP_URL=... HOSTED_MCP_ACCESS_TOKEN=... npm run verify:hosted-mcp`. The verifier does not mint or accept a private fallback token.
+The MCP app never returns image bytes, access tokens, or raw conversation text.
+Only **confirmed** assignments come back from the coverage tool.
 
-## REST API
+## The REST API
 
-Authenticated routes mirror the MCP contracts under `/api/v1/alters` and `/api/v1/todos`, with item, archive, restore, erasure-preview, and permanent-delete routes. Current-front reads and switches are available at `/api/v1/fronting/current` and `/api/v1/fronting/switch`. Mutations require a UUID in `Idempotency-Key`; `ownerId` is always derived from the Auth0 session subject. Narrow note and coverage blocker routes live under `/api/v1/notes/:id/alter` and `/api/v1/coverage/:id`.
+Authenticated routes mirror the MCP contracts under `/api/v1`, with item,
+archive, restore, erasure-preview, and permanent-delete routes. Mutations require
+a UUID in `Idempotency-Key`. The owner ID is always derived from the session
+subject, never from the request body.
 
 ## Database
 
-`src/db/schema.ts` is the Drizzle model. Runtime queries use `pg` with Vercel Fluid pool attachment and `DATABASE_URL`; `scripts/migrate.ts` uses `DATABASE_URL_UNPOOLED`. `db/baseline.sql` captures the original empty schema and `drizzle/0001_mcp_crud.sql` is the reviewed forward migration.
+`src/db/schema.ts` is the Drizzle model of record. Runtime queries use `pg` with
+Vercel Fluid pool attachment and `DATABASE_URL`; migrations use
+`DATABASE_URL_UNPOOLED` because they hold a session advisory lock a pooler cannot
+keep. Migrations are hand-reviewed forward-only SQL in `drizzle/`, applied by
+`scripts/migrate.ts` — they are not generated from the schema.
 
-## Auth0 production checklist
+## Status and licence
 
-1. Create an Auth0 Regular Web Application for the website and enable only the Google social connection.
-2. Allow `https://system-arcades-me.vercel.app/auth/callback` as a callback URL and `https://system-arcades-me.vercel.app` as a logout URL and web origin.
-3. Create an Auth0 API whose identifier is `https://system-arcades-me.vercel.app/mcp`, signing algorithm is RS256, and scope is `system:companion`.
-4. In tenant Advanced Settings, enable **Resource Parameter Compatibility Profile** and **Include Issuer in Authorization Responses**.
-5. Promote the Google connection to a domain-level connection so third-party MCP clients can use it.
-6. Add `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `APP_BASE_URL`, and `MCP_RESOURCE_URL` to Vercel; keep `SYSTEM_DEMO_MODE=false`.
-7. Verify the website login and MCP flow with MCP Inspector before connecting the same `/mcp` URL in ChatGPT Developer Mode.
+This is one person's project, published so the design is readable. It is not
+accepting sign-ups, and there is no support commitment.
+
+**No licence is granted.** Without a LICENSE file the default applies: all rights
+reserved. You may read the code; you do not have permission to use, modify, or
+redistribute it.

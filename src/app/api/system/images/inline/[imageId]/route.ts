@@ -1,3 +1,4 @@
+import { getPilotService } from "@/server/pilot-service";
 import { NextResponse } from "next/server";
 import { requireImageReadCapability } from "@/server/mcp-authorization";
 import { readPrivateImage } from "@/server/private-images";
@@ -11,6 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ imag
     const capability = requireImageReadCapability(request);
     if (capability.imageId !== imageId) throw new Error("Image capability does not match the requested image.");
 
+    await getPilotService().assertAccess(capability.sub, "image");
     const image = await repository.getImage(capability.sub, imageId);
     if (!image) return new NextResponse("Not found", { status: 404 });
 

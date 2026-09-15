@@ -1,3 +1,4 @@
+import { requireSameOrigin } from "@/server/http-api";
 import { NextResponse } from "next/server";
 import { suggestCoverage } from "@/domain/coverage";
 import { requireOwnerId } from "@/server/auth";
@@ -24,14 +25,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const ownerId = await requireOwnerId(request);
     const body = await request.json();
     if (body.action === "saveProfile") {
       const input = profileSchema.parse(body.profile);
       const profile = await repository.saveProfile(ownerId, {
         name: input.name,
-        selfDescribedGender: input.selfDescribedGender || undefined,
-        description: input.description || undefined,
+        selfDescribedGender: input.selfDescribedGender,
+        description: input.description,
       }, body.profileId);
       return NextResponse.json({ profile });
     }
