@@ -22,11 +22,7 @@ function queryFixture(rows: unknown[][]) {
 
 function recordedRows(options: { persisted?: { id: string; window_start: string | null; window_end: string }; previous?: string | null; current?: boolean } = {}) {
   const current = options.current ?? true;
-<<<<<<< HEAD
-  const rows: unknown[][] = [[{ id: profileId, name: "Mouse Arcade" }]];
-=======
   const rows: unknown[][] = [[{ id: profileId, name: "Mouse Arcade" }], []];
->>>>>>> origin/main
   if (!current) return rows.concat([[]]);
   rows.push([{ id: frontingId, started_at: "2026-09-04T15:15:00.000Z" }]);
   rows.push(options.persisted ? [options.persisted] : []);
@@ -50,10 +46,7 @@ test("conversation catch-up accepts an explicit corrected Chicago window without
     timeZone: "America/Chicago",
     provenance: "USER_SELECTED",
   });
-<<<<<<< HEAD
-=======
   assert.equal(handoff.elapsedSeconds, 72900);
->>>>>>> origin/main
   assert.equal(handoff.historyAccess, "HOST_REQUIRED");
   assert.match(handoff.instructions.join(" "), /cannot retrieve other conversations/i);
 });
@@ -70,10 +63,7 @@ test("explicit DST offsets are authoritative while timezone is display context",
   const { service, calls } = queryFixture([[{ id: profileId, name: "Mouse Arcade" }]]);
   const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, startAt: "2026-03-08T01:30:00-06:00", endAt: "2026-03-08T03:30:00-05:00", timeZone: "America/Chicago" });
   assert.deepEqual(handoff.window, { startAt: "2026-03-08T07:30:00.000Z", endAt: "2026-03-08T08:30:00.000Z", timeZone: "America/Chicago", provenance: "USER_SELECTED" });
-<<<<<<< HEAD
-=======
   assert.equal(handoff.elapsedSeconds, 3600, "DST duration uses actual instants");
->>>>>>> origin/main
   assert.equal(calls.length, 1, "explicit correction validates the owner-scoped profile but does not consult history");
   assert.ok(calls.every(({ sql }) => !/insert|update|delete|begin/i.test(sql)), "read-only handoff must not write");
 });
@@ -96,11 +86,7 @@ test("recorded previous session is used only for the named current profile", asy
   const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, timeZone: "America/Chicago" });
   assert.deepEqual(handoff.window, { startAt: "2026-09-03T19:00:00.000Z", endAt: "2026-09-04T15:15:00.000Z", timeZone: "America/Chicago", provenance: "RECORDED_FRONTING_WINDOW" });
   assert.equal(calls[1].values?.[1], profileId);
-<<<<<<< HEAD
-  assert.equal(calls[3].values?.[1], profileId);
-=======
   assert.equal(calls[4].values?.[1], profileId);
->>>>>>> origin/main
 });
 
 test("unknown, non-current, and malformed recorded history require selected dates", async () => {

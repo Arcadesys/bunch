@@ -15,16 +15,12 @@ process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
 
 test("MCP descriptors expose exact schemas and safety annotations", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-<<<<<<< HEAD
-  const server = createMcpServer("demo:descriptor", {} as SystemService);
-=======
   const service = { getCurrentPresence: async () => ({hosting:null,fronting:[],legacyCurrentFront:null}),
     getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const catchUp = new CatchUpService({} as never);
   catchUp.openForPresence = async () => null;
   catchUp.openForCurrentFronter = async () => null;
   const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
->>>>>>> origin/main
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
@@ -37,12 +33,6 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, tool.name === "generate_scene", `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-<<<<<<< HEAD
-    assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v10.html");
-    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
-    assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
-    const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
-=======
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
@@ -50,7 +40,6 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
->>>>>>> origin/main
     assert.equal((handoff.structuredContent as { historyAccess?: string }).historyAccess, "HOST_REQUIRED");
     assert.equal((handoff.structuredContent as { window?: { provenance?: string } }).window?.provenance, "USER_SELECTED");
     assert.ok(byName.get("open_private_photo_gallery")?.outputSchema?.properties?.url, "gallery fallback must return a URL");

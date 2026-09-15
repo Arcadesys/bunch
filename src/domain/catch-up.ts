@@ -42,11 +42,7 @@ export const catchUpSessionSchema = z.object({
   stateVersion: z.number().int().nonnegative(),
 });
 
-<<<<<<< HEAD
-const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value, context) => {
-=======
 export const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine((value, context) => {
->>>>>>> origin/main
   if (value !== "UTC" && !value.includes("/")) {
     context.addIssue({ code: "custom", message: "Use an IANA time zone, such as America/Chicago." });
     return;
@@ -55,22 +51,16 @@ export const ianaTimeZoneSchema = z.string().trim().min(1).max(100).superRefine(
 });
 
 export const prepareConversationCatchUpSchema = z.object({
-<<<<<<< HEAD
-=======
   periodId: uuidSchema.optional(),
   frontingSessionId: uuidSchema.optional(),
->>>>>>> origin/main
   alterId: uuidSchema,
   startAt: isoTimestampSchema.optional(),
   endAt: isoTimestampSchema.optional(),
   timeZone: ianaTimeZoneSchema,
 }).strict().superRefine((value, context) => {
-<<<<<<< HEAD
-=======
   if (value.periodId && value.frontingSessionId) {
     context.addIssue({ code: "custom", path: ["periodId"], message: "Choose one presence period or legacy session." });
   }
->>>>>>> origin/main
   if (Boolean(value.startAt) !== Boolean(value.endAt)) {
     context.addIssue({ code: "custom", path: [value.startAt ? "endAt" : "startAt"], message: "Provide both startAt and endAt, or neither." });
   }
@@ -84,23 +74,14 @@ export const conversationCatchUpHandoffSchema = z.object({
   alterId: uuidSchema,
   alterName: z.string(),
   historyAccess: z.literal("HOST_REQUIRED"),
-<<<<<<< HEAD
-=======
   elapsedSeconds: z.number().nonnegative().optional(),
->>>>>>> origin/main
   window: z.object({
     startAt: isoTimestampSchema,
     endAt: isoTimestampSchema,
     timeZone: z.string(),
-<<<<<<< HEAD
-    provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW"]),
-  }).optional(),
-  source: z.object({ frontingSessionId: uuidSchema, catchUpSessionId: uuidSchema.optional() }).optional(),
-=======
     provenance: z.enum(["USER_SELECTED", "RECORDED_FRONTING_WINDOW", "RECORDED_PRESENCE_WINDOW"]),
   }).optional(),
   source: z.object({ presencePeriodId: uuidSchema.optional(), kind: z.enum(["HOSTING","FRONTING"]).optional(), frontingSessionId: uuidSchema.optional(), catchUpSessionId: uuidSchema.optional() }).optional(),
->>>>>>> origin/main
   instructions: z.array(z.string()).min(1),
 });
 
