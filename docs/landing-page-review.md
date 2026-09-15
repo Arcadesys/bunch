@@ -4,7 +4,7 @@ Win condition: existing accepted beach group-photo hero, supporting generated po
 
 One implementation pass, then a correction for an inherited dark-theme headline color. Landing styles are scoped beneath `.bunch-landing`; private-app styles and authorization stay intact.
 
-Anonymous `/` shows the landing page. Existing authenticated users retain CatchUpCommandCenter at `/`. `/welcome` always presents the public page for review while signed in. Sign-in uses the existing `/auth/login` route. Production demo mode is false. No registration, database, or account policy changes.
+`/` keeps the approved public landing page from #33 for anonymous visitors, and authenticated users retain CatchUpCommandCenter there. This alternative landing page is served only at `/welcome`, in either state, for side-by-side review. Sign-in uses the existing `/auth/login` route. Production demo mode is false. No registration, database, or account policy changes.
 
 Assets copied without edits: accepted group photo from writing-archive/blog/arcadesblog/assets/bunch-the-lineup.jpg; Addie portrait from Downloads/addie.jpg; Lucy portrait from 2026-09-02/f/outputs/lucy-profile-avatar-v1.png. User explicitly approved existing generated artwork for the page.
 
