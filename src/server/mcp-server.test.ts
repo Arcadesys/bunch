@@ -186,8 +186,10 @@ test("completed native scenes reach the chat only through the scene widget", asy
 });
 
 test("alter results name the generate_scene call instead of asking for an upload", async () => {
-  const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
-  const mouse = { ...lucy, id: "66666666-6666-4666-8666-666666666666", name: "Mouse Arcade", aliases: [], imageCount: 0, appearanceReferenceImageIds: [] };
+  const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
+  process.env.MCP_TOKEN_SIGNING_SECRET = "scene-routing-metadata-test-secret";
+  const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [{ id: "55555555-5555-4555-8555-555555555555", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00.000Z" }], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
+  const mouse = { ...lucy, id: "66666666-6666-4666-8666-666666666666", name: "Mouse Arcade", aliases: [], imageCount: 0, images: [], appearanceReferenceImageIds: [] };
   const system = { getAlter: async (_ownerId: string, alterId: string) => (alterId === lucy.id ? lucy : mouse), listAlters: async () => ({ data: [lucy, mouse] }) } as unknown as SystemService;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createMcpServer("demo:scene-routing", system, undefined, { listProfiles: async () => [] });
@@ -204,7 +206,28 @@ test("alter results name the generate_scene call instead of asking for an upload
     assert.ok(listed.includes('alterNames ["Lucy Arcade"]'), listed);
     assert.doesNotMatch(listed, /Mouse Arcade/);
     assert.equal(text(await client.callTool({ name: "get_alter", arguments: { alterId: mouse.id } })), "Loaded the alter record.");
+
+    // ChatGPT called the prepare tool for Lucy, read "Use the attached appearance
+    // reference", and asked the user to attach one. The route must come first.
+    const { tools } = await client.listTools();
+    for (const name of ["prepare_alter_image_prompt", "prepare_furry_scene"]) {
+      const description = tools.find((tool) => tool.name === name)?.description ?? "";
+      assert.match(description, /call generate_scene directly/, name);
+      assert.doesNotMatch(description, /before drawing|If this host cannot/, name);
+    }
+    const prepared = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Lucy in a big cozy sweater", alters: [lucy.id] } });
+    const route = text(prepared);
+    assert.ok(route.startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), route);
+    assert.match(route, /do not ask the user to upload a photo Bunch already holds/);
+    assert.match((prepared.content as Array<{ text: string }>)[1].text, /Use the attached appearance reference/, "the packet itself is unchanged for external adapters");
+    assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
+    const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
+    assert.ok(text(scene).startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), text(scene));
+    const unready = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Portrait", alters: [mouse.id] } });
+    assert.doesNotMatch(JSON.stringify(unready.content), /generate_scene/, "generate_scene would reject a person without references");
   } finally {
+    if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
+    else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
     await client.close();
     await server.close();
   }
