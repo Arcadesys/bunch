@@ -137,7 +137,7 @@ const alterSelect = `select a.id, a.name, a.pronouns, a.self_described_gender, a
   from alter_profile a
   left join alter_appearance appearance on appearance.owner_id = a.owner_id and appearance.alter_id = a.id`;
 
-const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on, t.priority, t.coverage_id,
+const todoSelect = `select t.id, t.title, t.details, t.status, t.due_on::text as due_on, t.priority, t.coverage_id,
   t.version, t.created_at, t.updated_at, t.archived_at,
   coalesce((select array_agg(ta.alter_id order by ta.alter_id) from todo_assignee ta
     where ta.owner_id = t.owner_id and ta.todo_id = t.id), '{}') as assignee_alter_ids,
