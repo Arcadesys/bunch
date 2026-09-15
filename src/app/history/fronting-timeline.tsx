@@ -79,6 +79,7 @@ export function FrontingTimeline() {
           {record.origin === "SYSTEM_HOST_SNAPSHOT" ? <p>Start based on the previously recorded host timestamp.</p> : null}
           <p><strong>From</strong> <time dateTime={record.startedAt}>{stamp(record.startedAt)}</time></p>
           <p><strong>To</strong> {record.endedAt ? <time dateTime={record.endedAt}>{stamp(record.endedAt)}</time> : <strong>{record.kind === "HOSTING" ? "Hosting · no end recorded" : record.kind === "FRONTING" ? "Fronting · no end recorded" : "Legacy record · no end recorded"}</strong>}</p>
+          {record.energy || record.trigger ? <p><strong>Reported at arrival</strong> {[record.energy ? `energy ${record.energy} of 5` : "", record.trigger ?? ""].filter(Boolean).join(" · ")}</p> : null}
         </li>)}
       </ol>}
       {result.meta.nextCursor ? <button disabled={busy} onClick={() => void load(range.from, range.to, result.meta.nextCursor)}>Load older records</button> : null}

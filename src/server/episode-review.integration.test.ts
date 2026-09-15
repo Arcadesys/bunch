@@ -10,6 +10,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./mcp-server";
 
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 integration("episode review: four-month MCP return, retry, ownership and independent presence", async () => {
   const admin = new Pool({ connectionString: process.env.TEST_DATABASE_URL });

@@ -5,6 +5,9 @@ import { saveEpisodeReviewSchema, conversationSummarySchema, listConversationSum
 import { PilotService } from "./pilot-service";
 import { SystemError } from "./system-error";
 
+// Every read re-parses the stored JSON through the zod schema, so the vocabulary in
+// sourceReferences.kind is a persisted contract: narrowing it would turn existing rows
+// into read errors rather than degrading gracefully.
 const columns = `id,alter_id as "alterId",start_at as "startAt",end_at as "endAt",time_zone as "timeZone",summary,coverage,created_at as "createdAt",expires_at as "expiresAt",catch_up_session_id as "catchUpSessionId",revision,generated_at as "generatedAt",source_client as "sourceClient",source_references as "sourceReferences"`;
 function view(row: Record<string, unknown>) {
   return conversationSummarySchema.parse(Object.fromEntries(Object.entries(row).map(([k,v]) => [k,v instanceof Date ? v.toISOString() : v])));

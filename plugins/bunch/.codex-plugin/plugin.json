@@ -1,0 +1,26 @@
+{
+  "name": "bunch",
+  "version": "0.2.0",
+  "description": "A hosted fictional Demo system, plus private hosting, fronting, notes and catch-up after sign-in.",
+  "author": {
+    "name": "Arcadesys"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Bunch",
+    "shortDescription": "Your private system companion.",
+    "longDescription": "Connect your own invited account. Track hosting and overlapping fronting periods, keep notes and tasks, and prepare conversation catch-up without inferring absence.",
+    "developerName": "Arcadesys",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Show the Demo system.",
+      "Show my recorded hosting and fronting.",
+      "Help me catch up using available conversations.",
+      "Show my private notes."
+    ],
+    "logo": "./assets/bunch-barrel-monkeys.png",
+    "composerIcon": "./assets/bunch-barrel-monkeys.png"
+  },
+  "mcpServers": "./.mcp.json"
+}

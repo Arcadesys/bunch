@@ -2,10 +2,12 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { GalleryShareControls } from "./gallery-share-controls";
+import { TenantInvitationControls } from "./tenant-invitation-controls";
 
 type Account = {
   state: string;
   canShareGallery?: boolean;
+  canManageTenantInvitations?: boolean;
   role?: string;
   displayName?: string;
   emailVerified: boolean;
@@ -37,13 +39,24 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
     const timer = setTimeout(() => {
       void refresh();
       const value = new URLSearchParams(location.hash.slice(1)).get("invite");
+      const saved = sessionStorage.getItem("bunch-invitation-token");
       if (value) {
         setToken(value);
+        sessionStorage.setItem("bunch-invitation-token", value);
         history.replaceState(null, "", location.pathname);
-      }
+      } else if (saved) setToken(saved);
     }, 0);
     return () => clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    if (!loaded || !account || location.hash !== "#tenant-invitations-heading") return;
+    const target = document.getElementById("tenant-invitations-heading");
+    if (!target) return;
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "start" });
+      target.focus();
+    });
+  }, [account, loaded]);
   async function accept(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
@@ -66,6 +79,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
           result.error?.message ?? "Invitation could not be accepted.",
         );
       setToken("");
+      sessionStorage.removeItem("bunch-invitation-token");
       setMessage(
         "Your private system account is ready. Add an alter profile, then connect your clients.",
       );
@@ -89,7 +103,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download = "diddy-records.json";
+      link.download = "bunch-records.json";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setImages(data.images);
@@ -156,7 +170,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">
-        <Link href="/">Bunch</Link>
+        <Link href="/home">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/connect">Connect clients</a>
       </nav>
@@ -255,10 +269,14 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
                   <p>
                     <a href="/profiles">Add or manage alter profiles</a>
                   </p>
+                  <p>
+                    <a href="/account/reference-credentials">Manage laptop reference credentials</a>
+                  </p>
                 </>
               )}
               {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}
               {account.canShareGallery && <GalleryShareControls />}
+              {account.canManageTenantInvitations && <TenantInvitationControls />}
               {["ACTIVE", "REVOKED"].includes(account.state) && (
                 <button onClick={() => void exportRecords()} disabled={busy}>
                   Export records and image list

@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test("@eval read states do not present an unverified front or empty private records, and retry recovers", async ({ page, harness }) => {
   harness.readStatus = 500;
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByRole("heading", { name: "Catch-up could not be read" })).toBeVisible();
   await expect(page.getByText("Catch-up · recorded window", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Nothing in this view needs your eyes.", { exact: true })).toHaveCount(0);

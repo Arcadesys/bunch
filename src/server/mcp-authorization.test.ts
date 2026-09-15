@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
-import { COMPANION_SCOPE, issueImageReadCapability, requireImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { COMPANION_SCOPE, issueImageReadCapability, issueSceneImageReadCapability, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
 
 const config: McpAuthorizationConfig = {
   issuer: "https://tenant.example.auth0.com/",
@@ -47,6 +47,24 @@ test("inline image capabilities are owner- and image-scoped", () => {
     const capability = issueImageReadCapability("auth0:test-owner", "06117cba-18fa-4ae1-a39e-e1bb119a76c6");
     const claims = requireImageReadCapability(new Request(`https://system.example/api/system/images/inline/06117cba-18fa-4ae1-a39e-e1bb119a76c6?cap=${capability}`));
     assert.deepEqual({ sub: claims.sub, imageId: claims.imageId, scope: claims.scope }, { sub: "auth0:test-owner", imageId: "06117cba-18fa-4ae1-a39e-e1bb119a76c6", scope: "image:read" });
+  } finally {
+    if (original === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
+    else process.env.MCP_TOKEN_SIGNING_SECRET = original;
+  }
+});
+
+test("scene image capabilities are owner- and render-scoped and never interchangeable with image capabilities", () => {
+  const original = process.env.MCP_TOKEN_SIGNING_SECRET;
+  process.env.MCP_TOKEN_SIGNING_SECRET = "test-signing-secret-with-enough-entropy";
+  try {
+    const renderId = "3f1b7c0e-5d2a-4c9b-8e61-2a7d4f0c9b13";
+    const capability = issueSceneImageReadCapability("auth0:test-owner", renderId);
+    const claims = requireSceneImageReadCapability(new Request(`https://system.example/api/system/native-scenes/inline/${renderId}?cap=${capability}`));
+    assert.deepEqual({ sub: claims.sub, renderId: claims.renderId, scope: claims.scope }, { sub: "auth0:test-owner", renderId, scope: "scene:read" });
+    assert.throws(() => requireImageReadCapability(new Request(`https://system.example/api/system/images/inline/${renderId}?cap=${capability}`)), /image view capability/);
+    const imageCapability = issueImageReadCapability("auth0:test-owner", renderId);
+    assert.throws(() => requireSceneImageReadCapability(new Request(`https://system.example/api/system/native-scenes/inline/${renderId}?cap=${imageCapability}`)), /scene view capability/);
+    assert.throws(() => requireSceneImageReadCapability(new Request(`https://system.example/api/system/native-scenes/inline/${renderId}`)), /scene view capability/);
   } finally {
     if (original === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
     else process.env.MCP_TOKEN_SIGNING_SECRET = original;

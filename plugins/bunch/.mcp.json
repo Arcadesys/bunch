@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bunch": {
+      "type": "http",
+      "url": "https://system.thearcades.me/mcp"
+    }
+  }
+}

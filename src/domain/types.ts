@@ -9,6 +9,13 @@ export type PrivateImage = {
 };
 
 export type AlterProfile = {
+  pronouns?: string;
+  species?: string;
+  visualDescription?: string;
+  presentation?: string;
+  signatureTraits?: string[];
+  styleTags?: string[];
+  imageDoNotChange?: string[];
   id: string;
   ownerId: string;
   name: string;

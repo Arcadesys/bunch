@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Share = { id: string; expiresAt: string | null; createdAt?: string; revokedAt?: string | null; token?: string; url?: string };
+type Share = { showCurrentFronting?: boolean; id: string; expiresAt: string | null; createdAt?: string; revokedAt?: string | null; token?: string; url?: string };
 const durations = [
   ["1h", "1 hour"], ["2h", "2 hours"], ["4h", "4 hours"], ["1d", "1 day"], ["1w", "1 week"], ["forever", "Forever"],
 ] as const;
@@ -12,7 +12,7 @@ function displayExpiry(expiresAt: string | null) { return expiresAt ? `Expires $
 function shareUrl(share: Share) { return share.url ?? (share.token ? `${location.origin}/gallery/share/${encodeURIComponent(share.token)}` : ""); }
 
 
-function ShareRow({ share, busy, onRevoke, onMessage }: { share: Share; busy: boolean; onRevoke: () => void; onMessage: (message: string) => void }) {
+function ShareRow({ share, busy, onRevoke, onMessage, onToggleFronting }: { share: Share; busy: boolean; onRevoke: () => void; onToggleFronting: () => void; onMessage: (message: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const url = shareUrl(share);
   const [openedAt] = useState(() => Date.now());
@@ -30,6 +30,8 @@ function ShareRow({ share, busy, onRevoke, onMessage }: { share: Share; busy: bo
   return <li><div>
     {share.createdAt && <p>Created {new Date(share.createdAt).toLocaleString()}</p>}
     <p>{share.revokedAt ? "Revoked" : displayExpiry(share.expiresAt)}</p>
+    <p>Current fronting: {share.showCurrentFronting ? "Shared" : "Not shared"}</p>
+    {!inactive && <button className="button button-secondary" type="button" disabled={busy} onClick={onToggleFronting}>{share.showCurrentFronting ? "Stop sharing current fronting" : "Share current fronting on this link"}</button>}
     {url && !inactive ? <>
       <label>Gallery link<input ref={input} readOnly value={url} onFocus={event => event.currentTarget.select()} /></label>
       <button type="button" className="button" onClick={() => void copy()}>Copy link</button>
@@ -75,6 +77,21 @@ export function GalleryShareControls() {
     } catch { setLoaded(false); setMessage("Link creation could not be confirmed. Reload gallery links to check before creating another. A link whose full URL was not received can be revoked and replaced."); }
     finally { inFlight.current = false; setBusy(false); }
   }
+  async function toggleFronting(share: Share) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(`/api/v1/account/gallery-shares/${encodeURIComponent(share.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ showCurrentFronting: !share.showCurrentFronting }),
+      });
+      const result = await response.json() as { data?: Share };
+      if (!response.ok || !result.data) throw new Error();
+      setShares(current => current.map(item => item.id === share.id ? { ...item, ...result.data } : item));
+      setMessage(result.data.showCurrentFronting ? "Current recorded fronting is now shared on this link." : "Current fronting is no longer shared on this link.");
+    } catch { setMessage("The fronting setting could not be confirmed. Reload gallery links to check it."); setLoaded(false); }
+    finally { inFlight.current = false; setBusy(false); }
+  }
   async function revoke(id: string) {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -89,14 +106,15 @@ export function GalleryShareControls() {
   }
   return <section className="gallery-share-controls" aria-labelledby="gallery-share-heading">
     <h2 id="gallery-share-heading">Share a read-only photo gallery</h2>
-    <p>Anyone with the link can view your whole system’s profile names and all gallery photos, including photos added later and retained archived profiles. This does not share notes, todos, or hosting/fronting records. Forwarding, downloads, and screenshots cannot be revoked.</p>
+    <p>Anyone with the link can view your whole system’s profile names and all gallery photos, including photos added later and retained archived profiles. Notes, todos, and hosting records stay private. Current recorded fronting is shared only when you enable it for a link below. This shares names of people currently recorded as fronting, including overlapping people, but no history or record details. Forwarding, downloads, and screenshots cannot be revoked.</p>
+    <p>For a stable link to pin in Discord, choose Forever, copy the link, then enable current fronting below. The URL stays the same as fronting changes.</p>
     <label>Link lifetime<select value={duration} onChange={(event) => setDuration(event.target.value as typeof duration)}>{durations.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
     <button className="button" type="button" disabled={busy || !loaded} onClick={() => void create()}>Create gallery link</button>
     {!loaded && <button type="button" onClick={() => void refresh()}>Retry loading gallery links</button>}
     {message && <p role="status" aria-live="polite" className="pilot-notice">{message}</p>}
     <p>Copy a new link before leaving or reloading this page.</p>
     <h3>Existing gallery links</h3>
-    {shares.length ? <ul className="gallery-share-list">{shares.map(share => <ShareRow key={share.id} share={share} busy={busy} onMessage={setMessage} onRevoke={() => void revoke(share.id)} />)}</ul> : loaded ? <p>No gallery links.</p> : <p>Loading gallery links…</p>}
+    {shares.length ? <ul className="gallery-share-list">{shares.map(share => <ShareRow key={share.id} share={share} busy={busy || !loaded} onToggleFronting={() => void toggleFronting(share)} onMessage={setMessage} onRevoke={() => void revoke(share.id)} />)}</ul> : loaded ? <p>No gallery links.</p> : <p>Loading gallery links…</p>}
 
   </section>;
 }

@@ -25,6 +25,10 @@ export function ProfileManagement() {
   const [sharedContext, setSharedContext] = useState("");
   const [appearance, setAppearance] = useState<Record<string, Pick<AlterView, "appearanceNotes" | "appearanceReferenceImageIds" | "version">>>({});
   const saveInFlight = useRef(false);
+  const editingVersion = useRef<number | undefined>(undefined);
+  const saveAttempt = useRef<{ body: string; url: string; requestId: string } | null>(null);
+  const [profileSearch, setProfileSearch] = useState("");
+
 
   const load = async (successNotice = "Private profiles loaded.") => {
     try {
@@ -49,7 +53,22 @@ export function ProfileManagement() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     try {
-      await systemRequest("POST", { action: "saveProfile", profileId, profile: { name: form.get("name"), selfDescribedGender: form.get("gender"), description: form.get("description") } });
+      const text = (key: string) => String(form.get(key) || "").trim();
+      const list = (key: string) => text(key).split("\n").map((item) => item.trim()).filter(Boolean);
+      const body = JSON.stringify({ name: text("name"), selfDescribedGender: text("gender"), description: text("description"),
+        pronouns: text("pronouns"), species: text("species"), visualDescription: text("visualDescription"), presentation: text("presentation"),
+        signatureTraits: list("signatureTraits"), styleTags: list("styleTags"), imageDoNotChange: list("imageDoNotChange"),
+        ...(profileId ? { expectedVersion: editingVersion.current } : {}) });
+      const url = profileId ? `/api/v1/alters/${profileId}` : "/api/v1/alters";
+      if (saveAttempt.current?.body !== body || saveAttempt.current?.url !== url) saveAttempt.current = { body, url, requestId: crypto.randomUUID() };
+      const response = await fetch(url, { method: profileId ? "PATCH" : "POST", headers: { ...demoHeaders, "Idempotency-Key": saveAttempt.current.requestId }, body });
+      const data = await response.json();
+      if (response.status === 409) {
+        saveAttempt.current = null;
+        throw new Error("This profile changed since you opened it. Your entries are still here. Copy them before reloading to review the latest profile.");
+      }
+      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Unable to save profile.");
+      saveAttempt.current = null;
       formElement.reset();
       setSelectedProfileId("");
       await load("Profile saved privately.");
@@ -129,10 +148,20 @@ export function ProfileManagement() {
     <label>Name<input required name="name" maxLength={120} defaultValue={profile?.name || ""} /></label>
     <label>Self-described gender <span className="optional">optional</span><input name="gender" maxLength={120} defaultValue={profile?.selfDescribedGender || ""} /></label>
     <label>Description <span className="optional">optional</span><textarea name="description" maxLength={1000} rows={3} defaultValue={profile?.description || ""} /></label>
+    <fieldset className="form-stack visual-identity"><legend>Visual identity</legend>
+      <p>Saved identity for image prompts. Leave unknown details empty.</p>
+      <label>Species<input name="species" maxLength={500} defaultValue={profile?.species || ""} /></label>
+      <label>Visual description<textarea name="visualDescription" maxLength={1000} rows={3} defaultValue={profile?.visualDescription || ""} /></label>
+      <label>Presentation<input name="presentation" maxLength={500} defaultValue={profile?.presentation || ""} /></label>
+      <label>Pronouns<input name="pronouns" maxLength={500} defaultValue={profile?.pronouns || ""} /></label>
+      <label>Signature traits — one per line<textarea name="signatureTraits" rows={3} defaultValue={profile?.signatureTraits?.join("\n") || ""} /></label>
+      <label>Style tags — one per line<textarea name="styleTags" rows={3} defaultValue={profile?.styleTags?.join("\n") || ""} /></label>
+      <label>Keep unchanged — one per line<textarea name="imageDoNotChange" rows={3} defaultValue={profile?.imageDoNotChange?.join("\n") || ""} /></label>
+    </fieldset>
     <div className="actions"><button className="button" type="submit">{profile ? "Save profile changes" : "Add private profile"}</button>{profile && <button className="button button-secondary" type="button" onClick={() => setSelectedProfileId("")}>Cancel editing</button>}</div>
   </form>;
 
-  return <main className="shell">
+  return <main className="shell profiles-page">
     <AppNavigation current="PROFILES" />
     <header className="site-header"><div><p className="eyebrow">Bunch · private profiles</p><h1>People</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
     <p className="notice" role="status">{notice}</p>
@@ -140,13 +169,15 @@ export function ProfileManagement() {
     {loadState === "ready" && <>
       <section className="panel" aria-labelledby="profiles-heading"><h2 id="profiles-heading">Profile lineup</h2>
         <p>View profile pictures and self-described details. Open a profile’s controls to make changes.</p>
-        {state.profiles.length === 0 ? <p>No profiles are recorded yet. Add a private profile below.</p> : <ul className="profile-list">{state.profiles.map((profile) => <li key={profile.id}>
+        <label>Search profiles by name, species, or style<input type="search" value={profileSearch} onChange={(event) => setProfileSearch(event.target.value)} /></label>
+        {state.profiles.length > 0 && !state.profiles.some((profile) => [profile.name, profile.species, ...(profile.styleTags ?? [])].some((value) => value?.toLowerCase().includes(profileSearch.toLowerCase()))) && <p>No matching profiles.</p>}
+        {state.profiles.length === 0 ? <p>No profiles are recorded yet. Add a private profile below.</p> : <ul className="profile-list">{state.profiles.filter((profile) => [profile.name, profile.species, ...(profile.styleTags ?? [])].some((value) => value?.toLowerCase().includes(profileSearch.toLowerCase()))).map((profile) => <li key={profile.id}>
           <article className="profile-entry" aria-labelledby={`profile-name-${profile.id}`}>
-            <div className="profile-summary"><h3 id={`profile-name-${profile.id}`}>{profile.name}</h3>{profile.selfDescribedGender && <p>{profile.selfDescribedGender}</p>}<p>{profile.description || "No description added."}</p></div>
+            <div className="profile-summary"><h3 id={`profile-name-${profile.id}`}>{profile.name}</h3>{profile.selfDescribedGender && <p>{profile.selfDescribedGender}</p>}<p>{profile.description || "No description added."}</p><p>Species: {profile.species || "Not recorded"}</p><p>Visual description: {profile.visualDescription || "Not recorded"}</p></div>
             {profile.profilePicture ? <Image className="profile-picture" src={privateImageUrl(profile.profilePicture.storageKey)} alt={`Profile picture for ${profile.name}`} width={420} height={420} sizes="(max-width: 800px) 90vw, 420px" unoptimized /> : <p className="empty-picture">No profile picture selected.</p>}
             <details className="profile-disclosure" onToggle={(event) => { if (event.currentTarget.open) void loadAppearance(profile); if (!event.currentTarget.open && selectedProfileId === profile.id) setSelectedProfileId(""); }}>
               <summary>Manage {profile.name}’s profile and pictures</summary>
-              {selectedProfileId === profile.id ? profileForm(profile) : <button className="button button-secondary" type="button" onClick={() => setSelectedProfileId(profile.id)}>Edit {profile.name}’s details</button>}
+              {selectedProfileId === profile.id ? profileForm(profile) : <button className="button button-secondary" type="button" onClick={() => { editingVersion.current = profile.version; setSelectedProfileId(profile.id); }}>Edit {profile.name}’s details</button>}
               <form onSubmit={uploadImage} className="upload-form compact-upload"><input type="hidden" name="alterId" value={profile.id} /><input type="hidden" name="expectedVersion" value={profile.version} /><input type="hidden" name="setAsProfilePicture" value="true" /><label>Choose a new profile picture<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label><button className="button" type="submit">Change {profile.name}’s profile picture</button></form>
               {profile.images.length > 0 && <section aria-labelledby={`gallery-${profile.id}`}><h4 id={`gallery-${profile.id}`}>Private picture history</h4><p className="small">Earlier pictures stay private and available here.</p><div className="profile-images">
                 {profile.images.map((image, index) => <figure className="profile-image-card" key={image.id}><Image className="profile-image" src={privateImageUrl(image.storageKey)} alt={`Private picture ${index + 1} for ${profile.name}`} width={240} height={240} sizes="(max-width: 800px) 70vw, 240px" unoptimized /><figcaption>{image.isProfilePicture ? <span className="selected-state">Selected as profile picture</span> : <button className="button button-secondary" type="button" onClick={() => chooseProfilePicture(profile, image.id)}>Use picture {index + 1} for {profile.name}</button>}</figcaption></figure>)}

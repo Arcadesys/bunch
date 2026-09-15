@@ -153,6 +153,9 @@ export function getDemoCatchUpSession(ownerId = "demo:catch-up") {
   return session;
 }
 
+// A review layer over records that already exist. Marking a catch-up item reviewed
+// never edits the underlying note, todo, or decision - it only records that someone
+// arriving has now seen it.
 export class CatchUpService {
   constructor(private readonly pool: Pool = getDatabasePool()) {}
 

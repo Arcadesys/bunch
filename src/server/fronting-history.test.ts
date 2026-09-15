@@ -8,13 +8,18 @@ import { frontingHistoryQuerySchema } from "@/domain/fronting-history";
 import { SystemService } from "./system-service";
 import { createMcpServer } from "./mcp-server";
 
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
 test("history rejects unzoned timestamps and unbounded page sizes", () => {
   assert.equal(frontingHistoryQuerySchema.safeParse({ from: "2026-09-05T00:00:00" }).success, false);
   assert.equal(frontingHistoryQuerySchema.safeParse({ limit: 101 }).success, false);
   assert.equal(frontingHistoryQuerySchema.safeParse({ from: "2026-09-05T00:00:00-05:00" }).success, true);
 });
 
-test("DIDdy exposes and calls owner-scoped read-only fronting history", async () => {
+test("Working Monkeys exposes and calls owner-scoped read-only fronting history", async () => {
   const response = { data: [], meta: { recordedOnly: true as const } };
   const service = { listFrontingHistory: async (owner: string, input: unknown) => {
     assert.equal(owner, "test:history");

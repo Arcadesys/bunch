@@ -1,3 +1,8 @@
+// Image bytes never enter model-visible output. Production stores the file in private
+// blob storage and keeps only its opaque pathname, which an owner-authorized route
+// streams back; demo mode writes to private-uploads/ instead so a local run needs no
+// cloud account.
+
 import { getPilotService } from "./pilot-service";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";

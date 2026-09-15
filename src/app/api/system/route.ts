@@ -32,8 +32,8 @@ export async function POST(request: Request) {
       const input = profileSchema.parse(body.profile);
       const profile = await repository.saveProfile(ownerId, {
         name: input.name,
-        selfDescribedGender: input.selfDescribedGender || undefined,
-        description: input.description || undefined,
+        selfDescribedGender: input.selfDescribedGender,
+        description: input.description,
       }, body.profileId);
       return NextResponse.json({ profile });
     }

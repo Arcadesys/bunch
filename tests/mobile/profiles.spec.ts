@@ -7,6 +7,12 @@ const profiles = [
 
 test("profiles show the lineup before editing and save the chosen profile", async ({ page }) => {
   const writes: unknown[] = [];
+  await page.route("**/api/v1/alters/test-finch", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { data: { ...profiles[1], appearanceReferenceImageIds: [] } } });
+    expect(route.request().method()).toBe("PATCH");
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { data: profiles[1] } });
+  });
   await page.route("**/api/system", async (route) => {
     if (route.request().method() === "POST") {
       writes.push(route.request().postDataJSON());
@@ -29,7 +35,7 @@ test("profiles show the lineup before editing and save the chosen profile", asyn
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("Test Finch revised");
   await page.getByRole("button", { name: "Save profile changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Profile saved privately.");
-  expect(writes).toEqual([{ action: "saveProfile", profileId: "test-finch", profile: { name: "Test Finch revised", selfDescribedGender: "Finch's description", description: "Second profile" } }]);
+  expect(writes).toEqual([expect.objectContaining({ name: "Test Finch revised", selfDescribedGender: "Finch's description", description: "Second profile", expectedVersion: 1, species: "", signatureTraits: [] })]);
 });
 
 test("unavailable profiles do not assert empty records and retry restores the lineup", async ({ page }) => {
@@ -43,12 +49,17 @@ test("unavailable profiles do not assert empty records and retry restores the li
   status = 200;
   await page.getByRole("button", { name: "Retry loading profiles" }).click();
   await expect(page.getByRole("heading", { name: "Profile lineup" })).toBeVisible();
-  await expect(page.getByText("No current front is recorded.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
 });
 
 
 test("adding a profile stays a create when another profile editor is open", async ({ page }) => {
   const writes: Record<string, unknown>[] = [];
+  await page.route("**/api/v1/alters", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { data: {} } });
+  });
   await page.route("**/api/system", async (route) => {
     if (route.request().method() === "POST") {
       writes.push(route.request().postDataJSON());
@@ -62,17 +73,85 @@ test("adding a profile stays a create when another profile editor is open", asyn
   await add.getByRole("textbox", { name: "Name", exact: true }).fill("Test Wren");
   await page.getByText("Manage Test Finch’s profile and pictures", { exact: true }).click();
   await page.getByRole("button", { name: "Edit Test Finch’s details" }).click();
-  const reflow = await page.evaluate(() => {
-    const client = document.documentElement.clientWidth;
-    const overflow = [...document.querySelectorAll<HTMLElement>("*")]
-      .map((element) => ({ tag: element.tagName, className: element.className, right: element.getBoundingClientRect().right }))
-      .filter((element) => element.right > client + 1);
-    return { client, scroll: document.documentElement.scrollWidth, overflow };
-  });
+  const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(reflow.scroll, "Expanded profile editor must fit the viewport").toBeLessThanOrEqual(reflow.client + 1);
   await add.getByRole("button", { name: "Add private profile", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Profile saved privately.");
-  expect(writes).toEqual([{ action: "saveProfile", profile: { name: "Test Wren", selfDescribedGender: "", description: "" } }]);
+  expect(writes).toEqual([expect.objectContaining({ name: "Test Wren", selfDescribedGender: "", description: "", species: "", signatureTraits: [] })]);
+  expect(writes[0]).not.toHaveProperty("expectedVersion");
+});
+
+test("visual identity retains failed edits, retries with the same ID, saves and reloads", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) errors.push(message.text()); });
+  const profile = { ...profiles[0], species: "hare", visualDescription: "Indigo-and-violet hare; glasses.", signatureTraits: ["long glorious ears"], styleTags: ["moonlit"], imageDoNotChange: ["species", "palette", "glasses"] };
+  const writes: Array<{ requestId?: string; body: Record<string, unknown> }> = [];
+  let fail = true;
+  await page.route("**/api/system", (route) => route.fulfill({ json: { profiles: [profile], currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/alters/test-robin", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { data: { ...profile, appearanceReferenceImageIds: [] } } });
+    const body = route.request().postDataJSON();
+    writes.push({ requestId: route.request().headers()["idempotency-key"], body });
+    if (fail) return route.fulfill({ status: 503, json: { error: { message: "Temporary save failure" } } });
+    Object.assign(profile, body, { version: profile.version + 1 });
+    return route.fulfill({ json: { data: profile } });
+  });
+  await page.goto("/profiles");
+  await expect(page).toHaveURL(/\/profiles$/);
+  await expect(page).toHaveTitle(/Bunch/);
+  await expect(page.getByRole("heading", { name: "People", exact: true })).toBeVisible();
+  await page.getByLabel("Search profiles").fill("moonlit");
+  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
+  await page.getByText("Manage Test Robin’s profile and pictures", { exact: true }).click();
+  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+  await expect(page.getByRole("group", { name: "Visual identity", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Species", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("textbox", { name: "Visual description", exact: true })).toBeFocused();
+  await page.getByRole("textbox", { name: "Visual description", exact: true }).fill("Elegant indigo-and-violet hare; glasses; nocturnal, composed, dark layered clothing.");
+  await page.getByRole("textbox", { name: "Signature traits" }).fill("glasses\nlong glorious ears\ncotton tail");
+  await page.getByRole("button", { name: "Save profile changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Temporary save failure");
+  await expect(page.getByRole("textbox", { name: "Signature traits" })).toHaveValue("glasses\nlong glorious ears\ncotton tail");
+  fail = false;
+  await page.getByRole("button", { name: "Save profile changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Profile saved privately.");
+  expect(writes[0].requestId).toBeTruthy();
+  expect(writes[1].requestId).toBe(writes[0].requestId);
+  expect(writes[1].body.expectedVersion).toBe(1);
+  expect(writes[1].body.signatureTraits).toEqual(["glasses", "long glorious ears", "cotton tail"]);
+  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  await expect(page.getByRole("textbox", { name: "Species", exact: true })).toHaveValue("hare");
+  await expect(page.getByRole("textbox", { name: "Signature traits" })).toHaveValue("glasses\nlong glorious ears\ncotton tail");
+  const size = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
+  expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
+  const group = page.getByRole("group", { name: "Visual identity", exact: true });
+  const contained = await group.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return [...element.querySelectorAll("label, input, textarea")].every((child) => {
+      const rect = child.getBoundingClientRect();
+      return rect.left >= box.left && rect.right <= box.right + 1;
+    });
+  });
+  expect(contained, "Labels and controls must fit inside the visual identity fieldset").toBe(true);
+  await group.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  if (testInfo.project.name === "desktop") await page.evaluate(() => window.scrollBy(0, -220));
+  await page.screenshot({ path: `/tmp/bunch-visual-identity-${testInfo.project.name}.png` });
+  expect(errors).toEqual([]);
+});
+
+test("conflicting visual profile edit keeps entries and explains recovery", async ({ page }) => {
+  await page.route("**/api/system", (route) => route.fulfill({ json: { profiles, currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/alters/test-robin", (route) => route.fulfill({ status: 409, json: { error: { message: "Conflict" } } }));
+  await page.goto("/profiles");
+  await page.getByText("Manage Test Robin’s profile and pictures", { exact: true }).click();
+  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  await page.getByRole("textbox", { name: "Species", exact: true }).fill("hare");
+  await page.getByRole("button", { name: "Save profile changes" }).click();
+  await expect(page.getByRole("status")).toContainText("This profile changed since you opened it");
+  await expect(page.getByRole("textbox", { name: "Species", exact: true })).toHaveValue("hare");
 });
 
 test("appearance references are independently selectable and usable at enlarged phone text", async ({ page }) => {
