@@ -5,7 +5,7 @@ import test from "node:test";
 import { Pool } from "pg";
 import { SystemService } from "./system-service";
 import { SystemError } from "./system-error";
-import { endFrontingEpisodeSchema, startFrontingEpisodeSchema } from "@/domain/presence";
+import { endFrontingEpisodeSchema, recordPresenceDetailsSchema, startFrontingEpisodeSchema } from "@/domain/presence";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 const conflict = (error: unknown) => error instanceof SystemError && error.code === "CONFLICT";
@@ -140,4 +140,89 @@ integration("migration seeds only explicit current hosts and leaves legacy sessi
     assert.equal((await client.query("select count(*)::int as n from presence_period")).rows[0].n, 1, "reaffirming the same host does not split a period");
     await assert.rejects(client.query("insert into presence_period(owner_id,alter_id,kind) values ('recorded',$1,'HOSTING')", [id]), (e: unknown) => (e as {code: string}).code === "23505");
   } finally { await client.query("rollback"); client.release(); await pool.end(); }
+});
+
+integration("switch details attach to one period, and undo retracts a change without inventing history", async () => {
+  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL, max: 4 });
+  const service = new SystemService(pool);
+  const owner = `presence-undo:${randomUUID()}`, other = `presence-undo:${randomUUID()}`;
+  const retract = (changeRequestId: string, requestId = randomUUID()) => service.retractPresenceChange(owner, { requestId, changeRequestId }, "WEB");
+  try {
+    const a = (await service.createAlter(owner, { requestId: randomUUID(), name: "Undo host fixture" }, "WEB")).data;
+    const b = (await service.createAlter(owner, { requestId: randomUUID(), name: "Undo front fixture" }, "WEB")).data;
+
+    // Details are optional, versioned, owner scoped, and omitted until reported.
+    const startId = randomUUID();
+    const started = await service.startFrontingEpisode(owner, { requestId: startId, alterId: b.id }, "WEB");
+    assert.equal("energy" in started.data, false);
+    assert.equal(recordPresenceDetailsSchema.safeParse({ requestId: randomUUID(), periodId: started.data.id, expectedVersion: 1, energy: 6, trigger: null }).success, false);
+    await assert.rejects(service.recordPresenceDetails(owner, { requestId: randomUUID(), periodId: started.data.id, expectedVersion: 9, energy: 3, trigger: null }, "WEB"), conflict);
+    await assert.rejects(service.recordPresenceDetails(other, { requestId: randomUUID(), periodId: started.data.id, expectedVersion: 1, energy: 3, trigger: null }, "WEB"));
+    const detailed = await service.recordPresenceDetails(owner, { requestId: randomUUID(), periodId: started.data.id, expectedVersion: 1, energy: 4, trigger: "Stress" }, "WEB");
+    assert.equal(detailed.data.energy, 4);
+    assert.equal(detailed.data.trigger, "Stress");
+    assert.equal(detailed.data.version, 2);
+    // Mutation results are JSON round-tripped receipts, so compare the JSON forms.
+    assert.deepEqual(JSON.parse(JSON.stringify((await service.getCurrentPresence(owner)).fronting[0])), detailed.data);
+    assert.equal((await service.listFrontingHistory(owner, { kind: "FRONTING" })).data[0].trigger, "Stress");
+
+    // Undoing a start removes the episode, so it never becomes a recorded departure.
+    const undoStart = randomUUID();
+    assert.deepEqual((await retract(startId, undoStart)).data, { retracted: "FRONTING_START", periodId: started.data.id });
+    assert.equal((await retract(startId, undoStart)).replayed, true);
+    await assert.rejects(retract(startId), conflict);
+    assert.equal((await service.listFrontingHistory(owner, { kind: "FRONTING" })).data.length, 0);
+    await assert.rejects(service.retractPresenceChange(other, { requestId: randomUUID(), changeRequestId: startId }, "WEB"), (e: unknown) => e instanceof SystemError && e.code === "NOT_FOUND");
+
+    // Undoing an end reopens the same episode with its original start.
+    const episode = (await service.startFrontingEpisode(owner, { requestId: randomUUID(), alterId: b.id }, "WEB")).data;
+    const endId = randomUUID();
+    await service.endFrontingEpisode(owner, { requestId: endId, episodeId: episode.id, expectedVersion: 1 }, "WEB");
+    assert.equal((await retract(endId)).data.retracted, "FRONTING_END");
+    const reopened = (await service.getCurrentPresence(owner)).fronting[0];
+    assert.equal(reopened.id, episode.id);
+    assert.equal(reopened.startedAt, episode.startedAt);
+    assert.equal(reopened.endedAt, undefined);
+    await assert.rejects(retract(endId), conflict);
+
+    // Undoing a host handoff restores the previous period itself, not a new one.
+    const firstHost = await service.setSystemHost(owner, { requestId: randomUUID(), alterId: a.id, expectedVersion: null }, "WEB");
+    const original = (await service.getCurrentPresence(owner)).hosting!;
+    const handoffId = randomUUID();
+    const handoff = await service.setSystemHost(owner, { requestId: handoffId, alterId: b.id, expectedVersion: firstHost.data.version }, "WEB");
+    assert.equal((await retract(handoffId)).data.periodId, original.id);
+    const restored = await service.getCurrentPresence(owner);
+    assert.equal(restored.hosting?.id, original.id);
+    assert.equal(restored.hosting?.startedAt, original.startedAt);
+    assert.equal(restored.hosting?.endedAt, undefined);
+    assert.equal((await service.listFrontingHistory(owner, { kind: "HOSTING" })).data.length, 1);
+    const hostAfter = (await service.getSystemHost(owner))!;
+    assert.equal(hostAfter.alterId, a.id);
+    assert.equal(hostAfter.recordedAt, original.startedAt);
+    assert.equal(hostAfter.version, handoff.data.version + 1);
+    await assert.rejects(retract(handoffId), conflict);
+
+    // Clearing hosting is undone the same way, and the trigger bypass does not
+    // outlive the retraction: a later handoff still records its periods.
+    const clearId = randomUUID();
+    await service.setSystemHost(owner, { requestId: clearId, alterId: null, expectedVersion: hostAfter.version }, "WEB");
+    assert.equal((await service.getCurrentPresence(owner)).hosting, null);
+    assert.equal((await retract(clearId)).data.periodId, original.id);
+    assert.equal((await service.getCurrentPresence(owner)).hosting?.id, original.id);
+    await service.setSystemHost(owner, { requestId: randomUUID(), alterId: b.id, expectedVersion: (await service.getSystemHost(owner))!.version }, "WEB");
+    assert.equal((await service.getCurrentPresence(owner)).hosting?.alterId, b.id);
+    assert.equal((await service.listFrontingHistory(owner, { kind: "HOSTING" })).data.length, 2);
+
+    // A change older than the undo window is refused and left in place.
+    const oldId = randomUUID();
+    const oldEpisode = await service.startFrontingEpisode(owner, { requestId: oldId, alterId: a.id }, "WEB");
+    await pool.query("update mutation_receipt set created_at = now() - interval '16 minutes' where owner_id = $1 and request_id = $2", [owner, oldId]);
+    await assert.rejects(retract(oldId), conflict);
+    assert.ok((await service.getCurrentPresence(owner)).fronting.some(p => p.id === oldEpisode.data.id));
+    const events = await pool.query("select count(*)::int as count from activity_event where owner_id = $1 and action = 'RETRACTED'", [owner]);
+    assert.equal(events.rows[0].count, 4, "replays and refused retractions add no events");
+  } finally {
+    await pool.query("delete from app_user where id = any($1::text[])", [[owner, other]]);
+    await pool.end();
+  }
 });

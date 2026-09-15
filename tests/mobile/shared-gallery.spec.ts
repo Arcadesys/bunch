@@ -58,6 +58,8 @@ test("account share controls create links and revoke with an idempotency key", a
   await page.getByRole("button", { name: "Create gallery link" }).click();
   await expect(page.getByLabel("Gallery link", { exact: true })).toHaveValue("http://127.0.0.1:3217/gallery/share/new");
   await page.getByRole("button", { name: "Revoke link" }).first().click();
+  // The click only dispatches the request; wait for it before reading calls.
+  await expect.poll(() => calls.some((call) => call.method === "DELETE")).toBe(true);
   expect(calls.find((call) => call.method === "POST")).toMatchObject({ body: { duration: "1w" } });
   expect(calls.find((call) => call.method === "POST")?.key).toBeFalsy();
   expect(calls.find((call) => call.method === "DELETE")?.key).toBeTruthy();

@@ -44,15 +44,21 @@ async function allProfiles(signal: AbortSignal) {
   return profiles;
 }
 
-export function FrontSwitchPanel({
+// The form owns every mutation rule; it is mounted only while open, so each
+// opening starts from clean state. Callers that need a trigger use
+// FrontSwitchPanel; the navigation header mounts this directly in a dialog.
+export function FrontSwitchForm({
   onConfirmed,
   onNotice,
+  onClose,
+  headingId = "presence-change-heading",
 }: {
   onConfirmed: (periodId?: string) => void;
   onNotice: (notice: string) => void;
+  onClose: () => void;
+  headingId?: string;
 }) {
-  const [open, setOpen] = useState(false),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false);
   const saved = useRef<{ action: Action; periodId?: string } | null>(null);
   const [needsRead, setNeedsRead] = useState(false);
@@ -66,18 +72,11 @@ export function FrontSwitchPanel({
   }>({ hosting: null, fronting: [] });
   const [action, setAction] = useState<Action>("START"),
     [selected, setSelected] = useState(""),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState("Loading recorded hosting and fronting…");
   const attempt = useRef<Attempt | null>(null),
     submitting = useRef(false);
-  const trigger = useRef<HTMLButtonElement>(null),
-    heading = useRef<HTMLHeadingElement>(null);
-  const restoreFocus = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (!open) {
-      if (restoreFocus.current) trigger.current?.focus();
-      restoreFocus.current = false;
-      return;
-    }
     heading.current?.focus();
     const controller = new AbortController();
     void Promise.all([
@@ -101,11 +100,7 @@ export function FrontSwitchPanel({
           setMessage(e.message || "Unable to load records.");
       });
     return () => controller.abort();
-  }, [open, reload]);
-  function close() {
-    restoreFocus.current = true;
-    setOpen(false);
-  }
+  }, [reload]);
   async function refreshSaved() {
     const confirmed = saved.current;
     if (!confirmed) return;
@@ -130,7 +125,7 @@ export function FrontSwitchPanel({
               ? "Fronting episode recorded. Hosting is unchanged."
               : "Fronting episode ended. Hosting and other episodes are unchanged.",
       );
-      close();
+      onClose();
     } catch {
       setNeedsRead(true);
       setReady(false);
@@ -220,117 +215,139 @@ export function FrontSwitchPanel({
       ? presence.fronting.map((p) => ({ id: p.id, name: p.alterName }))
       : profiles;
   return (
+    <section
+      className="command-create"
+      aria-labelledby={headingId}
+    >
+      <h2 id={headingId} ref={heading} tabIndex={-1}>
+        Set host or start a side fronter
+      </h2>
+      <p role="status">{message}</p>
+      {ready ? (
+        <div role="group" aria-label="Current recorded state">
+          <p><strong>Current host:</strong> {host?.alterName ?? "Not recorded"}</p>
+          <p><strong>Active side fronters:</strong> {presence.fronting.length ? presence.fronting.map(p => p.alterName).join(", ") : "No open episodes recorded"}</p>
+        </div>
+      ) : null}
+      {ready ? (
+        <form className="form-stack" onSubmit={confirm}>
+          <fieldset className="presence-action-picker" disabled={busy || uncertain}>
+            <legend>Choose one explicit change</legend>
+            <button type="button" className="command-button" aria-pressed={action === "HOST"} onClick={() => { setAction("HOST"); setSelected(""); }}>
+              Set host
+            </button>
+            <button type="button" className="command-button" aria-pressed={action === "START"} onClick={() => { setAction("START"); setSelected(""); }}>
+              Start side fronter
+            </button>
+            <button type="button" className="command-button secondary" aria-pressed={action === "END"} onClick={() => { setAction("END"); setSelected(""); }}>
+              End a side-fronting episode
+            </button>
+            <button type="button" className="command-button secondary" aria-pressed={action === "CLEAR"} onClick={() => { setAction("CLEAR"); setSelected(""); }}>
+              End hosting
+            </button>
+          </fieldset>
+          <p>
+            {action === "HOST" || action === "CLEAR"
+              ? `Hosting: ${host?.alterName ?? "not recorded"}. The host is responsible for everything otherwise unclaimed.`
+              : "A side fronter starts an overlapping fronting episode. It does not replace the host or end any other side fronter."}
+          </p>
+          {action !== "CLEAR" ? (
+            <label>
+              {action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
+              <select
+                aria-label={action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
+                required
+                value={selected}
+                disabled={busy || uncertain}
+                onChange={(e) => setSelected(e.target.value)}
+              >
+                <option value="">
+                  Choose a{" "}
+                  {action === "END" ? "recorded side-fronting episode" : "profile"}
+                </option>
+                {choices.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <button
+            className="command-button"
+            disabled={
+              busy ||
+              (action !== "CLEAR" && !selected) ||
+              (action === "CLEAR" && !host?.alterId)
+            }
+          >
+            {uncertain
+              ? "Retry confirmed change"
+              : action === "HOST"
+                ? "Confirm host change"
+                : action === "START"
+                  ? "Confirm side-fronter arrival"
+                  : action === "END"
+                    ? "Confirm side-fronting end"
+                    : "Confirm hosting end"}
+          </button>
+        </form>
+      ) : (
+        <button
+          className="command-button secondary"
+          disabled={busy}
+          onClick={() => needsRead ? void retryRead() : setReload((v) => v + 1)}
+        >
+          {needsRead ? "Retry reading saved records" : "Reload hosting and fronting"}
+        </button>
+      )}
+      <button
+        className="command-button secondary"
+        onClick={onClose}
+        disabled={busy || uncertain || needsRead}
+      >
+        Cancel
+      </button>
+    </section>
+  );
+}
+
+export function FrontSwitchPanel({
+  onConfirmed,
+  onNotice,
+}: {
+  onConfirmed: (periodId?: string) => void;
+  onNotice: (notice: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    if (open) return;
+    if (restoreFocus.current) trigger.current?.focus();
+    restoreFocus.current = false;
+  }, [open]);
+  function close() {
+    restoreFocus.current = true;
+    setOpen(false);
+  }
+  return (
     <div className="command-switch">
       <button
         ref={trigger}
         className="command-action"
         aria-expanded={open}
-        onClick={() => {
-          setReady(false);
-          setSelected("");
-          setAction("START");
-          setMessage("Loading recorded hosting and fronting…");
-          setOpen(true);
-        }}
+        onClick={() => setOpen(true)}
         disabled={open}
       >
         Set host or start side fronter
       </button>
       {open ? (
-        <section
-          className="command-create"
-          aria-labelledby="presence-change-heading"
-        >
-          <h2 id="presence-change-heading" ref={heading} tabIndex={-1}>
-            Set host or start a side fronter
-          </h2>
-          <p role="status">{message}</p>
-          {ready ? (
-            <div role="group" aria-label="Current recorded state">
-              <p><strong>Current host:</strong> {host?.alterName ?? "Not recorded"}</p>
-              <p><strong>Active side fronters:</strong> {presence.fronting.length ? presence.fronting.map(p => p.alterName).join(", ") : "No open episodes recorded"}</p>
-            </div>
-          ) : null}
-          {ready ? (
-            <form className="form-stack" onSubmit={confirm}>
-              <fieldset className="presence-action-picker" disabled={busy || uncertain}>
-                <legend>Choose one explicit change</legend>
-                <button type="button" className="command-button" aria-pressed={action === "HOST"} onClick={() => { setAction("HOST"); setSelected(""); }}>
-                  Set host
-                </button>
-                <button type="button" className="command-button" aria-pressed={action === "START"} onClick={() => { setAction("START"); setSelected(""); }}>
-                  Start side fronter
-                </button>
-                <button type="button" className="command-button secondary" aria-pressed={action === "END"} onClick={() => { setAction("END"); setSelected(""); }}>
-                  End a side-fronting episode
-                </button>
-                <button type="button" className="command-button secondary" aria-pressed={action === "CLEAR"} onClick={() => { setAction("CLEAR"); setSelected(""); }}>
-                  End hosting
-                </button>
-              </fieldset>
-              <p>
-                {action === "HOST" || action === "CLEAR"
-                  ? `Hosting: ${host?.alterName ?? "not recorded"}. The host is responsible for everything otherwise unclaimed.`
-                  : "A side fronter starts an overlapping fronting episode. It does not replace the host or end any other side fronter."}
-              </p>
-              {action !== "CLEAR" ? (
-                <label>
-                  {action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
-                  <select
-                    aria-label={action === "END" ? "Side-fronting episode to end" : action === "HOST" ? "Host profile" : "Side fronter profile"}
-                    required
-                    value={selected}
-                    disabled={busy || uncertain}
-                    onChange={(e) => setSelected(e.target.value)}
-                  >
-                    <option value="">
-                      Choose a{" "}
-                      {action === "END" ? "recorded side-fronting episode" : "profile"}
-                    </option>
-                    {choices.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <button
-                className="command-button"
-                disabled={
-                  busy ||
-                  (action !== "CLEAR" && !selected) ||
-                  (action === "CLEAR" && !host?.alterId)
-                }
-              >
-                {uncertain
-                  ? "Retry confirmed change"
-                  : action === "HOST"
-                    ? "Confirm host change"
-                    : action === "START"
-                      ? "Confirm side-fronter arrival"
-                      : action === "END"
-                        ? "Confirm side-fronting end"
-                        : "Confirm hosting end"}
-              </button>
-            </form>
-          ) : (
-            <button
-              className="command-button secondary"
-              disabled={busy}
-              onClick={() => needsRead ? void retryRead() : setReload((v) => v + 1)}
-            >
-              {needsRead ? "Retry reading saved records" : "Reload hosting and fronting"}
-            </button>
-          )}
-          <button
-            className="command-button secondary"
-            onClick={close}
-            disabled={busy || uncertain || needsRead}
-          >
-            Cancel
-          </button>
-        </section>
+        <FrontSwitchForm
+          onConfirmed={onConfirmed}
+          onNotice={onNotice}
+          onClose={close}
+        />
       ) : null}
     </div>
   );

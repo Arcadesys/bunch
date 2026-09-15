@@ -2,6 +2,20 @@
 
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
+For a one-shot named-character request such as “@Bunch draw Lucy in a cozy
+sweater,” the companion should resolve the exact active name `Lucy Arcade` (or
+a confirmed exact alias), then call `generate_scene` with that name in
+`alterNames`. Bunch supplies the selected appearance references privately to
+the native provider; the user does not need to upload a source photo. The
+result remains a private generated image and does not change Lucy's profile
+picture, appearance references, hosting, fronting, or canon.
+
+Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
+but carry no pixels, and reference media stays in private metadata. A host whose
+own image tool cannot attach that metadata must call `generate_scene` rather than
+drawing a named person from text, IDs, or an invented likeness. The tool
+descriptions, server instructions, and companion skill all state this fallback.
+
 ## Configuration and release
 
 - Apply `drizzle/0018_native_scene_render.sql` before deploying the new application.
