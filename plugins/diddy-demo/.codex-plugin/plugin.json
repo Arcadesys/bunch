@@ -1,0 +1,7 @@
+{
+  "name": "bunch-demo",
+  "version": "0.1.0",
+  "description": "Read-only fictional Demo system with Foo, Bar, and Baz.",
+  "mcpServers": "./.mcp.json",
+  "interface": { "displayName": "Bunch Demo", "shortDescription": "Meet Foo, Bar, and Baz.", "defaultPrompt": ["Show Demo system and its shared notes and task."] }
+}

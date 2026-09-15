@@ -59,3 +59,7 @@ Authenticated routes mirror the MCP contracts under `/api/v1/alters` and `/api/v
 5. Promote the Google connection to a domain-level connection so third-party MCP clients can use it.
 6. Add `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `APP_BASE_URL`, and `MCP_RESOURCE_URL` to Vercel; keep `SYSTEM_DEMO_MODE=false`.
 7. Verify the website login and MCP flow with MCP Inspector before connecting the same `/mcp` URL in ChatGPT Developer Mode.
+
+### Fictional plugin walkthrough
+
+Run `npm run demo` and open http://127.0.0.1:3100 for **Demo system** with exactly **Foo**, **Bar**, and **Baz**. For the matching local, read-only MCP plugin, see [Bunch Demo](plugins/diddy-demo/README.md). It uses isolated fictional fixtures, requires no database, and is disabled in production builds. The private production plugin remains unchanged.
