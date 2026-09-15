@@ -44,7 +44,7 @@ export default async function PrivateGalleryPage() {
           <p className="eyebrow">Bunch · private photos</p>
           <h1>Private photo gallery</h1>
         </div>
-        <div className="header-actions"><Link className="button button-secondary" href="/profiles">Manage profiles and pictures</Link></div>
+        <div className="header-actions"><Link className="button" href="/gallery/generated">Generated images and group photos</Link><Link className="button button-secondary" href="/profiles">Manage profiles and pictures</Link></div>
       </header>
 
       <p className="notice" role="status">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AppNavigation } from "@/app/app-navigation";
 import { type ArrangeAction, type GroupPhotoProject, type GroupPhotoRender } from "@/domain/group-photo";
 
@@ -172,7 +173,7 @@ export default function GroupPhotoPage() {
   const imageUrl = project ? `/api/v1/group-photos/${project.id}/backplate` : previewUrl;
   return <main className="shell group-photo-page">
     <AppNavigation current="GROUP_PHOTO" />
-    <header className="site-header"><div><h1>Group Photo</h1><p>Choose a place for everybody.</p></div></header>
+    <header className="site-header"><div><h1>Group Photo</h1><p>Choose a place for everybody.</p></div><Link className="button button-secondary" href="/gallery/generated">View photo gallery</Link></header>
     <p className="notice" role="status">{notice}</p>
     {!project && <section className="panel group-photo-intro"><h2>Start with the real photo</h2><p>Choose your scene, then place people where you want them together.</p><form className="upload-form" onSubmit={uploadBackplate}><label>Choose a JPEG, PNG, or WebP photo<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button" disabled={busy} type="submit">{busy ? "Opening scene…" : "Use this scene"}</button></form></section>}
     {!project && recent.length > 0 && <section className="panel"><h2>Recent scenes</h2><ul className="recent-scenes">{recent.map((scene, index) => <li key={scene.id}><a href={`/group-photo?project=${scene.id}`}>Open scene {index + 1} · {new Date(scene.createdAt).toLocaleDateString()}</a></li>)}</ul></section>}

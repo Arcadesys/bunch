@@ -15,6 +15,7 @@ const destinations: { href: string; label: string; page: AppPage; icon: IconName
   { href: "/notes", label: "Notes", page: "NOTES", icon: "notes" },
   { href: "/profiles", label: "People", page: "PROFILES", icon: "people" },
   { href: "/group-photo", label: "Group Photo", page: "GROUP_PHOTO", icon: "people" },
+  { href: "/gallery/generated", label: "Gallery", page: "GALLERY", icon: "review" },
   { href: "/images", label: "Images", page: "IMAGES", icon: "glow" },
   { href: "/history", label: "History", page: "HISTORY", icon: "history" },
   { href: "/options", label: "Options", page: "OPTIONS", icon: "options" },
@@ -62,7 +63,7 @@ export function AppNavigation({ current }: { current?: AppPage }) {
     <header className="app-navigation command-topbar">
       <div className="bunch-primary-bar">
         <Link href="/home" className="command-brand" aria-label="Bunch home"><Image src="/bunch-barrel-monkeys.png" alt="" width={32} height={32} priority />Bunch</Link>
-        <nav className="command-topnav" aria-label="Bunch navigation">{destinations.map(({ href, label, page, icon }) => <Link key={page} href={href} aria-current={current === page || current === "GALLERY" && page === "PROFILES" || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}><Icon name={icon} /><span>{label}</span></Link>)}</nav>
+        <nav className="command-topnav" aria-label="Bunch navigation">{destinations.map(({ href, label, page, icon }) => <Link key={page} href={href} aria-current={current === page || ["BOARD", "NOTES", "THREADS"].includes(current ?? "") && page === "OPTIONS" ? "page" : undefined}><Icon name={icon} /><span>{label}</span></Link>)}</nav>
         <div className="bunch-utilities"><span className="bunch-private-pill" aria-label="Private records"><span>Private</span><span aria-hidden="true">•</span></span><button type="button" className="bunch-icon-button" onClick={() => setGlow(value => !value)} aria-pressed={glow} aria-label="Toggle glow"><Icon name="glow" /></button><button type="button" className="bunch-icon-button contrast" onClick={() => setHighContrast(value => !value)} aria-pressed={highContrast} aria-label="High contrast"><Icon name="contrast" /></button></div>
       </div>
       <nav className="bunch-verbbar" aria-label="Bunch actions"><span className="bunch-verb-label">Do</span><Link className="bunch-verb review" href="/home#catch-up-records"><Icon name="review" />Review <kbd>R</kbd></Link><Link className="bunch-verb update" href="/board#create-record"><Icon name="update" />Update <kbd>U</kbd></Link><span className="bunch-verb-hint">Esc closes panels</span></nav>
