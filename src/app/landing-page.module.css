@@ -80,3 +80,5 @@
   .heroArt figcaption { padding: .5rem; font-size: .8rem; }
   .closing { padding: 2.5rem 6%; }
 }
+
+.learnMore { display: inline-block; padding-block: .6rem; min-height: 48px; text-underline-offset: .3rem; }
