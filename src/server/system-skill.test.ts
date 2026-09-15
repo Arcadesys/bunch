@@ -21,6 +21,10 @@ const skillGetResultSchema = z.object({ skill: skillListResultSchema.shape.skill
 test("MCP advertises and serves the System Companion skill snapshot", async () => {
   const repoSkill = await readFile(new URL("../../skills/system-companion/SKILL.md", import.meta.url), "utf8");
   assert.equal(repoSkill, SYSTEM_SKILL_TEXT);
+  assert.match(repoSkill, /exactly one active result has the exact requested name/);
+  assert.match(repoSkill, /RECORDED_FRONTING_WINDOW/);
+  assert.match(repoSkill, /explicitly authorize the write/);
+  assert.match(repoSkill, /Luna-class summarizer/);
   assert.match(systemSkillEntry().resources[0].digest, /^sha256:[a-f0-9]{64}$/);
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
