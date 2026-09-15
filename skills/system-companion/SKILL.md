@@ -76,6 +76,7 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
 - Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.
 - `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
+- Private reference metadata reaches a generator only through a host adapter that attaches it. Appearance reference IDs are not image content. If this host's own image tool cannot attach the references, call `generate_scene` with the exact names instead. Never draw a named alter from text alone, from reference IDs, or from an invented likeness.
 
 ## Privacy boundary
 
@@ -85,7 +86,7 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 
 ## Native private images
 
-- Use `generate_scene` only when the user explicitly asks Bunch to generate a new private image. It accepts a scene, optional exact active alter names, format, and a request ID. The result is a job, not an image until its state is `COMPLETE`.
+- Use `generate_scene` only when the user explicitly asks for a new image, such as “draw Lucy in a cozy sweater.” Bunch attaches every selected appearance reference on its server, so this is the path for named alters whenever the host cannot attach private reference media itself. It accepts a scene, optional exact active alter names, format, and a request ID. The result is a job, not an image until its state is `COMPLETE`.
 - Use `get_scene_generation` or `list_scene_generations` to check job progress. Open the returned authenticated browser URL to view a completed image when the host cannot visibly render a preview.
 - A completed native image is private and separate from profile pictures, selected appearance references, hosting, fronting, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
 - Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.
