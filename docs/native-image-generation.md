@@ -11,14 +11,22 @@ result remains a private generated image and does not change Lucy's profile
 picture, appearance references, hosting, fronting, or canon.
 
 Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
-but carry no pixels, and reference media stays in private metadata. A host whose
-own image tool cannot attach that metadata must call `generate_scene` rather than
-drawing a named person from text, IDs, or an invented likeness, and must not ask
-the user to upload a photo Bunch already holds. The tool descriptions, server
-instructions, and companion skill all state this fallback. Because hosts act on
-results more reliably than descriptions, the result text of `get_alter`,
-`list_alters`, `prepare_alter_image_prompt`, and `prepare_furry_scene` also names
-the exact `generate_scene` call for alters with selected appearance references.
+but carry no pixels, and reference media stays in private metadata that a chat
+host's own image tool never receives. `generate_scene` is therefore the direct
+route for drawing named people in chat, not a fallback after a prepare tool. The
+prepare tools build packets for external image-studio adapters only.
+
+ChatGPT once called `prepare_alter_image_prompt` for Lucy, read its prompt
+("Use the attached appearance reference…"), found no attachment, and asked the
+user to upload one. The tool descriptions, server instructions, and companion
+skill now send drawing requests straight to `generate_scene`. Because hosts act
+on results more reliably than descriptions, the result text of `get_alter` and
+`list_alters` names the exact `generate_scene` call, and the prepare results
+lead with it, ahead of the packet, whenever every named person is ready and has
+selected appearance references.
+
+Tool descriptions and server instructions reach ChatGPT only after a deploy and
+a refresh of the connector's tool list; a stale connector keeps the old wording.
 
 ## In-chat result
 

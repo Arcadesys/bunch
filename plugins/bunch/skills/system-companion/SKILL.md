@@ -70,13 +70,14 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 
 ## Canonical image preparation
 
-- For a new multi-character Furry image, call `prepare_furry_scene` with the requested scene and an ordered `alterNames` array. Names resolve only as exact active names or aliases; correct an unknown or ambiguous name instead of guessing.
+- To draw named alters in this chat, call `generate_scene` directly with their exact names (see Native private images). Do not call a prepare tool first: the prepare tools build packets for an external image-studio adapter, and a chat host's own image tool cannot receive their private references.
+- When an external image-studio adapter needs a multi-character Furry scene, call `prepare_furry_scene` with the requested scene and an ordered `alterNames` array. Names resolve only as exact active names or aliases; correct an unknown or ambiguous name instead of guessing.
 - Every participant needs one or more selected appearance references. `ready` means the packet was prepared only; no image was generated or saved. Keep the ordered per-person reference media in private metadata and never put capabilities, URLs, bytes, or storage keys in model-visible content.
-- Before any individual or group image generation, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
+- When an external image-studio adapter needs a canonical prompt for individuals or a group, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
 - Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
 - Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.
 - `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
-- Private reference metadata reaches a generator only through a host adapter that attaches it. Appearance reference IDs are not image content. If this host's own image tool cannot attach the references, call `generate_scene` with the exact names instead. Never draw a named alter from text alone, from reference IDs, or from an invented likeness.
+- Private reference metadata reaches a generator only through an external adapter that attaches it; a chat host's own image tool never receives it, and appearance reference IDs are not image content. Never draw a named alter from text alone, from reference IDs, or from an invented likeness, and never ask the user to upload a photo Bunch already holds.
 
 ## Privacy boundary
 
@@ -86,7 +87,7 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 
 ## Native private images
 
-- Use `generate_scene` only when the user explicitly asks for a new image, such as “draw Lucy in a cozy sweater.” Bunch attaches every selected appearance reference on its server, so this is the path for named alters whenever the host cannot attach private reference media itself. Never ask the user to upload or attach a photo of someone whose references Bunch already holds. It accepts a scene, optional exact active alter names, format, and a request ID. The result is a job, not an image until its state is `COMPLETE`.
+- Use `generate_scene` only when the user explicitly asks for a new image, such as “draw Lucy in a cozy sweater.” Bunch attaches every selected appearance reference on its server, so this is the path for drawing named alters in chat; call it directly, without a prepare tool first. Never ask the user to upload or attach a photo of someone whose references Bunch already holds. It accepts a scene, optional exact active alter names, format, and a request ID. The result is a job, not an image until its state is `COMPLETE`.
 - `generate_scene` and `get_scene_generation` render the Bunch scene widget, which follows the job and shows the finished private image in this chat. Do not describe the image as visible until the widget shows it. If the host cannot render widgets, check progress with `get_scene_generation` and give the returned authenticated browser URL. Use `list_scene_generations` to find earlier jobs.
 - A completed native image is private and separate from profile pictures, selected appearance references, hosting, fronting, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
 - Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.
