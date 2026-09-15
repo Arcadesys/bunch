@@ -27,8 +27,9 @@ export function LandingPage() {
             <p className={styles.eyebrow}>A private companion for life with DID</p>
             <h1 id="welcome">A little more<br />continuity.<br /><em>A place for<br className={styles.desktopBreak} /> all of you.</em></h1>
             <p className={styles.intro}>Keep the notes, people, and everyday context that help your system pick up the thread.</p>
-            <a className={styles.primary} href="#how-it-helps">Get to know Bunch <span aria-hidden="true">↓</span></a>
+            <Link className={styles.primary} href="/demo">Try the interactive demo <span aria-hidden="true">→</span></Link>
             <p className={styles.small}>Built from lived experience. On your terms.</p>
+            <a className={styles.learnMore} href="#how-it-helps">Get to know Bunch ↓</a>
           </div>
           <figure className={styles.heroArt}>
             <Image src={beach} alt="Eight members of the Arcades system together on a sunny beach, with colorful kites behind them." preload sizes="(max-width: 900px) 100vw, 62vw" />
