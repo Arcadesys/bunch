@@ -63,7 +63,7 @@ integration(
         periodId: front.data.id,
         timeZone: "America/Chicago",
       });
-      assert.equal(handoff.window?.provenance, "RECORDED_PRESENCE_WINDOW");
+      assert.equal(handoff.window?.provenance, "RECORDED_FRONTING_WINDOW");
       assert.equal(handoff.source?.kind, "FRONTING");
       assert.equal(handoff.window?.startAt, "2026-08-02T00:00:00.000Z");
       assert.equal(handoff.elapsedSeconds, (Date.parse(front.data.startedAt) - Date.parse("2026-08-02T00:00:00Z")) / 1000);
