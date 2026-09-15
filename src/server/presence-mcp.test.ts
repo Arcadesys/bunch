@@ -5,7 +5,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./mcp-server";
 import type { SystemService } from "./system-service";
 
-test("DIDdy presence tools carry explicit kinds, versions, and retry metadata", async () => {
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
+test("Working Monkeys presence tools carry explicit kinds, versions, and retry metadata", async () => {
   const alterId = "11111111-1111-4111-8111-111111111111";
   const episodeId = "22222222-2222-4222-8222-222222222222";
   const requestId = "33333333-3333-4333-8333-333333333333";

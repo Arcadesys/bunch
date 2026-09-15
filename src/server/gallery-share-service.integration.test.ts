@@ -48,3 +48,51 @@ integration("shared galleries are live, owner-isolated, and stop at expiry or re
     await pool.end();
   }
 });
+
+integration("fronting is opt-in per stable link, explicit, overlapping, minimal and owner-isolated", async () => {
+  const pool = new Pool({ connectionString: databaseUrl });
+  const service = new GalleryShareService(pool);
+  const owner = `test:front-share:${randomUUID()}`, other = `test:front-other:${randomUUID()}`;
+  const first = randomUUID(), second = randomUUID(), host = randomUUID(), foreign = randomUUID();
+  try {
+    for (const id of [owner, other]) {
+      await pool.query("insert into app_user(id,google_subject) values($1,$1)", [id]);
+      if (id === owner) await pool.query("insert into pilot_account(owner_id,role,state) values($1,'OPERATOR','ACTIVE')", [id]);
+    }
+    for (const [id, who, name] of [[first,owner,"One"],[second,owner,"Two"],[host,owner,"Host only"],[foreign,other,"Private other owner"]])
+      await pool.query("insert into alter_profile(id,owner_id,name,communication_guidance) values($1,$2,$3,'Private guidance')", [id,who,name]);
+    for (const [id, who, kind] of [[first,owner,"FRONTING"],[second,owner,"FRONTING"],[host,owner,"HOSTING"],[foreign,other,"FRONTING"]])
+      await pool.query("insert into presence_period(owner_id,alter_id,kind) values($1,$2,$3)", [who,id,kind]);
+    const link = await service.create(owner,"forever"), untouched = await service.create(owner,"forever");
+    assert.equal(link.share.showCurrentFronting, false);
+    assert.equal((await service.publicGallery(link.token))?.currentFronting, undefined);
+    await assert.rejects(service.setCurrentFronting(other, link.share.id, true), /not found/);
+    assert.equal((await service.setCurrentFronting(owner,link.share.id,true)).showCurrentFronting, true);
+    const fronting = (await service.publicGallery(link.token))!.currentFronting!;
+    assert.deepEqual(new Set(fronting.people.map(p => p.name)), new Set(["One","Two"]));
+    assert.deepEqual(Object.keys(fronting).sort(), ["checkedAt","people"]);
+    assert.deepEqual(Object.keys(fronting.people[0]).sort(), ["id","name"]);
+    assert.equal((await service.publicGallery(untouched.token))?.currentFronting, undefined);
+    assert.equal((await service.list(owner)).find(s => s.id === link.share.id)?.showCurrentFronting, true);
+    await pool.query("update presence_period set ended_at=now() where owner_id=$1 and alter_id=$2", [owner,first]);
+    assert.deepEqual((await service.publicGallery(link.token))?.currentFronting?.people, [{id:second,name:"Two"}]);
+    await pool.query("update presence_period set ended_at=now() where owner_id=$1 and kind='FRONTING'", [owner]);
+    assert.deepEqual((await service.publicGallery(link.token))?.currentFronting?.people, []);
+    await service.setCurrentFronting(owner,link.share.id,false);
+    assert.equal((await service.publicGallery(link.token))?.currentFronting, undefined);
+    await service.setCurrentFronting(owner,link.share.id,true);
+    await pool.query("update pilot_account set state='REVOKED' where owner_id=$1", [owner]);
+    assert.equal(await service.publicGallery(link.token), null);
+    await assert.rejects(service.setCurrentFronting(owner,link.share.id,false), /unavailable/);
+    await pool.query("update pilot_account set state='ACTIVE' where owner_id=$1", [owner]);
+    await service.revoke(owner,link.share.id);
+    assert.equal(await service.publicGallery(link.token), null);
+    await assert.rejects(service.setCurrentFronting(owner,link.share.id,true), /not found/);
+    await pool.query("update gallery_share set created_at=now()-interval '2 hours', expires_at=now()-interval '1 hour' where id=$1", [untouched.share.id]);
+    await assert.rejects(service.setCurrentFronting(owner,untouched.share.id,true), /not found/);
+  } finally {
+    await pool.query("delete from pilot_account where owner_id=any($1::text[])", [[owner,other]]);
+    await pool.query("delete from app_user where id=any($1::text[])", [[owner,other]]);
+    await pool.end();
+  }
+});

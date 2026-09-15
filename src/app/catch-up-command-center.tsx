@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/catch-up";
-import { AppNavigation } from "./app-navigation";
+import { AppNavigation, PRESENCE_CHANGED_EVENT } from "./app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import { CurrentFrontSummary } from "./current-front-summary";
 import { SavedReturnReview } from "./saved-return-review";
@@ -126,6 +126,15 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
+  // A change confirmed from the navigation header refreshes this page too,
+  // because each page mounts its own navigation and shares no state with it.
+  const latestPresenceChanged = useRef(presenceChanged);
+  useEffect(() => { latestPresenceChanged.current = presenceChanged; });
+  useEffect(() => {
+    const onPresenceChanged = (event: Event) => latestPresenceChanged.current((event as CustomEvent<{ periodId?: string }>).detail?.periodId);
+    window.addEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+    return () => window.removeEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+  }, []);
 
   const primaryItems = useMemo(() => {
     const urgency = (item: CatchUpItem) => Number(/BLOCKED/.test(item.statusLabel ?? "")) * 4 + Number(/HIGH/.test(item.statusLabel ?? "")) * 2 + Number(Boolean(item.dueOn && new Date(`${item.dueOn}T23:59:59`).getTime() < new Date(session?.windowEnd ?? 0).getTime()));
@@ -279,7 +288,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
     finally { submitInFlight.current = false; setBusy(false); }
   }
 
-  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/">Back to Home</Link></div></div>;
+  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/home">Back to Home</Link></div></div>;
   if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
   if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
   const invalidateSuggestion = () => setSuggestion(null);

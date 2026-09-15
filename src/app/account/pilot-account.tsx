@@ -103,7 +103,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download = "diddy-records.json";
+      link.download = "bunch-records.json";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setImages(data.images);
@@ -170,7 +170,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">
-        <Link href="/">Bunch</Link>
+        <Link href="/home">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/connect">Connect clients</a>
       </nav>

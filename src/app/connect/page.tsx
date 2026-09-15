@@ -3,7 +3,7 @@ export default function ConnectPage() {
   return (
     <main className="pilot-page">
       <nav aria-label="Connection navigation">
-        <Link href="/">Bunch</Link>
+        <Link href="/home">Bunch</Link>
         <a href="/account">Account & privacy</a>
         <a href="/join">Accept invitation</a>
       </nav>

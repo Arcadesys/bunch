@@ -2,11 +2,14 @@ node_modules/
 .next/
 out/
 private-uploads/
-.env
-.env.local
 *.tsbuildinfo
 .vercel
+
+# Every dotenv file is private. The example template is the one exception, so
+# its negation must stay after the wildcard to take effect.
 .env*
+!.env.example
+
 # Local reproduction of CI browser evidence
 /test-results/
 /playwright-report/

@@ -36,7 +36,7 @@ const key = Buffer.from(secret, "hex");
 const connection = process.env.DATABASE_URL_UNPOOLED;
 if (!connection) throw new Error("DATABASE_URL_UNPOOLED is required.");
 async function main() {
-  const stage = await mkdtemp(join(tmpdir(), "diddy-backup-"));
+  const stage = await mkdtemp(join(tmpdir(), "bunch-backup-"));
   const pool = new Pool({ connectionString: connection, max: 2 });
   function pgEnv(value: string) {
     const url = new URL(value);
@@ -160,6 +160,9 @@ async function main() {
         mode: 0o600,
       });
       output.write(
+        // Frozen on-disk format tag, not a product name. Changing it makes every
+        // existing archive unrestorable, and the prune patterns below key off the
+        // matching filename, so a half-rename would leave old archives unexpired.
         Buffer.concat([Buffer.from("DIDDY01"), nonce, cipher.getAuthTag()]),
       );
       await pipeline(createReadStream(encrypted), output);

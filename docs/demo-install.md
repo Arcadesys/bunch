@@ -10,12 +10,12 @@ With the Codex CLI installed, add this repository's marketplace:
 codex plugin marketplace add Arcadesys/bunch --ref main
 ```
 
-Restart the desktop app, open **Plugins**, select the **Bunch** marketplace, and install **Bunch**. The repository's plugin directory is `plugins/diddy`; `diddy` is its existing internal identifier. Authentication is deferred until private access is requested.
+Restart the desktop app, open **Plugins**, select the **Bunch** marketplace, and install **Bunch**. The repository's plugin directory is `plugins/bunch`. Authentication is deferred until private access is requested.
 
 On CLI versions that provide `codex plugin add`, you can install the same plugin with:
 
 ```sh
-codex plugin add diddy@bunch
+codex plugin add bunch@bunch
 ```
 
 Start a new task so the installed tools and skill are loaded. Ask:
@@ -26,7 +26,7 @@ The response should say **Demo system**, show Fenton, Benny, and Dot, and includ
 
 You can also ask who is hosting, explore each person's history, or read Benny's sample catch-up. This sample has eight read tools and no saved edits. Its dates describe a fixed fictional snapshot.
 
-[Plugin source](../plugins/diddy) · [Sample details and available tools](hosted-demo-system.md)
+[Plugin source](../plugins/bunch) · [Sample details and available tools](hosted-demo-system.md)
 
 The repository marketplace setup follows [OpenAI's plugin packaging documentation](https://developers.openai.com/plugins/build/plugins). The CLI `plugin add` command is also exposed by the current Codex CLI's help; availability can differ by client version.
 

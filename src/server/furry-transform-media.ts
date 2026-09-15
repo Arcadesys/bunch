@@ -9,19 +9,19 @@ const maxBytes = 5 * 1024 * 1024;
 export type AuthorizedReferenceMedia = { role: "character_reference"; src: string; contentType: "image/jpeg" | "image/png" | "image/webp" };
 export type MaterializedReferenceMedia = { paths: string[]; cleanup(): Promise<void> };
 
-// This consumes metadata obtained programmatically from DIDdy. Callers must
+// This consumes metadata obtained programmatically from Bunch. Callers must
 // never serialize its src values into a prompt, a command line, or a log.
 export async function materializeAuthorizedReferenceMedia(media: AuthorizedReferenceMedia[], publicOrigin: string, fetchImpl: typeof fetch = fetch): Promise<MaterializedReferenceMedia> {
   if (!media.length || media.length > 12) throw new Error("Choose one to twelve appearance references.");
   const origin = new URL(publicOrigin).origin;
-  const directory = await mkdtemp(join(tmpdir(), "diddy-furry-"));
+  const directory = await mkdtemp(join(tmpdir(), "bunch-furry-"));
   await chmod(directory, 0o700);
   try {
     const paths: string[] = [];
     for (const item of media) {
       const url = new URL(item.src);
       const localTestOrigin = process.env.NODE_ENV === "test" && url.protocol === "http:" && url.hostname === "127.0.0.1";
-      if ((url.protocol !== "https:" && !localTestOrigin) || url.origin !== origin || !url.pathname.startsWith("/api/system/images/inline/") || !url.searchParams.has("cap")) throw new Error("Reference media must be an authorized DIDdy image URL.");
+      if ((url.protocol !== "https:" && !localTestOrigin) || url.origin !== origin || !url.pathname.startsWith("/api/system/images/inline/") || !url.searchParams.has("cap")) throw new Error("Reference media must be an authorized Bunch image URL.");
       const extension = allowedTypes.get(item.contentType);
       if (!extension) throw new Error("Unsupported reference image type.");
       const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(15_000) });

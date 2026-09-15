@@ -6,7 +6,7 @@ import test from "node:test";
 import { assessTestProcess, requireTestDatabaseUrl, runStrictTestGate } from "../../scripts/test-ci";
 
 function withFixture(source: string, callback: (root: string) => void): void {
-  const root = mkdtempSync(join(tmpdir(), "diddy-test-ci-"));
+  const root = mkdtempSync(join(tmpdir(), "bunch-test-ci-"));
   const sourceDirectory = join(root, "src");
   mkdirSync(sourceDirectory);
   writeFileSync(join(sourceDirectory, "fixture.test.ts"), source);
@@ -30,7 +30,7 @@ function runFixture(source: string): Error | undefined {
 }
 
 function runEmptyFixture(): Error | undefined {
-  const root = mkdtempSync(join(tmpdir(), "diddy-test-ci-"));
+  const root = mkdtempSync(join(tmpdir(), "bunch-test-ci-"));
   try {
     runStrictTestGate(root, "postgres://fixture");
     return undefined;

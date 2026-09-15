@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 
 test("main task choices are visible before catch-up details on a phone", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   const tasks = page.getByRole("navigation", { name: "Things you can do" });
   for (const name of ["Leave a note", "Manage todos"]) {
@@ -15,7 +15,7 @@ test("main task choices are visible before catch-up details on a phone", async (
 for (const enlarged of [false, true]) {
   test(`home → note → save feedback → saved note → home${enlarged ? " at 200% text" : ""}`, async ({ page, harness }) => {
     if (enlarged) await page.addInitScript(() => document.addEventListener("DOMContentLoaded", () => { document.documentElement.style.fontSize = "40px"; }));
-    await page.goto("/");
+    await page.goto("/home");
     await page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Leave a note", exact: true }).click();
     const form = page.locator("#create-record");
     await expect(form.getByRole("heading", { name: "Leave a note" })).toBeFocused();
@@ -34,7 +34,7 @@ for (const enlarged of [false, true]) {
 }
 
 test("home → todos → add → complete → home", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByRole("link", { name: "Manage todos", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Todos", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Add a todo", exact: true }).click();
@@ -51,7 +51,7 @@ test("home → todos → add → complete → home", async ({ page, harness }) =
 });
 
 test("home tasks lead to catch-up and explicit hosting controls with a return path", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByRole("link", { name: "Read my catch-up" }).click();
   await expect(page.getByRole("heading", { name: "Your catch-up", exact: true })).toBeInViewport();
   await page.locator("#catch-up-records").getByRole("link", { name: "Back to Home actions" }).click();
@@ -67,7 +67,7 @@ test("home tasks lead to catch-up and explicit hosting controls with a return pa
 
 test("home → save thread → confirm → home → people → home", async ({ page, harness }) => {
   await page.route("**/api/system", route => route.fulfill({ json: { profiles: [{ id: "test-robin", name: "Test Robin", version: 1, images: [], profilePicture: null }], currentFront: null, assignments: [] } }));
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByRole("navigation", { name: "Things you can do" }).getByRole("link", { name: "Save a thread" }).click();
   await expect(page.getByRole("heading", { name: "Save a thread" })).toBeFocused();
   await page.getByLabel("Thread link").fill("https://example.invalid/demo");

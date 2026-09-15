@@ -1,0 +1,41 @@
+.shell { min-height: 100vh; }
+.main { max-width: 76rem; margin: 0 auto; padding: 1.25rem; }
+.hero { border-bottom: 4px solid var(--line); padding: 1.5rem 0; max-width: 50rem; }
+.hero p { font-size: 1.1rem; margin: 0; }
+.notice { min-height: 2.75rem; margin: 1.25rem 0; }
+.problem, .empty { border: 3px solid var(--line); background: var(--wash); padding: 1rem; font-weight: 700; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(19rem, .9fr); gap: 1.25rem; align-items: start; }
+.records, .editor { border: 3px solid var(--line); background: var(--surface); padding: 1rem; }
+.records > h2, .editor > h2 { font-size: 1.55rem; }
+.note { border-top: 3px solid var(--line); padding: 1rem 0; }
+.note:first-of-type { border-top: 0; padding-top: 0; }
+.noteHeader { display: flex; gap: .75rem; align-items: baseline; justify-content: space-between; }
+.noteHeader h3 { margin: 0; font-size: 1.25rem; }
+.noteHeader p, .author, .links { color: var(--muted); font-size: .95rem; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; }
+.editor form { display: grid; gap: 1rem; }
+.editor textarea, .editor select { width: 100%; }
+.editor fieldset { border: 2px solid var(--line); display: grid; gap: .55rem; margin: 0; padding: .8rem; }
+.editor legend { font-weight: 800; padding: 0 .25rem; }
+.editor fieldset p { margin: 0; color: var(--muted); }
+.choice { display: flex; align-items: center; gap: .6rem; min-height: 2.75rem; font-weight: 700; }
+.choice input { inline-size: 1.3rem; block-size: 1.3rem; flex: none; }
+.links h4 { margin: .75rem 0 .25rem; }
+.links ul { margin: .25rem 0; padding-left: 1.35rem; }
+.gifts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
+.gifts figure { margin: 0; border: 2px solid var(--line); padding: .4rem; }
+.gifts img { width: 100%; height: auto; display: block; }
+.gifts figcaption { font-size: .9rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+@media (max-width: 700px) { .main { padding: .75rem; } .layout { grid-template-columns: 1fr; } .noteHeader { display: block; } .noteHeader p { margin: .25rem 0 0; } }
+
+/* The shared navigation uses dark surfaces; keep its light-theme text readable here. */
+:global(:root[data-theme="light"]) .shell :global(.bunch-primary-bar),
+:global(:root[data-theme="light"]) .shell :global(.bunch-verbbar) {
+  background: var(--surface);
+}
+
+:global(:root[data-theme="light"]) .shell :global(.command-topnav a[aria-current="page"]) {
+  background: var(--wash);
+  color: var(--ink);
+}

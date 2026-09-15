@@ -15,6 +15,7 @@ type Alter = {
   images: ImageRecord[];
 };
 type Gallery = {
+  currentFronting?: { people: Array<{ id: string; name: string }>; checkedAt: string };
   alters: Alter[];
   generalImages?: ImageRecord[];
 };
@@ -33,6 +34,7 @@ function GalleryImage({ token, image, alt, onOpen }: { token: string; image: { i
 
 export function SharedGallery({ token }: { token: string }) {
   const [gallery, setGallery] = useState<Gallery | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [started, setStarted] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [openImage, setOpenImage] = useState<{ id: string; alt: string } | null>(null);
@@ -41,21 +43,34 @@ export function SharedGallery({ token }: { token: string }) {
 
   useEffect(() => {
     let live = true;
-    void fetch(`/api/public/gallery/${encodeURIComponent(token)}`, { cache: "no-store" })
-      .then(async (response) => {
+    let pending = false;
+    let controller: AbortController | undefined;
+    async function refresh() {
+      if (pending) return;
+      pending = true;
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller?.abort(), 10000);
+      try {
+        const response = await fetch(`/api/public/gallery/${encodeURIComponent(token)}`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("unavailable");
-        return response.json() as Promise<Gallery>;
-      })
-      .then((response) => {
+        const data = await response.json() as Gallery;
         if (!live) return;
-        const data = { ...response, generalImages: response.generalImages ?? [] };
-        setGallery(data);
-        setSelectedIndex(0);
+        setGallery({ ...data, generalImages: data.generalImages ?? [] });
         setStatus("");
-      })
-      .catch(() => live && setStatus("This shared gallery is unavailable."));
-    return () => { live = false; };
-  }, [token]);
+      } catch {
+        if (live) {
+          setGallery(null);
+          setOpenImage(null);
+          setStatus("This shared gallery is unavailable.");
+        }
+      } finally { clearTimeout(timeout); pending = false; }
+    }
+    void refresh();
+    const interval = setInterval(() => void refresh(), 30000);
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => { live = false; controller?.abort(); clearInterval(interval); window.removeEventListener("focus", onFocus); };
+  }, [token, refreshKey]);
 
   useEffect(() => {
     if (openImage) dialog.current?.showModal();
@@ -73,8 +88,15 @@ export function SharedGallery({ token }: { token: string }) {
       <p>This gallery was shared with you by its owner. It does not require a Bunch account or sign-in.</p>
       {status && <p className="notice" role="status">{status}</p>}
     </header>
+    <button className="button button-secondary" type="button" onClick={() => setRefreshKey(key => key + 1)}>Refresh shared gallery</button>
+    {gallery?.currentFronting && <section className="shared-gallery-welcome" aria-labelledby="current-fronting-heading" aria-live="polite">
+      <h2 id="current-fronting-heading">Currently recorded as fronting</h2>
+      {gallery.currentFronting.people.length ? <ul>{gallery.currentFronting.people.map(person => <li key={person.id}>{person.name}</li>)}</ul> : <p>No active fronting records are available to share. This does not mean nobody is fronting.</p>}
+      <p>Based on the owner’s recorded updates. Hosting is separate. Checks for updates every 30 seconds.</p>
+      <p>Last checked: {new Date(gallery.currentFronting.checkedAt).toLocaleTimeString()}</p>
+    </section>}
     {gallery && !started && <section className="shared-gallery-welcome" aria-labelledby="who-heading">
-      <h2 id="who-heading">Who’s here</h2>
+      <h2 id="who-heading">Who’s in this gallery</h2>
       {gallery.alters.length ? <ul>{gallery.alters.map((alter) => <li key={alter.id}>{alter.name}</li>)}</ul> : <p>No alter photos are available in this gallery.</p>}
       <button className="button" type="button" onClick={() => setStarted(true)}>Continue to the gallery</button>
     </section>}

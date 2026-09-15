@@ -13,7 +13,12 @@ export const frontingHistoryQuerySchema = z.object({
 }).strict();
 export type FrontingHistoryQuery = z.input<typeof frontingHistoryQuerySchema>;
 export const frontingHistoryResponseSchema = z.object({
-  data: z.array(frontingSessionViewSchema.extend({ kind: historyKindSchema, origin: z.enum(["EXPLICIT", "SYSTEM_HOST_SNAPSHOT", "LEGACY_RECORD"]) })),
+  data: z.array(frontingSessionViewSchema.extend({
+    kind: historyKindSchema,
+    origin: z.enum(["EXPLICIT", "SYSTEM_HOST_SNAPSHOT", "LEGACY_RECORD"]),
+    energy: z.number().int().min(1).max(5).optional(),
+    trigger: z.string().optional(),
+  })),
   meta: z.object({
     nextCursor: historyCursorSchema.optional(),
     recordedOnly: z.literal(true),
