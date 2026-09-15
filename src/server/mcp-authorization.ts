@@ -5,6 +5,7 @@ import { ownerIdFromAuth0Subject } from "@/server/auth";
 
 type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number; requestId?: string; generatedResult?: true };
 type ImageReadClaims = { sub: string; imageId: string; scope: "image:read"; exp: number };
+type SceneImageReadClaims = { sub: string; renderId: string; scope: "scene:read"; exp: number };
 export const COMPANION_SCOPE = "system:companion";
 export const COMPANION_OAUTH_SCOPES = [COMPANION_SCOPE, "openid", "profile", "email", "offline_access"] as const;
 
@@ -135,5 +136,19 @@ export function requireImageReadCapability(request: Request) {
   if (!token) throw new Error("A valid image view capability is required.");
   const claims = verifiedClaims<ImageReadClaims>(token);
   if (!claims.sub || !claims.imageId || claims.scope !== "image:read") throw new Error("A valid image view capability is required.");
+  return claims;
+}
+
+// A generated scene lives in its own render record rather than the private image
+// gallery, so the scene widget's capability names one render instead of an image.
+export function issueSceneImageReadCapability(ownerId: string, renderId: string) {
+  return signClaims({ sub: ownerId, renderId, scope: "scene:read", exp: Math.floor(Date.now() / 1000) + 5 * 60 });
+}
+
+export function requireSceneImageReadCapability(request: Request) {
+  const token = new URL(request.url).searchParams.get("cap");
+  if (!token) throw new Error("A valid scene view capability is required.");
+  const claims = verifiedClaims<SceneImageReadClaims>(token);
+  if (!claims.sub || !claims.renderId || claims.scope !== "scene:read") throw new Error("A valid scene view capability is required.");
   return claims;
 }

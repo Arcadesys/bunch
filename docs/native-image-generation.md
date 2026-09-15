@@ -13,8 +13,27 @@ picture, appearance references, hosting, fronting, or canon.
 Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
 but carry no pixels, and reference media stays in private metadata. A host whose
 own image tool cannot attach that metadata must call `generate_scene` rather than
-drawing a named person from text, IDs, or an invented likeness. The tool
-descriptions, server instructions, and companion skill all state this fallback.
+drawing a named person from text, IDs, or an invented likeness, and must not ask
+the user to upload a photo Bunch already holds. The tool descriptions, server
+instructions, and companion skill all state this fallback. Because hosts act on
+results more reliably than descriptions, the result text of `get_alter`,
+`list_alters`, `prepare_alter_image_prompt`, and `prepare_furry_scene` also names
+the exact `generate_scene` call for alters with selected appearance references.
+
+## In-chat result
+
+`generate_scene` and `get_scene_generation` render the Bunch scene widget
+(`ui://system-arcades-me.vercel.app/native-scene-v1.html`). While a job is queued
+or running, the widget calls `get_scene_generation` from the chat every five
+seconds, for up to about seven minutes, then shows the finished image.
+
+The image loads from `/api/system/native-scenes/inline/{renderId}` with a
+five-minute capability scoped to one owner and one render. It is issued only for
+a complete job and returned in `_meta.sceneImage`, which hosts pass to the widget
+and not to the model. Tool text and structured content carry only the job and the
+authenticated `/images` link, which remains the fallback for hosts that cannot
+render widgets. If the capability expires while the card is open, the widget
+requests one fresh capability before pointing to that link.
 
 ## Configuration and release
 

@@ -143,6 +143,73 @@ test("native scene MCP generation schedules once and returns only the authentica
   }
 });
 
+test("completed native scenes reach the chat only through the scene widget", async () => {
+  const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
+  process.env.MCP_TOKEN_SIGNING_SECRET = "scene-widget-metadata-test-secret";
+  const id = "33333333-3333-4333-8333-333333333333";
+  const widgetUri = "ui://system-arcades-me.vercel.app/native-scene-v1.html";
+  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64) };
+  const sceneService = { start: async () => complete, get: async () => complete, list: async () => [complete] } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
+  const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer("demo:scene-widget", system, undefined, { listProfiles: async () => [] }, undefined, () => {}, sceneService);
+  const client = new Client({ name: "scene-widget-test", version: "1.0.0" });
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    for (const name of ["generate_scene", "get_scene_generation"]) {
+      assert.equal((byName.get(name)?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, widgetUri, `${name} must render the scene widget`);
+      assert.equal(byName.get(name)?._meta?.["openai/outputTemplate"], widgetUri);
+    }
+    assert.equal(byName.get("get_scene_generation")?._meta?.["openai/widgetAccessible"], true, "the widget polls get_scene_generation");
+
+    const read = await client.callTool({ name: "get_scene_generation", arguments: { id } });
+    assert.deepEqual(read.structuredContent, complete);
+    const src = (read._meta?.sceneImage as { src?: string } | undefined)?.src ?? "";
+    assert.match(src, new RegExp(`^https://bunch\\.example/api/system/native-scenes/inline/${id}\\?cap=`));
+    assert.doesNotMatch(JSON.stringify({ content: read.content, structuredContent: read.structuredContent }), /cap=|scene:read|native-scenes\/inline/);
+    assert.match((read.content as Array<{ text: string }>)[0].text, /scene widget shows it in this chat/);
+
+    const resource = await client.readResource({ uri: widgetUri });
+    const html = "text" in resource.contents[0] ? resource.contents[0].text : "";
+    assert.match(html, /get_scene_generation/);
+    assert.match(html, /sceneImage/);
+    assert.deepEqual(resource.contents[0]._meta?.["openai/widgetCSP"], { connect_domains: ["https://bunch.example"], resource_domains: ["https://bunch.example"] });
+  } finally {
+    if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
+    else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
+    await client.close();
+    await server.close();
+  }
+});
+
+test("alter results name the generate_scene call instead of asking for an upload", async () => {
+  const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
+  const mouse = { ...lucy, id: "66666666-6666-4666-8666-666666666666", name: "Mouse Arcade", aliases: [], imageCount: 0, appearanceReferenceImageIds: [] };
+  const system = { getAlter: async (_ownerId: string, alterId: string) => (alterId === lucy.id ? lucy : mouse), listAlters: async () => ({ data: [lucy, mouse] }) } as unknown as SystemService;
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer("demo:scene-routing", system, undefined, { listProfiles: async () => [] });
+  const client = new Client({ name: "scene-routing-test", version: "1.0.0" });
+  const text = (result: unknown) => (result as { content: Array<{ text: string }> }).content[0].text;
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const loaded = text(await client.callTool({ name: "get_alter", arguments: { alterId: lucy.id } }));
+    assert.ok(loaded.includes('call generate_scene with alterNames ["Lucy Arcade"]'), loaded);
+    assert.match(loaded, /carry no pixels/);
+    assert.match(loaded, /Do not ask the user to upload a photo Bunch already holds/);
+    const listed = text(await client.callTool({ name: "list_alters", arguments: {} }));
+    assert.ok(listed.includes('alterNames ["Lucy Arcade"]'), listed);
+    assert.doesNotMatch(listed, /Mouse Arcade/);
+    assert.equal(text(await client.callTool({ name: "get_alter", arguments: { alterId: mouse.id } })), "Loaded the alter record.");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 test("lineup keeps private image capabilities in widget metadata only", async () => {
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "widget-metadata-test-secret-only";
