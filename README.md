@@ -82,6 +82,24 @@ archive, restore, erasure-preview, and permanent-delete routes. Mutations requir
 a UUID in `Idempotency-Key`. The owner ID is always derived from the session
 subject, never from the request body.
 
+## Laptop reference API (separate credential domain)
+
+`/account/reference-credentials` is an authenticated account screen for creating a high-entropy credential for a specific laptop and an explicit set of profiles. The plaintext credential is returned once over the signed-in same-origin request; Bunch stores only its SHA-256 hash. Revocation takes effect on the next request.
+
+This API does **not** accept a `system:companion` MCP token and the credential cannot call `/mcp` or `/api/v1`. It exposes only:
+
+- `GET /api/reference/v1/manifest` — the versioned Working Monkey contract: configured `origin`, `manifestVersion`, `selectedAlterIds`, selected alter metadata/version/SHA-256, and flat image entries with `alterId`, ID, version, content type, and SHA-256.
+- `GET /api/reference/v1/images/:imageId` — bytes for an image named in that credential's current manifest.
+
+Both calls require `Authorization: Bearer <one-time credential>` and re-check the credential hash, owner, revocation state, active selected profile set, and image selection every time. Only a profile picture or explicitly selected appearance reference is exportable. Notes, tasks, preferences, decisions, presence/fronting/hosting, coverage, catch-up, review, history, activity, storage keys, and all work fields are absent by contract.
+
+Release steps, deliberately not performed by this source change:
+
+1. Review and apply `drizzle/0020_reference_credentials.sql` through the normal Bunch migration process.
+2. Deploy Bunch with its existing private image storage configured, then sign in and issue a test credential from the account screen.
+3. Verify owner mismatch, deselection/archival, and revocation return `401`; verify the manifest and image hash match the bytes.
+4. Put the returned plaintext credential only in the laptop Keychain. Never copy it into `.env`, Working Monkey configuration, or logs.
+
 ## Database
 
 `src/db/schema.ts` is the Drizzle model of record. Runtime queries use `pg` with
