@@ -45,3 +45,17 @@ The handoff returns `elapsedSeconds`, calculated from the recorded instants. Exa
 ChatGPT must read available messages, report topics, decisions, open matters and coverage gaps, and show the window and duration. Bunch does not automatically receive ChatGPT history. Once the host generates a grounded summary, it saves that synthesis with its window and coverage gaps for 30 days using `save_conversation_catch_up`; raw transcripts remain prohibited. This is a ChatGPT MCP follow-up; a website mutation cannot independently start a ChatGPT conversation. Runtime history retrieval and generation depend on the connected host's capabilities.
 
 Verification for this follow-up: duration and DST checks, pinned source selection, mutation follow-up instructions, retry/clear exclusions, and database-backed hosting timestamp matching. No additional migration or production record change is needed.
+
+## Switch dock
+
+The Switch dock is pinned to the bottom of every page and always shows the recorded host and open fronting episodes. Opening it (the button or `S`) shows every active profile as a face. "Record a switch as" decides what a tap writes: **Host** replaces the open hosting period through the existing host setter, and **Also here** starts a fronting episode. Tapping someone who already carries that role ends it instead of writing a duplicate. The tap is the explicit report and uses the same idempotent endpoints as the Home form, which remains available with its separate confirmation step.
+
+After an arrival, the dock offers optional energy (1–5) and a trigger. They are saved only when Done is pressed, through `POST /api/v1/presence/periods/{id}/details` with the period version. Migration `0019_switch_dock_details.sql` adds nullable `energy` and `trigger_label` columns; unreported details are omitted from responses and never mean "none". Ends carry no details.
+
+**Undo** calls `POST /api/v1/presence/retract` with the original change's request ID. It retracts the change instead of recording its opposite, so a mistaken tap never becomes a recorded arrival or departure that would shorten a later catch-up window:
+
+- A started episode is deleted, together with any catch-up session opened for it.
+- An ended episode is reopened with its original start.
+- A host change or clear deletes the new hosting period, reopens the previous one, and restores `system_host`. The period trigger is bypassed only inside that transaction, through a transaction-local setting.
+
+Retraction is refused after 15 minutes, when the record changed since, or for a host reaffirmation that changed no period. Each retraction is audited as a `RETRACTED` activity event.

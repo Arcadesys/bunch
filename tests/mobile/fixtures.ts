@@ -36,13 +36,14 @@ type Harness = {
   currentFront: FrontingSessionView | null; profiles: { id: string; name: string }[];
   switchReadStatus: number; switchDelay: number; loseSwitchResponse: boolean; switchCount: number;
   profilePageSize: number; profileReads: number;
+  history: PresencePeriod[];
 };
 
 export const test = base.extend<{ harness: Harness }>({
   harness: [async ({ context }, use) => {
     const stamp = "2026-09-04T12:00:00.000Z";
     const harness: Harness = {
-      host:null, presence:{hosting:null,fronting:[{id:"60000000-0000-4000-8000-000000000001",alterId:fixtureSession.alterId,alterName:fixtureSession.alterName,startedAt:stamp,version:1,kind:"FRONTING",origin:"EXPLICIT"}]},
+      host:null, history:[], presence:{hosting:null,fronting:[{id:"60000000-0000-4000-8000-000000000001",alterId:fixtureSession.alterId,alterName:fixtureSession.alterName,startedAt:stamp,version:1,kind:"FRONTING",origin:"EXPLICIT"}]},
       saved: {
         todos: [{ id: "40000000-0000-4000-8000-000000000002", title: "Fixture todo", status: "BLOCKED", priority: "NORMAL", assigneeAlterIds: [], checklist: [], noteIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
         notes: [{ id: "40000000-0000-4000-8000-000000000001", body: "Fixture note", giftImages: [], taskIds: [], version: 1, updatedAt: stamp, createdAt: stamp }],
@@ -57,6 +58,7 @@ export const test = base.extend<{ harness: Harness }>({
     let recordSequence = 20;
     const recordReceipts = new Map<string, unknown>();
     const switchReceipts = new Map<string, unknown>();
+    const presenceSnapshots = new Map<string, Pick<Harness, "presence" | "host" | "history">>();
     await context.route("**/*", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
@@ -75,6 +77,11 @@ export const test = base.extend<{ harness: Harness }>({
       if(url.pathname === "/api/v1/presence/current" && request.method()==="GET")return reply(harness.presence,harness.switchReadStatus);
       if(url.pathname === "/api/v1/hosting/current" && request.method()==="GET")return reply(harness.host,harness.switchReadStatus);
       if (url.pathname === "/api/v1/fronting/current" && request.method() === "GET") return reply(harness.currentFront, harness.switchReadStatus);
+      if (url.pathname === "/api/v1/fronting/history" && request.method() === "GET") {
+        if (harness.switchReadStatus !== 200) return reply(null, harness.switchReadStatus);
+        const periods = [...(harness.presence.hosting ? [harness.presence.hosting] : []), ...harness.presence.fronting, ...harness.history];
+        return route.fulfill({ json: { data: periods.sort((a, b) => b.startedAt.localeCompare(a.startedAt)), meta: { recordedOnly: true } } });
+      }
       if (url.pathname === "/api/v1/alters" && request.method() === "GET") {
         harness.profileReads += 1;
         if (harness.switchReadStatus !== 200) return reply(null, harness.switchReadStatus);
@@ -90,7 +97,7 @@ export const test = base.extend<{ harness: Harness }>({
         if (id) { const record = harness.saved[recordKind].find(item => item.id === id); return reply(record, record ? 200 : 404); }
         return route.fulfill({ json: { data: harness.saved[recordKind], meta: {} } });
       }
-      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes(?:\/[^/]+)?|todos(?:\/[^/]+(?:\/checklist(?:\/[^/]+)?)?)?|fronting\/switch|hosting\/current|presence\/fronting\/(start|end)|important-threads(?:\/[^/]+\/confirm)?)$/;
+      const allowed = /^\/api\/v1\/(catch-up\/items\/[^/]+|notes(?:\/[^/]+)?|todos(?:\/[^/]+(?:\/checklist(?:\/[^/]+)?)?)?|fronting\/switch|hosting\/current|presence\/(?:fronting\/(start|end)|retract|periods\/[^/]+\/details)|important-threads(?:\/[^/]+\/confirm)?)$/;
       if (!allowed.test(url.pathname) || !["POST", "PATCH", "DELETE"].includes(request.method())) {
         harness.unexpected.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({ status: 501, json: { error: { message: "Unmocked API blocked by test harness." } } });
@@ -98,15 +105,41 @@ export const test = base.extend<{ harness: Harness }>({
       const body = request.postDataJSON();
       harness.writes.push({ method: request.method(), path: url.pathname, body, requestId: request.headers()["idempotency-key"] });
       if (harness.writeStatus !== 200) return reply(null, harness.writeStatus);
+      // Undo restores the snapshot taken before the original change, as the
+      // server's retraction restores the records instead of adding new ones.
+      if (url.pathname === "/api/v1/presence/retract") {
+        const key = request.headers()["idempotency-key"];
+        if (switchReceipts.has(key)) return reply(switchReceipts.get(key));
+        const snapshot = presenceSnapshots.get(body.changeRequestId);
+        if (!snapshot) return reply(null, 404);
+        presenceSnapshots.delete(body.changeRequestId);
+        const retracted = snapshot.host?.alterId !== harness.host?.alterId ? "HOST_CHANGE" : snapshot.presence.fronting.length > harness.presence.fronting.length ? "FRONTING_END" : "FRONTING_START";
+        harness.host = harness.host ? { ...(snapshot.host ?? { ...harness.host, alterId: null, alterName: null }), version: harness.host.version + 1 } : snapshot.host;
+        harness.presence = snapshot.presence;
+        harness.history = snapshot.history;
+        switchReceipts.set(key, { retracted });
+        return reply({ retracted });
+      }
+      if (url.pathname.startsWith("/api/v1/presence/periods/")) {
+        const key = request.headers()["idempotency-key"];
+        if (switchReceipts.has(key)) return reply(switchReceipts.get(key));
+        const period = [harness.presence.hosting, ...harness.presence.fronting].find(candidate => candidate?.id === url.pathname.split("/")[5]);
+        if (!period) return reply(null, 404);
+        if (period.version !== body.expectedVersion) return reply(null, 409);
+        Object.assign(period, { energy: body.energy ?? undefined, trigger: body.trigger ?? undefined, version: period.version + 1 });
+        switchReceipts.set(key, structuredClone(period));
+        return reply(period);
+      }
       if(url.pathname.startsWith("/api/v1/presence/fronting/")||url.pathname==="/api/v1/hosting/current"){
         const key=request.headers()["idempotency-key"];
         if(switchReceipts.has(key))return reply(switchReceipts.get(key));
         if(harness.switchDelay)await new Promise(resolve=>setTimeout(resolve,harness.switchDelay));
+        presenceSnapshots.set(key,structuredClone({presence:harness.presence,host:harness.host,history:harness.history}));
         let result: unknown;
         if(url.pathname.endsWith("/end")){
           const p=harness.presence.fronting.find(p=>p.id===body.episodeId);
           if(!p||p.version!==body.expectedVersion)return reply(null,409);
-          result={...p,endedAt:stamp,version:p.version+1};harness.presence.fronting=harness.presence.fronting.filter(p=>p.id!==body.episodeId);
+          result={...p,endedAt:stamp,version:p.version+1};harness.history.push(result as PresencePeriod);harness.presence.fronting=harness.presence.fronting.filter(p=>p.id!==body.episodeId);
         }else if(url.pathname.endsWith("/start")){
           const p=harness.profiles.find(p=>p.id===body.alterId);if(!p)return reply(null,404);
           if(harness.presence.fronting.some(p=>p.alterId===body.alterId))return reply(null,409);
@@ -116,6 +149,7 @@ export const test = base.extend<{ harness: Harness }>({
           if(body.expectedVersion!==(harness.host?.version??null))return reply(null,409);
           const p=harness.profiles.find(p=>p.id===body.alterId);
           harness.host={id:harness.host?.id??crypto.randomUUID(),alterId:p?.id??null,alterName:p?.name??null,recordedAt:stamp,version:(harness.host?.version??0)+1};
+          if(harness.presence.hosting)harness.history.push({...harness.presence.hosting,endedAt:stamp,version:harness.presence.hosting.version+1});
           harness.presence.hosting=p?{id:crypto.randomUUID(),alterId:p.id,alterName:p.name,startedAt:stamp,version:1,kind:"HOSTING",origin:"EXPLICIT"}:null;result=harness.host;
         }
         switchReceipts.set(key,result);harness.switchCount++;
