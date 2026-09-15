@@ -1,4 +1,4 @@
-import { startFrontingEpisodeSchema, endFrontingEpisodeSchema, type StartFrontingEpisode, type EndFrontingEpisode, type PresencePeriod } from "@/domain/presence";
+import { startFrontingEpisodeSchema, endFrontingEpisodeSchema, recordPresenceDetailsSchema, retractPresenceChangeSchema, PRESENCE_RETRACT_WINDOW_MINUTES, type StartFrontingEpisode, type EndFrontingEpisode, type PresencePeriod, type PresenceRetraction, type RecordPresenceDetails, type RetractPresenceChange } from "@/domain/presence";
 import { frontingHistoryQuerySchema, type FrontingHistoryQuery, type FrontingHistoryResponse } from "@/domain/fronting-history";
 import { setSystemHostSchema, type SetSystemHost, type SystemHostView } from "@/domain/host";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -221,6 +221,11 @@ function todoFromRow(row: TodoRow): TodoView {
     updatedAt: asIso(row.updated_at),
     archivedAt: row.archived_at ? asIso(row.archived_at) : undefined,
   };
+}
+
+// Unreported details are omitted rather than null, so they never read as "none".
+function presenceDetails(row: { energy?: number | null; trigger_label?: string | null }) {
+  return { ...(row.energy ? { energy: row.energy } : {}), ...(row.trigger_label ? { trigger: row.trigger_label } : {}) };
 }
 
 function frontingFromRow(row: FrontingRow): FrontingSessionView {
@@ -458,7 +463,7 @@ export class SystemService {
       where p.owner_id = $1 and p.id = $2::uuid`, [ownerId, id]);
     const row = result.rows[0];
     if (!row) throw new SystemError("NOT_FOUND", "Recorded period not found.");
-    return { ...frontingFromRow(row), kind: row.kind, origin: row.origin };
+    return { ...frontingFromRow(row), kind: row.kind, origin: row.origin, ...presenceDetails(row) };
   }
 
   async getCurrentPresence(ownerId: string) {
@@ -469,7 +474,7 @@ export class SystemService {
       const rows = await client.query(`select p.*, a.name as alter_name from presence_period p
         join alter_profile a on a.owner_id = p.owner_id and a.id = p.alter_id
         where p.owner_id = $1 and p.ended_at is null order by p.started_at, p.id`, [ownerId]);
-      const periods: PresencePeriod[] = rows.rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+      const periods: PresencePeriod[] = rows.rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin, ...presenceDetails(row) }));
       const legacyCurrentFront = await this.currentFront(client, ownerId);
       await client.query("commit");
       return { hosting: periods.find(p => p.kind === "HOSTING") ?? null,
@@ -510,16 +515,84 @@ export class SystemService {
     });
   }
 
+  async recordPresenceDetails(ownerId: string, raw: RecordPresenceDetails, source: RecordSource) {
+    const input = recordPresenceDetailsSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "record_presence_details", async client => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const current = await this.presenceById(client, ownerId, input.periodId);
+      if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The period changed. Read current presence again before adding details.");
+      await client.query(`update presence_period set energy = $3, trigger_label = $4, version = version + 1, updated_at = clock_timestamp()
+        where owner_id = $1 and id = $2::uuid`, [ownerId, input.periodId, input.energy, input.trigger]);
+      const result = await this.presenceById(client, ownerId, input.periodId);
+      await this.activity(client, ownerId, current.kind === "HOSTING" ? "HOSTING_PERIOD" : "FRONTING_EPISODE", result.id, "DETAILS_RECORDED", source, ["energy", "trigger"], input.requestId);
+      return result;
+    });
+  }
+
+  // Undo removes a just-recorded change rather than recording its opposite. An
+  // ended episode or restored host would otherwise become the last recorded
+  // departure and silently shorten the next catch-up window.
+  async retractPresenceChange(ownerId: string, raw: RetractPresenceChange, source: RecordSource) {
+    const input = retractPresenceChangeSchema.parse(raw);
+    return this.mutate(ownerId, input.requestId, "retract_presence_change", async (client): Promise<PresenceRetraction> => {
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      const receipt = await client.query<{ operation: string; recent: boolean; result: { id: string; alterId?: string | null; version: number; recordedAt?: string; endedAt?: string } }>(
+        `select operation, result, created_at > now() - make_interval(mins => $3) as recent
+          from mutation_receipt where owner_id = $1 and request_id = $2::uuid`,
+        [ownerId, input.changeRequestId, PRESENCE_RETRACT_WINDOW_MINUTES]);
+      const change = receipt.rows[0];
+      if (!change || !["set_system_host", "start_fronting_episode", "end_fronting_episode"].includes(change.operation)) {
+        throw new SystemError("NOT_FOUND", "No recorded hosting or fronting change matches that request.");
+      }
+      if (!change.recent) throw new SystemError("CONFLICT", `A change can be undone only within ${PRESENCE_RETRACT_WINDOW_MINUTES} minutes. Record a new change instead.`);
+      const { result } = change;
+      if (change.operation === "start_fronting_episode") {
+        const removed = await client.query("delete from presence_period where owner_id = $1 and id = $2::uuid and kind = 'FRONTING' and ended_at is null", [ownerId, result.id]);
+        if (!removed.rowCount) throw new SystemError("CONFLICT", "That episode already ended or was undone. Read current presence again.");
+        await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "RETRACTED", source, ["startedAt"], input.requestId);
+        return { retracted: "FRONTING_START", periodId: result.id };
+      }
+      if (change.operation === "end_fronting_episode") {
+        const reopened = await client.query(`update presence_period p set ended_at = null, version = p.version + 1, updated_at = clock_timestamp()
+          where p.owner_id = $1 and p.id = $2::uuid and p.kind = 'FRONTING' and p.ended_at = $3::timestamptz
+          and not exists (select 1 from presence_period o where o.owner_id = p.owner_id and o.alter_id = p.alter_id and o.kind = 'FRONTING' and o.ended_at is null)`,
+        [ownerId, result.id, result.endedAt]);
+        if (!reopened.rowCount) throw new SystemError("CONFLICT", "That episode changed after it ended. Read current presence again.");
+        await this.activity(client, ownerId, "FRONTING_EPISODE", result.id, "RETRACTED", source, ["endedAt"], input.requestId);
+        return { retracted: "FRONTING_END", periodId: result.id };
+      }
+      const host = await client.query<{ version: number }>("select version from system_host where owner_id = $1 for update", [ownerId]);
+      if (host.rows[0]?.version !== result.version) throw new SystemError("CONFLICT", "The host record changed after that change. Read it again.");
+      const incoming = result.alterId
+        ? (await client.query<{ id: string }>(`select id from presence_period where owner_id = $1 and kind = 'HOSTING' and ended_at is null
+            and started_at = $2::timestamptz and alter_id = $3::uuid`, [ownerId, result.recordedAt, result.alterId])).rows[0]
+        : undefined;
+      if (result.alterId && !incoming) throw new SystemError("CONFLICT", "The hosting period changed after that change. Read current presence again.");
+      const outgoing = (await client.query<{ id: string; alter_id: string; started_at: Date }>(`select id, alter_id, started_at from presence_period
+        where owner_id = $1 and kind = 'HOSTING' and ended_at = $2::timestamptz order by started_at desc limit 1`, [ownerId, result.recordedAt])).rows[0];
+      if (!incoming && !outgoing) throw new SystemError("VALIDATION_ERROR", "Reaffirming the same host changed no period, so there is nothing to undo.");
+      // The period trigger stays out of this transaction; the periods are restored here.
+      await client.query("select set_config('bunch.retracting_hosting', 'on', true)");
+      if (incoming) await client.query("delete from presence_period where owner_id = $1 and id = $2::uuid", [ownerId, incoming.id]);
+      if (outgoing) await client.query("update presence_period set ended_at = null, version = version + 1, updated_at = clock_timestamp() where owner_id = $1 and id = $2::uuid", [ownerId, outgoing.id]);
+      await client.query("update system_host set alter_id = $2::uuid, version = version + 1, recorded_at = $3 where owner_id = $1",
+        [ownerId, outgoing?.alter_id ?? null, outgoing?.started_at ?? result.recordedAt]);
+      await client.query("select set_config('bunch.retracting_hosting', 'off', true)");
+      await this.activity(client, ownerId, "HOST", result.id, "RETRACTED", source, ["alterId"], input.requestId, result.alterId ?? undefined, outgoing?.alter_id);
+      return { retracted: "HOST_CHANGE", periodId: outgoing?.id ?? incoming?.id };
+    });
+  }
+
   async listFrontingHistory(ownerId: string, raw: FrontingHistoryQuery): Promise<FrontingHistoryResponse> {
     const input = frontingHistoryQuerySchema.parse(raw);
     if (input.from && input.to && Date.parse(input.from) >= Date.parse(input.to)) {
       throw new SystemError("VALIDATION_ERROR", "The end must be after the start.");
     }
     const result = await this.pool.query(`with periods as (
-      select id, owner_id, alter_id, started_at, ended_at, version, kind::text, origin
+      select id, owner_id, alter_id, started_at, ended_at, version, kind::text, origin, energy, trigger_label
         from presence_period where owner_id = $1
       union all
-      select id, owner_id, alter_id, started_at, ended_at, version, 'LEGACY_FRONT', 'LEGACY_RECORD'
+      select id, owner_id, alter_id, started_at, ended_at, version, 'LEGACY_FRONT', 'LEGACY_RECORD', null::smallint, null::text
         from fronting_session where owner_id = $1
     ) select p.*, a.name as alter_name,
       to_char(p.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_started_at
@@ -534,7 +607,7 @@ export class SystemService {
       input.before?.startedAt ?? null, input.before?.id ?? null, input.before?.kind ?? null,
       input.kind ?? null, input.limit + 1]);
     const rows = result.rows.slice(0, input.limit);
-    const data = rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin }));
+    const data = rows.map(row => ({ ...frontingFromRow(row), kind: row.kind, origin: row.origin, ...presenceDetails(row) }));
     const last = rows.at(-1);
     return { data, meta: { recordedOnly: true, ...(result.rows.length > input.limit && last
       ? { nextCursor: { startedAt: last.cursor_started_at, id: last.id, kind: last.kind } } : {}) } };

@@ -14,6 +14,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -339,10 +340,15 @@ export const presencePeriod = pgTable("presence_period", {
   endedAt: timestamp("ended_at", { withTimezone: true }),
   version: integer("version").notNull().default(1),
   origin: text("origin").notNull().default("EXPLICIT"),
+  // Optional details reported after a switch; null means not reported.
+  energy: smallint("energy"),
+  triggerLabel: text("trigger_label"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
   unique("presence_period_owner_id_id_key").on(table.ownerId, table.id),
+  check("presence_period_energy", sql`${table.energy} is null or ${table.energy} between 1 and 5`),
+  check("presence_period_trigger_label", sql`${table.triggerLabel} is null or char_length(${table.triggerLabel}) between 1 and 60`),
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "presence_period_owner_alter_fk" }).onDelete("cascade"),
   uniqueIndex("presence_period_one_host").on(table.ownerId).where(sql`${table.kind} = 'HOSTING' and ${table.endedAt} is null`),
   uniqueIndex("presence_period_one_episode_per_alter").on(table.ownerId, table.alterId).where(sql`${table.kind} = 'FRONTING' and ${table.endedAt} is null`),
