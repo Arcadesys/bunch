@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 
 type Profile = { id: string; name: string; archivedAt?: string | null };
 type Credential = { id: string; label: string; selectedAlterIds: string[]; createdAt: string; revokedAt: string | null; lastUsedAt: string | null };
@@ -28,6 +29,8 @@ export default function ReferenceCredentialsPage() {
       setNotice("Reference credentials are separate from companion access.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not load reference access."); }
   };
+  // load only updates state after network responses; there is no synchronous derived-state update.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, []);
 
   async function issue(event: FormEvent) {
@@ -44,7 +47,7 @@ export default function ReferenceCredentialsPage() {
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   return <main className="system-page reference-account">
-    <a href="/">← Back to Bunch</a>
+    <Link href="/">← Back to Bunch</Link>
     <h1>Reference access</h1>
     <p className="notice" role="status">{notice}</p>
     <section className="panel"><h2>Create laptop reference credential</h2>
