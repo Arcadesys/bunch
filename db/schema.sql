@@ -20,3 +20,4 @@
 \ir ../drizzle/0015_group_photo_finisher.sql
 \ir ../drizzle/0016_note_image_gifts.sql
 \ir ../drizzle/0017_kanban_checklists_and_note_links.sql
+\ir ../drizzle/0020_reference_credentials.sql

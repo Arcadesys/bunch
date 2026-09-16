@@ -190,6 +190,7 @@ test("selected arrival remains pinned after it ends and keeps hosting/fronting s
     const handoff = await service.prepareConversationCatchUp("owner:one", { alterId: profileId, periodId: frontingId, timeZone: "UTC" });
     assert.equal(handoff.elapsedSeconds, 181800);
     assert.equal(handoff.window?.endAt, "2026-09-05T12:00:00.000Z");
+    assert.equal(handoff.window?.provenance, kind === "FRONTING" ? "RECORDED_FRONTING_WINDOW" : "RECORDED_PRESENCE_WINDOW");
     assert.equal(calls[1].values?.[2], frontingId);
     assert.match(calls[1].sql, /or id=\$3::uuid/);
     assert.equal(calls[2].values?.[2], kind);

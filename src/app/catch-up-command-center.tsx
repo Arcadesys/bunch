@@ -241,6 +241,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
   const [suggestion, setSuggestion] = useState<{ id: string; version: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const submitInFlight = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -248,7 +249,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
     submitInFlight.current = true;
     setBusy(true);
     setFormNotice("");
-    const formElement = event.currentTarget;
+    const formElement = formRef.current ?? event.currentTarget;
     const form = new FormData(formElement);
     const requestId = crypto.randomUUID();
     const endpoint = view === "BOARD" ? "/api/v1/todos" : view === "NOTES" ? "/api/v1/notes" : "/api/v1/important-threads";
@@ -264,7 +265,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
         setSuggestion({ id: payload.data.id, version: payload.data.version });
         announce("Thread suggestion saved. Confirm it only after the summary and key action are correct.");
       } else {
-        formElement.reset();
+        formRef.current?.reset();
         announce(view === "BOARD" ? "Todo saved to Todos." : "Note saved to Notes.");
       }
     } catch (error) { announce(error instanceof Error ? error.message : "Unable to save the record."); }
@@ -289,10 +290,10 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
   }
 
   const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/home">Back to Home</Link></div></div>;
-  if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
-  if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
+  if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form ref={formRef} onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
+  if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form ref={formRef} onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
   const invalidateSuggestion = () => setSuggestion(null);
-  return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Save a thread</h2><p>Review the saved summary and action before confirming it for catch-up. No transcript is stored.</p><form onSubmit={submit}><label>Source<select disabled={busy} name="source" onChange={invalidateSuggestion}><option value="CODEX">Codex</option><option value="CHATGPT">ChatGPT</option></select></label><label>Thread link<input disabled={busy} name="url" type="url" required onChange={invalidateSuggestion} /></label><label>Title<input disabled={busy} name="title" required maxLength={500} onChange={invalidateSuggestion} /></label><label>Approved summary<textarea disabled={busy} name="summary" required rows={3} maxLength={5000} onChange={invalidateSuggestion} /></label><label>Key decision or action<textarea disabled={busy} name="nextAction" required rows={2} maxLength={5000} onChange={invalidateSuggestion} /></label><Recipients profiles={profiles} disabled={busy} label="Recipients" onChange={invalidateSuggestion} /><button className="command-button" disabled={busy}>Save suggestion</button>{suggestion ? <button className="command-button secondary" type="button" disabled={busy} onClick={confirmSuggestion}>Confirm important thread</button> : null}</form>{feedback}</section>;
+  return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Save a thread</h2><p>Review the saved summary and action before confirming it for catch-up. No transcript is stored.</p><form ref={formRef} onSubmit={submit}><label>Source<select disabled={busy} name="source" onChange={invalidateSuggestion}><option value="CODEX">Codex</option><option value="CHATGPT">ChatGPT</option></select></label><label>Thread link<input disabled={busy} name="url" type="url" required onChange={invalidateSuggestion} /></label><label>Title<input disabled={busy} name="title" required maxLength={500} onChange={invalidateSuggestion} /></label><label>Approved summary<textarea disabled={busy} name="summary" required rows={3} maxLength={5000} onChange={invalidateSuggestion} /></label><label>Key decision or action<textarea disabled={busy} name="nextAction" required rows={2} maxLength={5000} onChange={invalidateSuggestion} /></label><Recipients profiles={profiles} disabled={busy} label="Recipients" onChange={invalidateSuggestion} /><button className="command-button" disabled={busy}>Save suggestion</button>{suggestion ? <button className="command-button secondary" type="button" disabled={busy} onClick={confirmSuggestion}>Confirm important thread</button> : null}</form>{feedback}</section>;
 }
 
 function CatchUpRow({ item, disabled, onState }: { item: CatchUpItem; disabled: boolean; onState: (item: CatchUpItem, state: CatchUpReviewState, defer?: { choice: string; custom: string }) => void }) {

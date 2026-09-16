@@ -59,6 +59,51 @@ body {
   padding: 32px;
 }
 
+.system-page {
+  max-width: 900px;
+  margin: auto;
+  padding: 32px;
+}
+
+.reference-account .panel {
+  margin-top: 24px;
+}
+
+.check-row,
+.credential-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.credential-list li {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--line);
+  padding: 16px 0;
+}
+
+.credential-list span {
+  width: 100%;
+}
+
+.secret-receipt {
+  border: 4px solid var(--focus);
+  background: var(--wash);
+  margin-top: 24px;
+  padding: 18px;
+}
+
+.secret-receipt code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  padding: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
 .site-header {
   display: flex;
   gap: 24px;

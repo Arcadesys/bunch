@@ -269,6 +269,9 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
                   <p>
                     <a href="/profiles">Add or manage alter profiles</a>
                   </p>
+                  <p>
+                    <a href="/account/reference-credentials">Manage laptop reference credentials</a>
+                  </p>
                 </>
               )}
               {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}

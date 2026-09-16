@@ -63,7 +63,8 @@ test("confirmed arrivals direct ChatGPT to the exact catch-up, while clears and 
     const start = await client.callTool({ name: "start_fronting_episode", arguments: { requestId, alterId } });
     assert.equal(start.isError, undefined);
     assert.match(JSON.stringify(start.content), new RegExp(`periodId ${id}`));
-    assert.match(JSON.stringify(start.content), /Generate the returned conversation catch-up in ChatGPT now/);
+    assert.match(JSON.stringify(start.content), /Draft a brief, source-linked catch-up/);
+    assert.match(JSON.stringify(start.content), /only after explicit approval/);
     const host = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId, expectedVersion: null } });
     assert.match(JSON.stringify(host.content), /hosting.startedAt equals 2026-09-05T12:00:00.000Z/);
     const cleared = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId: null, expectedVersion: 1 } });
