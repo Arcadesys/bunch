@@ -13,3 +13,7 @@ private-uploads/
 # Local reproduction of CI browser evidence
 /test-results/
 /playwright-report/
+
+# Scratch space and local downloads; can hold private reference photos
+/tmp/
+/artifacts/

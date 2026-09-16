@@ -1806,3 +1806,12 @@ h1, .command-hero h1 { color: var(--ink); }
 .generated-photo-caption h2 { font-size: 1.25rem; line-height: 1.5; margin: 8px 0; }
 .generated-photo-caption .actions { gap: 12px; }
 .generated-photo-caption .button { min-height: 48px; }
+
+/* The image picker keeps each private album inspectable without exposing storage keys. */
+.image-person-picker { margin: .65rem 0; padding: .65rem; border: 2px solid var(--line); border-radius: 10px; background: var(--wash); }
+.image-person-picker details { margin-top: .25rem; }
+.image-person-picker summary { min-height: 44px; padding: .55rem 0; cursor: pointer; font-weight: 800; }
+.private-reference-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: .75rem; margin-top: .5rem; }
+.private-reference-card { min-width: 0; margin: 0; padding: .5rem; border: 2px solid var(--line); border-radius: 8px; background: var(--surface); }
+.private-reference-card img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; background: var(--paper); }
+.private-reference-card figcaption { margin-top: .45rem; font-size: .85rem; line-height: 1.35; overflow-wrap: anywhere; }
