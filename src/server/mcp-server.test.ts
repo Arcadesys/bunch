@@ -275,9 +275,11 @@ test("Furry Image Studio hooks are explicitly disabled", async () => {
     const transform = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
     assert.equal(transform.isError, true);
     assert.match(JSON.stringify(transform.content), /FURRY_IMAGE_STUDIO_DISABLED/);
+    assert.equal(transform._meta, undefined);
     const upload = await client.callTool({ name: "prepare_furry_result_upload", arguments: { alterId: profile.id, requestId: "33333333-3333-4333-8333-333333333333", filename: "keeper.png", contentType: "image/png" } });
     assert.equal(upload.isError, true);
     assert.match(JSON.stringify(upload.content), /FURRY_IMAGE_STUDIO_DISABLED/);
+    assert.equal(upload._meta, undefined);
   } finally {
     await client.close();
     await server.close();
