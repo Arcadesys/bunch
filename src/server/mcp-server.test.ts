@@ -1,4 +1,3 @@
-import { imagePromptResultSchema } from "@/domain/image-prompt";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -36,7 +35,8 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
-    assert.equal(byName.get("prepare_furry_transform")?.annotations?.readOnlyHint, true, "transform preparation must not change private state");
+    assert.match(byName.get("prepare_furry_transform")?.description ?? "", /Disabled: Bunch does not integrate with Furry Image Studio/);
+    assert.match(byName.get("prepare_furry_result_upload")?.description ?? "", /Disabled: Bunch does not integrate with Furry Image Studio/);
     assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
@@ -263,9 +263,7 @@ test("lineup keeps private image capabilities in widget metadata only", async ()
   }
 });
 
-test("Furry transform preparation keeps selected reference media out of model-visible output", async () => {
-  const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
-  process.env.MCP_TOKEN_SIGNING_SECRET = "furry-transform-metadata-test-secret";
+test("Furry Image Studio hooks are explicitly disabled", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const profile = { id: "11111111-1111-4111-8111-111111111111", name: "Melody Arcade", aliases: ["Melody"], strengths: [], boundaries: [], images: [], imageCount: 1, appearanceNotes: "Use the approved character references.", appearanceReferenceImageIds: ["22222222-2222-4222-8222-222222222222"], version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" };
   const service = { listAlters: async () => ({ data: [profile] }) } as unknown as SystemService;
@@ -274,17 +272,13 @@ test("Furry transform preparation keeps selected reference media out of model-vi
   try {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const result = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
-    const prepared = imagePromptResultSchema.parse(result.structuredContent);
-    assert.equal(prepared.ready, true);
-    assert.equal(prepared.identities[0].alterId, profile.id);
-    assert.equal(prepared.identities[0].reliesOnReference, true);
-    assert.match(prepared.prompt, /Canonical visual identity/);
-    assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|private-reference-key|image:read/);
-    assert.match((result._meta?.referenceMedia as Array<{ src: string }>)[0].src, /\/api\/system\/images\/inline\/.*\?cap=/);
+    const transform = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
+    assert.equal(transform.isError, true);
+    assert.match(JSON.stringify(transform.content), /FURRY_IMAGE_STUDIO_DISABLED/);
+    const upload = await client.callTool({ name: "prepare_furry_result_upload", arguments: { alterId: profile.id, requestId: "33333333-3333-4333-8333-333333333333", filename: "keeper.png", contentType: "image/png" } });
+    assert.equal(upload.isError, true);
+    assert.match(JSON.stringify(upload.content), /FURRY_IMAGE_STUDIO_DISABLED/);
   } finally {
-    if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
-    else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
     await client.close();
     await server.close();
   }
