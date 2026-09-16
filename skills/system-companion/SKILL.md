@@ -82,14 +82,6 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
 - Private reference metadata reaches a generator only through an external adapter that attaches it; a chat host's own image tool never receives it, and appearance reference IDs are not image content. Never draw a named alter from text alone, from reference IDs, or from an invented likeness, and never ask the user to upload a photo Bunch already holds.
 
-## Conversation catch-up
-
-- An explicit self-identification or check-in can offer conversation catch-up; it never changes current-front state. Switch front only after separate explicit confirmation.
-- For an explicit catch-up request, resolve the named profile with `list_alters`, then call `prepare_conversation_catch_up` with an IANA time zone. Use an explicit complete `startAt`/`endAt` correction when supplied. A recorded-fronting window is only a candidate, never proof of absence.
-- Explicit timestamp offsets are authoritative for the returned instants; the IANA time zone is display context and is never used to reinterpret those offsets.
-- System does not automatically receive ChatGPT history. A capable host may read available messages in the returned window and report topics, decisions, open matters, source links, and coverage gaps. Never rely only on titles.
-- If host history access is unavailable, say that DIDdy supplied dates but this host cannot retrieve other conversations; offer selected conversations or a capable host. Do not claim that nothing happened, fabricate a summary, or persist raw transcripts/generated summaries in System.
-
 ## Privacy boundary
 
 - Treat profiles, notes, todos, decisions, threads, fronting state, and photos as private owner-scoped records.

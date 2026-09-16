@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { AppNavigation } from "@/app/app-navigation";
 
-type Person = { id: string; name: string; appearanceReferenceImageIds?: string[] };
+type PersonImage = { id: string; isProfilePicture?: boolean; contentType?: string };
+type Person = { id: string; name: string; appearanceReferenceImageIds?: string[]; images?: PersonImage[] };
 type Render = { id: string; scene: string; alterNames: string[]; state: "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED"; createdAt: string; finishedAt: string | null; errorMessage: string | null; width: number | null; height: number | null };
 const demoHeaders = { "x-system-demo": "local" };
 
@@ -78,7 +80,17 @@ export default function ImagesPage() {
     <section className="panel" aria-labelledby="generate-heading"><h2 id="generate-heading">Generate a private image</h2><p>This creates a separate private image. It does not change a profile picture, selected appearance references, hosting, or fronting.</p>
       {available === false && <p role="alert">Private image generation is not connected yet. Your prompt has not been sent.</p>}
       <form onSubmit={generate} className="upload-form"><label htmlFor="scene-prompt">Describe the image<textarea id="scene-prompt" value={scene} onChange={event => setScene(event.target.value)} minLength={1} maxLength={5000} rows={5} required /></label>
-        <fieldset><legend>People to reference, optional</legend><p>Select only people whose approved appearance references should guide this image.</p>{people.map(person => <label key={person.id} style={{ display: "block", minHeight: 44 }}><input type="checkbox" checked={selected.includes(person.id)} onChange={() => toggle(person.id)} /> {person.name}{person.appearanceReferenceImageIds?.length ? " · selected reference available" : " · no selected reference"}</label>)}</fieldset>
+        <fieldset><legend>People to reference, optional</legend><p>Select a person to use their approved appearance references. Their private album is shown below so you can confirm which pictures are selected for image generation.</p>{people.map(person => {
+          const references = new Set(person.appearanceReferenceImageIds ?? []);
+          const images = person.images ?? [];
+          return <div className="image-person-picker" key={person.id}>
+            <label style={{ display: "block", minHeight: 44 }}><input type="checkbox" checked={selected.includes(person.id)} onChange={() => toggle(person.id)} /> {person.name}{references.size ? " · selected reference available" : " · no selected reference"}</label>
+            <details>
+              <summary>{person.name} private album ({images.length} {images.length === 1 ? "picture" : "pictures"})</summary>
+              {images.length ? <div className="private-reference-grid">{images.map((image, index) => <figure key={image.id} className="private-reference-card"><Image src={`/api/v1/images/${encodeURIComponent(image.id)}`} alt={`Private picture ${index + 1} for ${person.name}`} width={480} height={480} sizes="(max-width: 760px) 40vw, 180px" unoptimized /><figcaption>{references.has(image.id) ? "Selected appearance reference" : image.isProfilePicture ? "Profile picture; not selected as an appearance reference" : "Private album picture; not selected"}</figcaption></figure>)}</div> : <p>No private album pictures are available for {person.name}.</p>}
+            </details>
+          </div>;
+        })}</fieldset>
         <label>Format<select value={format} onChange={event => setFormat(event.target.value as typeof format)}><option value="square">Square</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
         <p>Uses Bunch’s image provider; daily generation limits apply.</p><button className="button" type="submit" disabled={busy || pending || available === false}>{busy ? "Starting image…" : pending ? "Image in progress…" : "Generate private image"}</button></form>
     </section>

@@ -132,11 +132,17 @@ test("optional people use every paginated exact name without horizontal overflow
     id: "c0000000-0000-4000-8000-000000000001",
     name: "Avery Fixture",
     appearanceReferenceImageIds: ["reference-a"],
+    images: [{ id: "reference-a", isProfilePicture: false }],
   };
   const secondPerson = {
     id: "c0000000-0000-4000-8000-000000000002",
     name: "Blake Fixture",
     appearanceReferenceImageIds: ["reference-b", "reference-c"],
+    images: [
+      { id: "reference-b", isProfilePicture: true },
+      { id: "reference-c", isProfilePicture: false },
+      { id: "album-only", isProfilePicture: false },
+    ],
   };
 
   await page.route("**/api/v1/alters**", (route) => {
@@ -164,10 +170,22 @@ test("optional people use every paginated exact name without horizontal overflow
     }
     return route.fulfill({ json: { data: [], meta: { available: true } } });
   });
+  await page.route("**/api/v1/images/**", (route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: imageFixture,
+    }),
+  );
 
   await page.goto("/images");
   await expect(page.getByLabel(/Avery Fixture/)).toBeVisible();
   await expect(page.getByLabel(/Blake Fixture/)).toBeVisible();
+  await expect(page.getByText("Blake Fixture private album (3 pictures)"))
+    .toBeVisible();
+  await page.getByText("Blake Fixture private album (3 pictures)").click();
+  await expect(
+    page.getByRole("img", { name: "Private picture 1 for Blake Fixture" }),
+  ).toBeVisible();
   expect(alterRequests).toEqual(
     expect.arrayContaining(["?limit=100", "?limit=100&cursor=second-page"]),
   );
