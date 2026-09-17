@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 
 type Profile = { id: string; name: string; archivedAt?: string | null };
 type Credential = { id: string; label: string; selectedAlterIds: string[]; createdAt: string; revokedAt: string | null; lastUsedAt: string | null };
@@ -28,7 +29,10 @@ export default function ReferenceCredentialsPage() {
       setNotice("Reference credentials are separate from companion access.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not load reference access."); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => { void load(); }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   async function issue(event: FormEvent) {
     event.preventDefault(); setSecret(null);
@@ -44,7 +48,7 @@ export default function ReferenceCredentialsPage() {
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   return <main className="system-page reference-account">
-    <a href="/">← Back to Bunch</a>
+    <Link href="/">← Back to Bunch</Link>
     <h1>Reference access</h1>
     <p className="notice" role="status">{notice}</p>
     <section className="panel"><h2>Create laptop reference credential</h2>
