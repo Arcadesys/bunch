@@ -3,8 +3,9 @@ import json, pathlib, tarfile, tempfile
 root = pathlib.Path(__file__).resolve().parents[1]
 plugin = root / 'plugins/bunch'
 manifest = json.loads((plugin / '.codex-plugin/plugin.json').read_text())
-files = ['.codex-plugin/plugin.json', '.mcp.json', 'skills/system-companion/SKILL.md', 'README.md', 'assets/bunch-barrel-monkeys.png']
+files = ['.codex-plugin/plugin.json', '.mcp.json', 'skills/system-companion/SKILL.md', 'skills/system-companion/agents/openai.yaml', 'README.md', 'assets/bunch-barrel-monkeys.png']
 assert (plugin / files[2]).read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'Plugin skill is stale'
+assert (plugin / files[3]).read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale'
 output = pathlib.Path(tempfile.mkdtemp(prefix='bunch-plugin-')) / f'bunch-{manifest["version"]}.tar.gz'
 with tarfile.open(output, 'w:gz') as archive:
     for name in files:
