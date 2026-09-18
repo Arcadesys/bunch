@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { CharacterContextHelper } from "./character-context-helper";
 import styles from "./characters.module.css";
 
@@ -12,7 +13,7 @@ export default function CharactersPage() {
     <main className={styles.page}>
       <a className={styles.skip} href="#helper">Skip to helper</a>
       <header className={styles.header}>
-        <a href="/" className={styles.brand}>Bunch<span aria-hidden="true">.</span></a>
+        <Link href="/" className={styles.brand}>Bunch<span aria-hidden="true">.</span></Link>
         <p>Same continuity problem. Different surface.</p>
       </header>
       <section className={styles.hero} aria-labelledby="characters-heading">
