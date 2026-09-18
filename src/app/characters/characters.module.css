@@ -248,7 +248,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  .page,
+  .page *,
+  .page *::before,
+  .page *::after {
     scroll-behavior: auto !important;
     transition: none !important;
   }
