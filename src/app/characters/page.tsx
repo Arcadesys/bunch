@@ -45,6 +45,16 @@ export default function CharactersPage() {
             Capture core canon, visual traits, voice, recent developments, and the things that must not silently drift.
           </p>
           <p className={styles.privacy}>No account. No upload. This helper stays in your browser.</p>
+          <p style={{ margin: "1rem 0 0", color: "var(--muted)", lineHeight: 1.6 }}>
+            Inquiries: {" "}
+            <a
+              href="mailto:Austen@thearcades.me?subject=%5Bsystem.thearcades.me%5D%20inquiry%3A"
+              aria-label="Email an inquiry to Austen@thearcades.me"
+              style={{ display: "inline-flex", alignItems: "center", minHeight: "44px", maxWidth: "100%", color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: ".2em", overflowWrap: "anywhere" }}
+            >
+              Austen@thearcades.me
+            </a>
+          </p>
         </div>
         <figure style={{ margin: 0, minWidth: 0 }}>
           <a
