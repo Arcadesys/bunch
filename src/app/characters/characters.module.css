@@ -1,0 +1,258 @@
+.page {
+  --ink: #f7f0f7;
+  --muted: #c9becb;
+  --ground: #19121f;
+  --surface: #24192b;
+  --line: #4b3854;
+  --accent: #f58bbb;
+  min-height: 100vh;
+  background: var(--ground);
+  color: var(--ink);
+  padding: 0 clamp(1rem, 4vw, 3rem) 5rem;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  background: var(--ink);
+  color: var(--ground);
+  padding: .75rem 1rem;
+  border-radius: .5rem;
+}
+
+.header {
+  max-width: 72rem;
+  margin: 0 auto;
+  min-height: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.header p {
+  margin: 0;
+  color: var(--muted);
+  text-align: right;
+}
+
+.brand {
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.brand span,
+.eyebrow {
+  color: var(--accent);
+}
+
+.hero,
+.helper,
+.explainer {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.hero {
+  padding: clamp(3.5rem, 9vw, 7rem) 0 clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.eyebrow {
+  margin: 0 0 .8rem;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  max-width: 17ch;
+  margin: 0;
+  font-size: clamp(2.4rem, 7vw, 5rem);
+  line-height: 1;
+  letter-spacing: -.045em;
+}
+
+.intro {
+  max-width: 48rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+  line-height: 1.65;
+}
+
+.privacy {
+  display: inline-block;
+  margin: 1.5rem 0 0;
+  padding: .6rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: .6rem;
+  color: var(--muted);
+}
+
+.helper {
+  padding: clamp(2rem, 5vw, 3.5rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.helperIntro {
+  max-width: 44rem;
+}
+
+.helper h2,
+.explainer h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.15;
+}
+
+.helperIntro > p:last-child,
+.explainer p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .95fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  margin-top: 2rem;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+}
+
+.form label {
+  display: grid;
+  gap: .5rem;
+  font-weight: 700;
+}
+
+.form input,
+.form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 2px solid var(--line);
+  border-radius: .65rem;
+  background: var(--ground);
+  color: var(--ink);
+  padding: .8rem .9rem;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.form textarea {
+  resize: vertical;
+}
+
+.form input:focus-visible,
+.form textarea:focus-visible,
+.actions button:focus-visible,
+.output pre:focus-visible,
+.brand:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.actions button {
+  min-height: 44px;
+  border: 2px solid var(--accent);
+  border-radius: .65rem;
+  background: var(--accent);
+  color: #20111a;
+  padding: .7rem 1rem;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.actions .secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.status {
+  min-height: 1.5rem;
+  margin: 0;
+  color: var(--muted);
+}
+
+.output {
+  min-width: 0;
+}
+
+.outputHeader h3 {
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+}
+
+.output pre {
+  max-height: 43rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .7rem;
+  background: #120d16;
+  color: var(--ink);
+  font: 500 .9rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.explainer {
+  padding: clamp(3.5rem, 8vw, 6rem) 0 1rem;
+  max-width: 52rem;
+}
+
+@media (max-width: 800px) {
+  .header {
+    align-items: flex-start;
+    padding: 1rem 0;
+  }
+
+  .header p {
+    max-width: 14rem;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .page {
+    --muted: #eee5ef;
+    --line: #f58bbb;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .page *,
+  .page *::before,
+  .page *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
