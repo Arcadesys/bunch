@@ -22,3 +22,14 @@ The initial full-suite run caught a missing connection-tool output schema; it wa
 ## Remaining delivery evidence
 
 Required GitHub CI and merge are tracked on the PR. Production deployment and public API probes must be reported separately. Local protocol validation does not claim installation or OAuth consent in a particular user's Codex account. The repository marketplace and stable installation guide provide the supported setup path; the read-only demo needs no account.
+
+After deploying, run the credential-free public adapter smoke check separately:
+
+```sh
+HOSTED_MCP_URL=https://system.thearcades.me/mcp npm run verify:hosted-mcp:public
+```
+
+It initializes the hosted MCP, discovers tools, reads the fixed fictional Demo
+system, confirms private tools still challenge for OAuth, and confirms an invalid
+bearer token never falls back to demo data. It uses no account credential and
+does not call any mutation tool.

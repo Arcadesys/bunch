@@ -2,6 +2,7 @@ import { getPilotService } from "./pilot-service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
+import { SystemError } from "@/server/system-error";
 
 type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number; requestId?: string; generatedResult?: true };
 type ImageReadClaims = { sub: string; imageId: string; scope: "image:read"; exp: number };
@@ -93,8 +94,17 @@ export async function verifyCompanionAccessToken(
 // Website sessions and MCP requests derive ownership from the same immutable sub.
 export async function requireCompanionAccessToken(request: Request): Promise<string> {
   const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) throw new Error("A valid System authorization is required.");
-  const ownerId = await verifyCompanionAccessToken(authorization.slice(7));
+  if (!authorization?.startsWith("Bearer ")) {
+    throw new SystemError("UNAUTHORIZED", "Authentication required.");
+  }
+  const token = authorization.slice(7).trim();
+  if (!token || token.split(".").length !== 3) {
+    throw new SystemError("UNAUTHORIZED", "Authentication required.");
+  }
+  const config = getMcpAuthorizationConfig();
+  let ownerId: string;
+  try { ownerId = await verifyCompanionAccessToken(token, config); }
+  catch { throw new SystemError("UNAUTHORIZED", "Authentication required."); }
   await getPilotService().assertAccess(ownerId, "mcp");
   return ownerId;
 }

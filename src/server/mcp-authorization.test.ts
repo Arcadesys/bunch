@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
-import { COMPANION_SCOPE, issueImageReadCapability, issueSceneImageReadCapability, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { COMPANION_SCOPE, issueImageReadCapability, issueSceneImageReadCapability, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { SystemError } from "@/server/system-error";
 
 const config: McpAuthorizationConfig = {
   issuer: "https://tenant.example.auth0.com/",
@@ -38,6 +39,36 @@ test("MCP JWT verification rejects the wrong resource audience", async () => {
 test("MCP JWT verification rejects a token without the companion scope", async () => {
   const { token, getKey } = await fixtureToken({ scope: "openid email" });
   await assert.rejects(() => verifyCompanionAccessToken(token, config, getKey), /companion scope/i);
+});
+
+test("malformed bearer credentials are rejected before OAuth configuration is loaded", async () => {
+  const originalDomain = process.env.AUTH0_DOMAIN;
+  const originalResourceUrl = process.env.MCP_RESOURCE_URL;
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  delete process.env.AUTH0_DOMAIN;
+  delete process.env.MCP_RESOURCE_URL;
+  delete process.env.SYSTEM_PUBLIC_ORIGIN;
+  try {
+    await assert.rejects(
+      () => requireCompanionAccessToken(new Request("https://system.example/mcp", {
+        headers: { authorization: "Bearer invalid" },
+      })),
+      (error: unknown) => error instanceof SystemError && error.code === "UNAUTHORIZED",
+    );
+    await assert.rejects(
+      () => requireCompanionAccessToken(new Request("https://system.example/mcp", {
+        headers: { authorization: "Bearer a.b.c" },
+      })),
+      /MCP OAuth is not configured/,
+    );
+  } finally {
+    if (originalDomain === undefined) delete process.env.AUTH0_DOMAIN;
+    else process.env.AUTH0_DOMAIN = originalDomain;
+    if (originalResourceUrl === undefined) delete process.env.MCP_RESOURCE_URL;
+    else process.env.MCP_RESOURCE_URL = originalResourceUrl;
+    if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+    else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
+  }
 });
 
 test("inline image capabilities are owner- and image-scoped", () => {
