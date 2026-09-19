@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createMcpServer } from "@/server/mcp-server";
+import { accountProfileId, createMcpServer } from "@/server/mcp-server";
 import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
 import type { NativeSceneService } from "@/server/native-scene-service";
@@ -19,7 +19,9 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
   const catchUp = new CatchUpService({} as never);
   catchUp.openForPresence = async () => null;
   catchUp.openForCurrentFronter = async () => null;
-  const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
+  const ownerId = "demo:descriptor-private-subject";
+  const loadedOwners: string[] = [];
+  const server = createMcpServer(ownerId, service, catchUp, { listProfiles: async () => [] }, undefined, undefined, undefined, async (id) => { loadedOwners.push(id); return { display_name: "  Arcade  " }; });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
@@ -32,6 +34,25 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const profileDescriptor = byName.get("get_account_profile");
+    assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
+    assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+    assert.equal(profileDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(profileDescriptor?.inputSchema?.type, "object");
+    assert.deepEqual(profileDescriptor?.inputSchema?.properties, {});
+    assert.equal(profileDescriptor?.inputSchema?.additionalProperties, false);
+    assert.deepEqual(profileDescriptor?.outputSchema?.required, ["id"]);
+    assert.equal(profileDescriptor?.outputSchema?.additionalProperties, false);
+    const profileIdSchema = profileDescriptor?.outputSchema?.properties?.id as { minLength?: number; pattern?: string } | undefined;
+    assert.equal(profileIdSchema?.minLength, 1);
+    assert.equal(profileIdSchema?.pattern, "\\S");
+    const accountProfile = await client.callTool({ name: "get_account_profile", arguments: {} });
+    assert.deepEqual(accountProfile.structuredContent, { id: accountProfileId(ownerId), name: "Arcade" });
+    assert.deepEqual(loadedOwners, [ownerId]);
+    assert.equal((accountProfile.content as Array<{ text: string }>)[0].text, JSON.stringify(accountProfile.structuredContent));
+    assert.doesNotMatch(JSON.stringify(accountProfile), /descriptor-private-subject|demo:/);
+    assert.equal(accountProfileId(ownerId), accountProfileId(ownerId), "the same account must retain its profile ID");
+    assert.notEqual(accountProfileId(ownerId), accountProfileId("auth0:other-private-subject"), "different accounts must not share profile IDs");
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
@@ -76,9 +97,11 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const html = "text" in content ? content.text : "";
     const legacyHtml = legacyWidgetContents.map((result) => "text" in result.contents[0] ? result.contents[0].text : "");
     assert.deepEqual(content._meta?.ui, {
+      domain: "https://bunch.example",
       csp: { connectDomains: ["https://bunch.example"], resourceDomains: ["https://bunch.example"] },
       prefersBorder: true,
     });
+    assert.equal(content._meta?.["openai/widgetDomain"], "https://bunch.example");
     assert.deepEqual(content._meta?.["openai/widgetCSP"], {
       connect_domains: ["https://bunch.example"],
       resource_domains: ["https://bunch.example"],

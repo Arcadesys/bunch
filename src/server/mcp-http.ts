@@ -157,11 +157,16 @@ export async function addOAuthSecuritySchemes(response: Response) {
   payload.result.tools = payload.result.tools.map((tool) => {
     if (!tool || typeof tool !== "object" || Array.isArray(tool)) return tool;
     const descriptor = tool as Record<string, unknown>;
+    const securitySchemes = typeof descriptor.name === "string" && DEMO_TOOL_NAMES.has(descriptor.name)
+      ? [{ type: "noauth" }]
+      : [{ type: "oauth2", scopes: [COMPANION_SCOPE] }];
+    const meta = descriptor._meta && typeof descriptor._meta === "object" && !Array.isArray(descriptor._meta)
+      ? descriptor._meta as Record<string, unknown>
+      : {};
     return {
       ...descriptor,
-      securitySchemes: typeof descriptor.name === "string" && DEMO_TOOL_NAMES.has(descriptor.name)
-        ? [{ type: "noauth" }]
-        : [{ type: "oauth2", scopes: [COMPANION_SCOPE] }],
+      securitySchemes,
+      _meta: { ...meta, securitySchemes },
     };
   });
   headers.delete("content-length");

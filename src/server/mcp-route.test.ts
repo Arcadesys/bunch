@@ -42,7 +42,7 @@ test("hosted MCP tool descriptors declare demo and private security without losi
   const input = Response.json({
     jsonrpc: "2.0",
     id: 1,
-    result: { tools: [{ name: "get_demo_system" }, { name: "list_alters" }, null] },
+    result: { tools: [{ name: "get_demo_system" }, { name: "list_alters", _meta: { "openai/profile": true } }, null] },
   }, { status: 207, statusText: "Multi-Status", headers: { "X-Adapter-Test": "preserved" } });
   const response = await addOAuthSecuritySchemes(input);
   const payload = await response.json();
@@ -51,8 +51,8 @@ test("hosted MCP tool descriptors declare demo and private security without losi
   assert.equal(response.headers.get("x-adapter-test"), "preserved");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(payload.result.tools, [
-    { name: "get_demo_system", securitySchemes: [{ type: "noauth" }] },
-    { name: "list_alters", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] },
+    { name: "get_demo_system", securitySchemes: [{ type: "noauth" }], _meta: { securitySchemes: [{ type: "noauth" }] } },
+    { name: "list_alters", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }], _meta: { "openai/profile": true, securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] } },
     null,
   ]);
 });
@@ -96,6 +96,7 @@ test("anonymous routing selects only the demo server and a fresh transport", asy
 test("protected and malformed request shapes never fall back to the Demo system", async () => {
   const requests = [
     rpc("tools/call", { name: "list_alters", arguments: {} }),
+    rpc("tools/call", { name: "get_account_profile", arguments: {} }),
     rpc("resources/read", { uri: "private" }),
     rpc("unknown/method"),
     new Request("https://bunch.example/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: "{" }),
