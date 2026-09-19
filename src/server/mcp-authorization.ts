@@ -34,12 +34,13 @@ export function getMcpResourceMetadataUrl() {
   return `${origin}/.well-known/oauth-protected-resource`;
 }
 
-export function mcpWwwAuthenticate(error?: "invalid_token" | "insufficient_scope") {
+export function mcpWwwAuthenticate(error?: "invalid_token" | "insufficient_scope", errorDescription?: string) {
   const fields = [
     `resource_metadata="${getMcpResourceMetadataUrl()}"`,
     `scope="${COMPANION_SCOPE}"`,
   ];
   if (error) fields.push(`error="${error}"`);
+  if (errorDescription) fields.push(`error_description="${errorDescription.replace(/["\\\r\n]/g, " ")}"`);
   return `Bearer ${fields.join(", ")}`;
 }
 
