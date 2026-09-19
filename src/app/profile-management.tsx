@@ -7,6 +7,7 @@ import type { FrontingSessionView } from "@/domain/contracts";
 import type { AlterProfile, CoverageAssignment } from "@/domain/types";
 import type { AlterView } from "@/domain/contracts";
 import { AppNavigation } from "./app-navigation";
+import { PeopleToolsNav } from "./people-tools-nav";
 
 type SystemState = { currentFront: FrontingSessionView | null; profiles: AlterProfile[]; assignments: CoverageAssignment[] };
 const demoHeaders = { "Content-Type": "application/json", "x-system-demo": "local" };
@@ -163,7 +164,8 @@ export function ProfileManagement() {
 
   return <main className="shell profiles-page">
     <AppNavigation current="PROFILES" />
-    <header className="site-header"><div><p className="eyebrow">Bunch · private profiles</p><h1>People</h1></div><Link className="button button-secondary" href="/gallery">View private photo gallery</Link></header>
+    <header className="tool-header"><Link href="/home">← Home</Link><div><h1>People &amp; pictures</h1><p>Profiles, private pictures, and shared visual projects.</p></div></header>
+    <PeopleToolsNav current="people" />
     <p className="notice" role="status">{notice}</p>
     {loadState === "error" && <div className="actions"><p>Private records are unavailable. Sign in if needed, then try again.</p><button className="button" type="button" onClick={() => void load()}>Retry loading profiles</button></div>}
     {loadState === "ready" && <>

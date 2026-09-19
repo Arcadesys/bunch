@@ -58,6 +58,7 @@ export const test = base.extend<{ harness: Harness }>({
     let recordSequence = 20;
     const recordReceipts = new Map<string, unknown>();
     const switchReceipts = new Map<string, unknown>();
+    let appearance = { mode: "preset", preset: "midnight", palette: { background: "#0a0a14", surface: "#17172d", text: "#f5f3fa", mutedText: "#cecadc", primary: "#55d8ff", secondary: "#ff5cad" }, glow: true, reducedDecoration: false, updatedAt: stamp };
     const presenceSnapshots = new Map<string, Pick<Harness, "presence" | "host" | "history">>();
     await context.route("**/*", async (route) => {
       const request = route.request();
@@ -68,6 +69,8 @@ export const test = base.extend<{ harness: Harness }>({
       }
       if (!url.pathname.startsWith("/api/")) return route.continue();
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
+      if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "GET") return reply(appearance);
+      if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "PUT") { appearance = { ...request.postDataJSON(), updatedAt: new Date().toISOString() }; return reply(appearance); }
       if (url.pathname === "/api/v1/image-allowance") return reply({ limit: 10, used: 0, reserved: 0, remaining: 10, resetsAt: "2026-09-20T05:00:00Z" });
       if (url.pathname === "/api/v1/account/image-allowances") return reply([]);
       if (url.pathname === "/api/v1/catch-up/review") return reply({ review: null, revision: 0 });

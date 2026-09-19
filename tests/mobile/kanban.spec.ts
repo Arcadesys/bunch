@@ -102,12 +102,12 @@ test("linked journal edits appear on Board and task deletion preserves the note"
   await task.getByLabel("Fixture note", { exact: true }).check();
   await task.getByRole("button", { name: "Save linked notes" }).click();
   await expect(task.locator("blockquote")).toHaveText("Fixture note");
-  await page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Notes", exact: true }).click();
+  await page.goto("/notes");
   await page.getByRole("button", { name: "Edit note", exact: true }).click();
   await page.getByLabel("Note", { exact: true }).fill("Updated independent journal");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Note updated.");
-  await page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Todos", exact: true }).click();
+  await page.goto("/board");
   await expect(task.locator("blockquote")).toHaveText("Updated independent journal");
   await task.getByRole("button", { name: "Delete task", exact: true }).click();
   await task.getByRole("button", { name: "Confirm deletion", exact: true }).click();

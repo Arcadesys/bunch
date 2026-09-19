@@ -49,10 +49,10 @@ test("account share controls create links and revoke with an idempotency key", a
     return route.fulfill({ json: { data: { revoked: true } } });
   });
   await page.goto("/home");
-  const shareGallery = page.getByRole("link", { name: "Share photo gallery", exact: true });
-  await expect(shareGallery).toBeVisible();
-  await shareGallery.press("Enter");
-  await expect(page).toHaveURL(/\/account#gallery-share-heading$/);
+  await page.getByText("More places", { exact: true }).click();
+  await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
+  await page.getByRole("link", { name: "Account & privacy", exact: false }).press("Enter");
+  await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole("heading", { name: "Share a read-only photo gallery" })).toBeVisible();
   await page.getByLabel("Link lifetime").selectOption("1w");
   await page.getByRole("button", { name: "Create gallery link" }).click();
@@ -145,7 +145,9 @@ test("owner enables fronting on an existing stable link and visitors see refresh
   });
   await page.route("**/api/public/gallery/stable", r => r.fulfill(unavailable ? { status: 404 } : { json: { ...gallery, ...(enabled ? { currentFronting: { people, checkedAt: new Date().toISOString() } } : {}) } }));
   await page.goto("/home");
-  await page.getByRole("link", { name: "Share photo gallery", exact: true }).click();
+  await page.getByText("More places", { exact: true }).click();
+  await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
+  await page.getByRole("link", { name: "Account & privacy", exact: false }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Share current fronting on this link" }).press("Enter");
   await expect(page.getByText("Current fronting: Shared", { exact: true })).toBeVisible();
