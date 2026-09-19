@@ -4,8 +4,16 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createMcpServer } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
-const PUBLIC_RPC_METHODS = new Set(["initialize", "notifications/initialized", "tools/list", "ping"]);
-const KNOWN_RPC_METHODS = new Set([...PUBLIC_RPC_METHODS, "tools/call", "resources/list", "resources/read"]);
+const PUBLIC_RPC_METHODS = new Set([
+  "initialize",
+  "notifications/initialized",
+  "tools/list",
+  "resources/list",
+  "resources/templates/list",
+  "prompts/list",
+  "ping",
+]);
+const KNOWN_RPC_METHODS = new Set([...PUBLIC_RPC_METHODS, "tools/call", "resources/read"]);
 
 type McpServer = ReturnType<typeof createMcpServer>;
 type McpTransport = WebStandardStreamableHTTPServerTransport;
