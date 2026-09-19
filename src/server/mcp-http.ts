@@ -13,7 +13,7 @@ const PUBLIC_RPC_METHODS = new Set([
   "prompts/list",
   "ping",
 ]);
-const KNOWN_RPC_METHODS = new Set([...PUBLIC_RPC_METHODS, "tools/call", "resources/read"]);
+const LOGGABLE_RPC_METHOD = /^[a-z][a-z0-9._/-]{0,80}$/;
 
 type McpServer = ReturnType<typeof createMcpServer>;
 type McpTransport = WebStandardStreamableHTTPServerTransport;
@@ -41,7 +41,9 @@ async function classifyRequest(request: Request): Promise<RequestClassification>
   }
 
   const suppliedMethod = typeof body?.method === "string" ? body.method : undefined;
-  const rpcMethod = suppliedMethod ? (KNOWN_RPC_METHODS.has(suppliedMethod) ? suppliedMethod : "other") : undefined;
+  const rpcMethod = suppliedMethod
+    ? (LOGGABLE_RPC_METHOD.test(suppliedMethod) ? suppliedMethod : "other")
+    : undefined;
   if (request.headers.has("authorization")) return { anonymousDemo: false, rpcMethod };
 
   // Streamable HTTP clients probe GET for an SSE stream after initialize. This
