@@ -4,7 +4,7 @@ Win condition: a labeled, fictional system can be explored through Bunch's norma
 
 ## Kept iteration
 
-Eight read tools expose the full sample, people, person details, filtered tasks, filtered notes, presence, history, and Benny's catch-up. Demo tools use a separate fixture-only server for anonymous requests. Invalid supplied credentials never fall back to fiction. Private tool names and mutation paths remain authenticated. Stream probes return 405 for anonymous visitors instead of initiating OAuth.
+Eight read tools expose the full sample, people, person details, filtered tasks, filtered notes, presence, history, and Benny's catch-up. Demo tools use a separate fixture-only server for anonymous requests. Invalid supplied credentials never fall back to fiction. Private tool names and mutation paths remain authenticated. Anonymous SSE connection probes reach the stateless Demo transport without initiating OAuth or exposing records.
 
 The sample directly names Fenton, Benny, and Dot. It preserves their stated relationships, separate hosting/fronting, shared relevance, and Fenton's reminder for Benny to write a thank-you note for the system's gift. No donor, gift type, deadline, species, or new family relationship is invented.
 

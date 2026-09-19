@@ -48,9 +48,11 @@ async function classifyRequest(request: Request): Promise<RequestClassification>
     : undefined;
   if (request.headers.has("authorization")) return { anonymousDemo: false, rpcMethod };
 
-  // Streamable HTTP clients probe GET for an SSE stream after initialize. This
-  // service is stateless, so the public probe is answered without prompting for
-  // OAuth. DELETE and malformed/unknown requests stay behind authorization.
+  // Streamable HTTP clients probe GET for an SSE stream while establishing a
+  // connection. Keep that probe anonymous so mixed-auth clients can reach the
+  // transport without triggering OAuth; the transport still exposes no Demo or
+  // private records through the stream. DELETE and malformed/unknown requests
+  // stay behind authorization.
   if (request.method === "GET") return { anonymousDemo: true, rpcMethod };
   if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, rpcMethod };
   if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, rpcMethod };
@@ -99,9 +101,6 @@ function failureResponse(error: unknown, phase: "authorization" | "request") {
 
 export async function handleMcpRequest(request: Request, options: McpHttpOptions = {}) {
   const classification = await classifyRequest(request);
-  if (classification.anonymousDemo && request.method === "GET") {
-    return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
-  }
 
   const authorize = options.authorize ?? requireCompanionAccessToken;
   let ownerId: string | null = null;

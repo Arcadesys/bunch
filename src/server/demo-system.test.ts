@@ -56,8 +56,11 @@ test("public REST endpoint returns only immutable fiction without a database", a
 test("anonymous hosted MCP discovers and reads demo in production without private access", async () => {
   // There is intentionally no SYSTEM_DEMO_MODE or localhost condition.
   const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
-  assert.equal(stream.status, 405);
+  assert.equal(stream.status, 200);
+  assert.match(stream.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(stream.headers.get("cache-control"), "no-store");
   assert.equal(stream.headers.has("www-authenticate"), false);
+  await stream.body?.cancel();
   const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
   assert.equal(init.status, 200);
   assert.match((await init.json()).result.instructions, /Demo system/);

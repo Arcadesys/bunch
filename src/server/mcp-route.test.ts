@@ -113,13 +113,35 @@ test("protected and malformed request shapes never fall back to the Demo system"
     assert.deepEqual(await response.json(), { error: "Authentication required." });
   }
 
+  let probeAuthorizeCalls = 0;
+  const probeLifecycle = serverLifecycle();
   const streamProbe = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), {
-    authorize: async () => { throw new Error("must not authorize public stream probe"); },
+    authorize: async () => { probeAuthorizeCalls += 1; throw new Error("must not authorize public stream probe"); },
+    createDemoServer: () => probeLifecycle.server,
+    createPrivateServer: () => { throw new Error("must not create private server for public stream probe"); },
+    createTransport: () => transportReturning(new Response(": ready\n\n", {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream", "X-Adapter-Test": "stream-probe" },
+    })),
   });
-  assert.equal(streamProbe.status, 405);
-  assert.equal(streamProbe.headers.get("allow"), "POST");
+  assert.equal(streamProbe.status, 200);
+  assert.equal(streamProbe.headers.get("content-type"), "text/event-stream");
+  assert.equal(streamProbe.headers.get("x-adapter-test"), "stream-probe");
   assert.equal(streamProbe.headers.get("cache-control"), "no-store");
   assert.equal(streamProbe.headers.has("www-authenticate"), false);
+  assert.equal(probeAuthorizeCalls, 0);
+  assert.deepEqual(probeLifecycle.calls, { connect: 1, close: 1 });
+});
+
+test("the production transport accepts an anonymous SSE connection probe", async () => {
+  const response = await handleMcpRequest(new Request("https://bunch.example/mcp", {
+    headers: { accept: "text/event-stream" },
+  }));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.has("www-authenticate"), false);
+  await response.body?.cancel();
 });
 
 test("authorization failures have distinct safe status and challenge contracts", async () => {

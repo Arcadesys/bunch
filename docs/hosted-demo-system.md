@@ -9,7 +9,7 @@ Bunch serves one fixed, explicitly fictional sample for demonstrations. The plug
 - Private access: `connect_private_system` advertises OAuth and challenges anonymous callers. After sign-in, refresh `tools/list`. Authenticated requests use the existing verified-owner server, including its pilot access gate. `get_companion_state` and all existing private tools continue to operate on that owner alone.
 - An explicitly requested `get_demo_system` remains available after authentication; it is never substituted for private results.
 
-Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous clients may enumerate the empty resource, resource-template, and prompt indexes for host compatibility, but resource reads, private tool calls, and mutations remain protected. An anonymous GET stream probe receives 405 because this stateless endpoint has no SSE stream; it does not prompt demo visitors to sign in. Responses are not cached. No data is accepted for storage by the demo endpoint.
+Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous clients may enumerate the empty resource, resource-template, and prompt indexes for host compatibility, but resource reads, private tool calls, and mutations remain protected. An anonymous GET stream probe may establish the transport without prompting demo visitors to sign in; the stream itself exposes no Demo or private records. Responses are not cached. No data is accepted for storage by the demo endpoint.
 
 ## Explore through the plugin
 
