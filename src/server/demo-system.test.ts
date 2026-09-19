@@ -5,13 +5,14 @@ import { getDemoSystem } from "./demo-system";
 import { GET } from "@/app/api/demo/system/route";
 import { handleMcpRequest } from "./mcp-http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SystemError } from "./system-error";
 
 function rpc(method: string, params?: unknown, headers: Record<string, string> = {}) {
   return new Request("https://bunch.example/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
 }
 const noPrivateAccess = {
-  authorize: async () => { throw new Error("Authentication required"); },
-  privateServer: () => { throw new Error("Private server must not be reached"); },
+  authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
+  createPrivateServer: () => { throw new Error("Private server must not be reached"); },
 };
 
 test("fictional sample preserves names, relationships, gift authorship, shared relevance, and review semantics", () => {
@@ -91,7 +92,7 @@ test("authenticated routing preserves each verified owner and never falls back o
   for (const ownerId of ["auth0:tenant-one", "auth0:tenant-two"]) {
     const dependencies = {
       authorize: async (request: Request) => { assert.equal(request.headers.get("authorization"), "Bearer valid"); return ownerId; },
-      privateServer: (verifiedOwner: string) => {
+      createPrivateServer: (verifiedOwner: string) => {
         assert.equal(verifiedOwner, ownerId);
         const server = new McpServer({ name: "private-test", version: "1" });
         server.registerTool("get_companion_state", { inputSchema: {} }, async () => ({ content: [{ type: "text", text: verifiedOwner }] }));

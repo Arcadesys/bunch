@@ -61,6 +61,8 @@ import { nativeSceneInputSchema, nativeSceneRenderSchema, imageAllowanceSchema, 
 import { getNativeSceneService, type NativeSceneService } from "@/server/native-scene-service";
 import { getMcpUsageService } from "@/server/mcp-usage-service";
 import { getPilotService } from "@/server/pilot-service";
+import { createHash } from "node:crypto";
+import { COMPANION_SCOPE } from "@/server/mcp-authorization";
 
 // The authority in these ui:// URIs is a frozen cache key, not an address. Live
 // ChatGPT conversations hold the tool-to-resource mapping and keep requesting the
@@ -94,6 +96,16 @@ const usageStatsSchema = z.object({
   byDay: z.array(z.object({ day: z.string(), count: z.number().int() })),
   byOwner: z.array(z.object({ ownerId: z.string(), count: z.number().int() })),
 });
+const accountProfileSchema = z.object({
+  id: z.string().min(1).regex(/\S/).describe("Opaque profile identifier, unique within Bunch and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile."),
+  name: z.string().describe("Display name for the authenticated Bunch profile.").optional(),
+  email: z.string().email().describe("Email address for display; not used as the profile identity.").optional(),
+  nickname: z.string().describe("A useful label that helps distinguish connected Bunch profiles.").optional(),
+}).strict();
+
+export function accountProfileId(ownerId: string) {
+  return `bunch_${createHash("sha256").update("bunch-account-profile\0").update(ownerId).digest("base64url").slice(0, 24)}`;
+}
 
 const importantThreadSuggestionViewSchema = importantThreadCreateSchema.extend({
   id: uuidSchema,
@@ -187,7 +199,7 @@ function requiredPublicOrigin() {
   return origin;
 }
 
-export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository, summaryOverride?: ConversationSummaryService, scheduleNativeScene?: (ownerId: string, renderId: string) => void, nativeSceneServiceOverride?: Pick<NativeSceneService, "start" | "get" | "list"> & Partial<Pick<NativeSceneService, "allowance">>) {
+export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository, summaryOverride?: ConversationSummaryService, scheduleNativeScene?: (ownerId: string, renderId: string) => void, nativeSceneServiceOverride?: Pick<NativeSceneService, "start" | "get" | "list"> & Partial<Pick<NativeSceneService, "allowance">>, loadAccount?: (ownerId: string) => Promise<{ display_name: string } | null>) {
   const server = new McpServer({ name: "Working Monkeys", version: "0.7.0" }, { instructions: "Use Working Monkeys only for owner-authorized private records. Use get_current_presence to distinguish hosting responsibility from overlapping fronting episodes. Record hosting with set_system_host and independently start/end fronting episodes only after explicit user statements. Never infer an end or absence. Use a selected periodId for saved-record catch-up. An explicit self-identification may offer conversation catch-up but never authorizes a front switch. After a confirmed arrival, automatically prepare conversation catch-up and summarize available messages in ChatGPT without another catch-up confirmation. Follow the mutation result instructions to select the exact arrival; do not repeat a summary on a replay. For a separate explicit catch-up request, resolve the named profile with list_alters, call prepare_conversation_catch_up, and use only host capabilities actually available to read messages in the requested window. Report topics, decisions, open matters, source links, and coverage gaps. System does not automatically receive ChatGPT history: if the host lacks access, say that Working Monkeys supplied dates but the host cannot retrieve other conversations, then offer selected conversations or a capable host. For a fronting episode, retrieve its catch-up session and every get_episode_records page, read get_episode_review for the current revision, then save_episode_review_v1. Distinguish Bunch records from available memory and conversation context, and label missing coverage or an unknown prior end. For legacy or separately selected windows, call save_conversation_catch_up with the exact dates, summary, and coverage gaps. Save it for 30 days using one requestId reused on retries. Never persist raw transcripts. Retrieve prior summaries with list_conversation_catch_ups/get_conversation_catch_up; do not treat a saved summary as new source evidence. For notes, preserve the approved body and record an actor only when named. For the profile lineup or selected profile pictures, use render_alter_lineup. The catch-up widget shows saved records only, and its review actions never complete underlying tasks. For saving an important thread, use suggest_important_thread only with the user-approved link, summary, key decision or action, flagger, and recipients. Then use confirm_important_thread only after the user explicitly approves that specific suggestion. Never save raw transcripts. For photos, use the authenticated private gallery or the existing private upload workflow so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. To draw named alters, call generate_scene directly with their exact names. The prepare image tools only build packets for external image-studio adapters; a chat host's own image tool cannot receive their private references. Never draw a named alter from text or reference IDs alone, and never ask the user to upload a photo Bunch already holds. The scene widget follows the job and shows the finished private image in chat. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
   // Every tool call funnels through this wrapper, so invocation counts cover
   // reads and writes alike (activity_event only ever logged mutations). The
@@ -212,8 +224,25 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     structuredContent: { mode: "private", authenticated: true },
     content: [{ type: "text", text: "Connected to your private Bunch system. Refresh tools/list, then use get_companion_state for your own records. Demo system remains available only when explicitly requested." }],
   }));
+  server.registerTool("get_account_profile", {
+    title: "Get connected Bunch account",
+    description: "Read the stable, non-sensitive profile for the Bunch account authorized by this connection. Use it to distinguish connected accounts; it never accepts an owner ID and never exposes the authentication subject.",
+    inputSchema: z.object({}).strict(),
+    outputSchema: accountProfileSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: {
+      "openai/profile": true,
+      securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }],
+    },
+  }, async () => {
+    const account = await (loadAccount ?? ((id: string) => getPilotService().account(id)))(ownerId);
+    const profile = account?.display_name.trim()
+      ? { id: accountProfileId(ownerId), name: account.display_name.trim() }
+      : { id: accountProfileId(ownerId) };
+    return { structuredContent: profile, content: [{ type: "text", text: JSON.stringify(profile) }] };
+  });
   const publicOrigin = requiredPublicOrigin();
-  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "Bunch catch-up with clear review actions and accessible record filters.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
+  const widgetMeta = { ui: { domain: publicOrigin, csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "Bunch catch-up with clear review actions and accessible record filters.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] }, "openai/widgetDomain": publicOrigin };
   server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: catchUpWidget(publicOrigin), _meta: widgetMeta }] }));
   const lineupMeta = { ...widgetMeta, "openai/widgetDescription": "Bunch profile lineup with selected private profile pictures." };
   server.registerResource("system-alter-lineup", LINEUP_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: lineupMeta }, async () => ({ contents: [{ uri: LINEUP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: lineupWidget(publicOrigin), _meta: lineupMeta }] }));

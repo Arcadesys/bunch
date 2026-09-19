@@ -1,13 +1,13 @@
 # Bunch plugin
 
-Private accounts for invited members. This package includes a remote MCP server configuration and the System Companion skill; it contains no credentials, personal records, or local hooks.
+Private accounts for invited members. This package includes portable Agent Plugins manifests, compatibility manifests for existing Codex clients, a remote MCP server configuration, and the System Companion skill. It contains no credentials, personal records, or local hooks.
 
 1. Obtain an invitation directly from the operator and accept it at https://system.thearcades.me/join. Use your own verified Google account.
 2. Add the extracted plugin directory using your Codex version's supported local-plugin installation controls. If managed by a workspace, an administrator may need to import it. 
 3. Review the HTTPS MCP address and authorize your own account through OAuth. Never paste the operator's token or environment files.
 4. Ask to list your profiles and read your recorded hosting/fronting. Close and reopen Codex, then repeat the read.
 
-ChatGPT uses a separate custom-app installation. Eligible accounts can add `https://system.thearcades.me/mcp` through developer/custom-app settings and complete their own OAuth authorization. Availability depends on account and workspace policy. If unavailable, use the web companion.
+ChatGPT uses a separate custom-app installation. Eligible accounts can add `https://system.thearcades.me/mcp` through developer/custom-app settings and complete their own OAuth authorization. Bunch exposes a non-sensitive account profile so ChatGPT can distinguish separately authorized accounts without receiving an Auth0 subject. Availability depends on account and workspace policy. If unavailable, use the web companion.
 
 Hosting and fronting remain separate. No switch is inferred from identity, silence, tone, or a catch-up request. Conversation summaries require actual host history access; installation alone does not provide that access. Generated summaries are saved privately for 30 days from creation, including their dates and coverage gaps; raw transcripts are not saved. You can retrieve or delete saved summaries through Bunch.
 
