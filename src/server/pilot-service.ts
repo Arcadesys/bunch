@@ -57,6 +57,7 @@ export const OWNER_TABLES = [
   "todo_assignee",
   "activity_event",
   "mutation_receipt",
+  "mcp_invocation",
   "system_host",
   "presence_period",
   "fronting_session",
@@ -148,6 +149,13 @@ export class PilotService {
         [ownerId],
       );
     });
+  }
+  // The single active OPERATOR account (enforced by the pilot_one_operator unique
+  // index) is the Bunch admin. Used to gate admin-only surfaces like usage stats.
+  async assertOperator(ownerId: string) {
+    const account = await this.account(ownerId);
+    if (account?.role !== "OPERATOR" || account.state !== "ACTIVE")
+      throw new SystemError("FORBIDDEN", "Only the active Bunch operator can view usage stats.");
   }
   private async invitationAdministrator(ownerId: string, client: Pool | PoolClient = this.pool) {
     const result = await client.query<PilotAccount>(
@@ -329,7 +337,7 @@ export class PilotService {
         throw unavailable();
       const data: Record<string, unknown[]> = {};
       for (const table of OWNER_TABLES) {
-        if (table === "mutation_receipt" || table === "gallery_share") continue; // Internal retry payloads and bearer-token hashes are not user records.
+        if (table === "mutation_receipt" || table === "gallery_share" || table === "mcp_invocation") continue; // Internal retry payloads, bearer-token hashes, and usage telemetry are not user records.
         const rows = (
           await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;
