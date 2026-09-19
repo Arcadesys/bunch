@@ -9,6 +9,15 @@ Private accounts for invited members. This package includes portable Agent Plugi
 
 ChatGPT uses a separate custom-app installation. Eligible accounts can add `https://system.thearcades.me/mcp` through developer/custom-app settings and complete their own OAuth authorization. Bunch exposes a non-sensitive account profile so ChatGPT can distinguish separately authorized accounts without receiving an Auth0 subject. Availability depends on account and workspace policy. If unavailable, use the web companion.
 
+When connecting Bunch on ChatGPT web, the installed skill offers this optional cleanup checklist:
+
+- [ ] Check both **Installed** and **Personal** for `Bunch` and endpoint-confirmed legacy `System Companion` or `DIDdy` connections.
+- [ ] Review the exact stale installed connections found and choose whether to uninstall them. Nothing is removed automatically.
+- [ ] Confirm no stale connection remains before installing the current Bunch custom app.
+- [ ] Test the fictional Demo read separately from an authenticated owner-scoped read.
+
+A **Created by me** record that only offers **Install plugin** is not an installed connection. Removing an installed app may disconnect its saved OAuth session and always requires explicit confirmation.
+
 Hosting and fronting remain separate. No switch is inferred from identity, silence, tone, or a catch-up request. Conversation summaries require actual host history access; installation alone does not provide that access. Generated summaries are saved privately for 30 days from creation, including their dates and coverage gaps; raw transcripts are not saved. You can retrieve or delete saved summaries through Bunch.
 
 Other systems cannot access your data. The hosting operator has technical administrator access. This is not end-to-end encryption. See `/account` for export, deletion, and recovery information.

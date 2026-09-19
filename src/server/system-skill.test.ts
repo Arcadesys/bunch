@@ -30,6 +30,9 @@ test("MCP advertises and serves the System Companion skill snapshot", async () =
   assert.match(repoSkill, /RECORDED_FRONTING_WINDOW/);
   assert.match(repoSkill, /explicitly authorize the write/);
   assert.match(repoSkill, /Luna-class summarizer/);
+  assert.match(repoSkill, /Optional ChatGPT web setup checklist/);
+  assert.match(repoSkill, /Do not perform cleanup automatically/);
+  assert.match(repoSkill, /Created by me/);
   assert.match(systemSkillEntry().resources[0].digest, /^sha256:[a-f0-9]{64}$/);
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
