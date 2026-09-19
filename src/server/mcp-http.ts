@@ -5,6 +5,7 @@ import { createMcpServer } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
 const PUBLIC_RPC_METHODS = new Set([
+  "server/discover",
   "initialize",
   "notifications/initialized",
   "tools/list",

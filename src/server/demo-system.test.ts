@@ -66,7 +66,7 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system"]);
   assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
   assert.deepEqual(tools.at(-1).securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
-  for (const method of ["resources/list", "resources/templates/list", "prompts/list"]) {
+  for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
     const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
     assert.equal(discovery.status, 200, method);
     assert.equal(discovery.headers.get("cache-control"), "no-store");
@@ -86,7 +86,7 @@ test("private calls, resources, and every supplied invalid credential remain una
   }
   assert.equal((await handleMcpRequest(rpc("resources/read", { uri: "private" }), noPrivateAccess)).status, 401);
   for (const authorization of ["", "Basic abc", "Bearer expired", "Bearer revoked"]) {
-    for (const method of ["tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
+    for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
       const result = await handleMcpRequest(rpc(method, { name: "get_demo_system", arguments: {} }, { authorization }), noPrivateAccess);
       assert.equal(result.status, 401);
       assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
