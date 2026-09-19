@@ -4,7 +4,7 @@ Bunch serves one fixed, explicitly fictional sample for demonstrations. The plug
 
 ## Access
 
-- Existing plugin endpoint: `/mcp`. With no Authorization header, initialize and list tools, resources, resource templates, or prompts, then call `get_demo_system` with `{}`. The non-tool discovery lists are empty. The structured demo result is labeled `Demo system`, `fictional: true`, and `readOnly: true`.
+- Existing plugin endpoint: `/mcp`. With no Authorization header, initialize and list tools, resources, resource templates, or prompts, then call `get_demo_system` with `{}`. The non-tool discovery lists are empty. A newer client's `server/discover` probe receives the legacy SDK's JSON-RPC method-not-found response over HTTP 200 so it can fall back to `initialize`. The structured demo result is labeled `Demo system`, `fictional: true`, and `readOnly: true`.
 - Direct JSON: `GET /api/demo/system`. This explicitly public endpoint always returns only the fictional sample, even if a browser has a session.
 - Private access: `connect_private_system` advertises OAuth and challenges anonymous callers. After sign-in, refresh `tools/list`. Authenticated requests use the existing verified-owner server, including its pilot access gate. `get_companion_state` and all existing private tools continue to operate on that owner alone.
 - An explicitly requested `get_demo_system` remains available after authentication; it is never substituted for private results.
