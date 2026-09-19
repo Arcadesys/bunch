@@ -1927,6 +1927,8 @@ body:has(.switch-dock) { padding-bottom: 0; }
   .compact-nav { order: 3; width: 100%; }
   .compact-nav a { flex: 1 1 0; justify-content: center; }
   .bunch-icon-button { margin-left: auto; }
+  .launcher-main > header { padding: 6px 7px 4px; }
+  .launcher-actions { margin-top: 4px; }
   .launcher-main h1 { font-size: 2rem; }
   .launcher-row { position: relative; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; min-height: 92px; padding: 14px 48px 14px 12px; }
   .launcher-row > svg { width: 40px; height: 40px; }
