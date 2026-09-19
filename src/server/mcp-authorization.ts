@@ -13,6 +13,7 @@ export const COMPANION_OAUTH_SCOPES = [COMPANION_SCOPE, "openid", "profile", "em
 export type McpAuthorizationConfig = {
   issuer: string;
   audience: string;
+  acceptedAudiences?: string[];
   jwksUri: URL;
 };
 
@@ -20,12 +21,19 @@ function normalizedIssuer(domain: string) {
   return `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`;
 }
 
+function normalizedResourceUrls(value: string | undefined) {
+  return [...new Set((value ?? "").split(",")
+    .map((url) => url.trim().replace(/\/+$/, ""))
+    .filter(Boolean))];
+}
+
 export function getMcpAuthorizationConfig(): McpAuthorizationConfig {
   const domain = process.env.AUTH0_DOMAIN;
   const audience = process.env.MCP_RESOURCE_URL ?? `${process.env.SYSTEM_PUBLIC_ORIGIN?.replace(/\/$/, "")}/mcp`;
   if (!domain || !audience || audience.startsWith("undefined")) throw new Error("MCP OAuth is not configured.");
   const issuer = normalizedIssuer(domain);
-  return { issuer, audience, jwksUri: new URL(".well-known/jwks.json", issuer) };
+  const acceptedAudiences = [...new Set([audience, ...normalizedResourceUrls(process.env.MCP_LEGACY_RESOURCE_URLS)])];
+  return { issuer, audience, acceptedAudiences, jwksUri: new URL(".well-known/jwks.json", issuer) };
 }
 
 export function getMcpResourceMetadataUrl() {
@@ -83,7 +91,7 @@ export async function verifyCompanionAccessToken(
   const { payload } = await jwtVerify(token, getKey, {
     algorithms: ["RS256"],
     issuer: config.issuer,
-    audience: config.audience,
+    audience: config.acceptedAudiences ?? config.audience,
   });
   if (!payload.sub || !grantedScopes(payload).has(COMPANION_SCOPE)) {
     throw new Error("The System companion scope is required.");
