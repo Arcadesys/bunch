@@ -16,6 +16,17 @@ Use the authenticated System MCP tools as the source of truth. Preserve alter na
 - Never replace failed authentication or a failed private-data request with sample data. Do not send demo IDs to mutation tools or claim a demo task was saved or completed.
 - In the sample, Fenton and Benny tease each other and really love each other; Dot is a kid and no relation to either. Fenton handles scheduling; Benny handles emotional writing. Fenton's thank-you reminder is for a gift the system received, not a gift from Benny. The gift, donor, and deadline are unspecified.
 
+## Optional ChatGPT web setup checklist
+
+When the user installs Bunch or asks to connect it on chatgpt.com, offer this checklist. Do not perform cleanup automatically, and do not block ordinary Bunch use if the user declines it.
+
+- [ ] Check both **Installed** and **Personal** in ChatGPT Plugins for an exact `Bunch` entry and legacy `System Companion` or `DIDdy` entries whose configured MCP URL identifies the Bunch service.
+- [ ] Distinguish an installed connection with connected accounts from a **Created by me** record that only offers **Install plugin**. Do not call the latter installed.
+- [ ] Show the exact stale installed connections found and offer to uninstall them before installing the current Bunch custom app. Remove only the entries the user explicitly confirms.
+- [ ] After cleanup, verify that no stale Bunch connection remains, then install the current app and test the fictional Demo read separately from an authenticated owner-scoped read.
+
+Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a partial-name match or an unrelated app, and never treat successful installation as proof that OAuth or private data access works.
+
 ## Hosting, fronting episodes, and legacy catch-up
 
 - For “who was out when” or historical fronting questions, call list_fronting_history. Resolve a named profile with list_alters; use explicit-offset from/to instants for the requested local date range and follow nextCursor as before. Report kind and origin: HOSTING, FRONTING, or unclassified LEGACY_FRONT. A missing end means no end was recorded, and gaps do not prove absence.
