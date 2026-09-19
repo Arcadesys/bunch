@@ -4,12 +4,12 @@ Bunch serves one fixed, explicitly fictional sample for demonstrations. The plug
 
 ## Access
 
-- Existing plugin endpoint: `/mcp`. With no Authorization header, initialize and list tools, then call `get_demo_system` with `{}`. The structured result is labeled `Demo system`, `fictional: true`, and `readOnly: true`.
+- Existing plugin endpoint: `/mcp`. With no Authorization header, initialize and list tools, resources, resource templates, or prompts, then call `get_demo_system` with `{}`. The non-tool discovery lists are empty. The structured demo result is labeled `Demo system`, `fictional: true`, and `readOnly: true`.
 - Direct JSON: `GET /api/demo/system`. This explicitly public endpoint always returns only the fictional sample, even if a browser has a session.
 - Private access: `connect_private_system` advertises OAuth and challenges anonymous callers. After sign-in, refresh `tools/list`. Authenticated requests use the existing verified-owner server, including its pilot access gate. `get_companion_state` and all existing private tools continue to operate on that owner alone.
 - An explicitly requested `get_demo_system` remains available after authentication; it is never substituted for private results.
 
-Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous private tool calls, resources, and mutations remain protected. An anonymous GET stream probe receives 405 because this stateless endpoint has no SSE stream; it does not prompt demo visitors to sign in. Responses are not cached. No data is accepted for storage by the demo endpoint.
+Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous clients may enumerate the empty resource, resource-template, and prompt indexes for host compatibility, but resource reads, private tool calls, and mutations remain protected. An anonymous GET stream probe receives 405 because this stateless endpoint has no SSE stream; it does not prompt demo visitors to sign in. Responses are not cached. No data is accepted for storage by the demo endpoint.
 
 ## Explore through the plugin
 
