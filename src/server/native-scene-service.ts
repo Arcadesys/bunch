@@ -1,3 +1,6 @@
+import sharp from "sharp";
+import { ImageAllowanceService } from "./image-allowance";
+import { ImageRepairService } from "./image-repair";
 import { createHash } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { getDatabasePool } from "@/db/client";
@@ -27,6 +30,8 @@ import {
 } from "./group-photo-provider";
 
 type Recipe = {
+  repairSource?: NativeSceneInput["repairSource"];
+  requestedFormat?: NativeSceneInput["format"];
   scene: string;
   alterNames: string[];
   prompt: string;
@@ -59,6 +64,7 @@ export function nativeSceneView(
   const recipe = row.recipe as Recipe;
   return nativeSceneRenderSchema.parse({
     id: String(row.id),
+    repairSource: recipe.repairSource,
     scene: recipe.scene,
     alterNames: recipe.alterNames,
     state: row.state,
@@ -77,7 +83,8 @@ export class NativeSceneService {
   private readImage: typeof readPrivateImage;
   private saveImage: typeof savePrivateImage;
   private removeImages: typeof deletePrivateImages;
-  private dailyLimit: number;
+  readonly allowance: ImageAllowanceService;
+  readonly repairs: ImageRepairService;
   constructor(
     readonly pool: Pool = getDatabasePool(),
     dependencies: Dependencies = {},
@@ -87,15 +94,9 @@ export class NativeSceneService {
     this.readImage = dependencies.readImage ?? readPrivateImage;
     this.saveImage = dependencies.saveImage ?? savePrivateImage;
     this.removeImages = dependencies.removeImages ?? deletePrivateImages;
-    const configuredLimit =
-      dependencies.dailyLimit ??
-      Number(process.env.NATIVE_SCENE_DAILY_LIMIT ?? 20);
-    this.dailyLimit =
-      Number.isInteger(configuredLimit) &&
-      configuredLimit > 0 &&
-      configuredLimit <= 1000
-        ? configuredLimit
-        : 20;
+    this.allowance = new ImageAllowanceService(pool, dependencies.dailyLimit);
+    this.repairs = new ImageRepairService(pool);
+
   }
   isAvailable() {
     return this.available();
@@ -115,11 +116,9 @@ export class NativeSceneService {
     }
   }
   private async expire(ownerId: string) {
-    await this.pool.query(
-      "update native_scene_render set state='FAILED', error_message='Scene generation was interrupted. You can try again.', finished_at=now() where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at < now()-interval '6 minutes'",
-      [ownerId],
-    );
+    await this.allowance.expire(ownerId);
   }
+
   private async resolve(ownerId: string, names: string[]) {
     if (!names.length) return [] as AlterView[];
     const service = new SystemService(this.pool);
@@ -162,6 +161,7 @@ export class NativeSceneService {
   async start(ownerId: string, raw: unknown) {
     const input = nativeSceneInputSchema.parse(raw);
     await this.expire(ownerId);
+    await this.allowance.assertAccess(this.pool, ownerId);
     const existing = await this.pool.query(
       "select * from native_scene_render where owner_id=$1 and request_id=$2::uuid",
       [ownerId, input.requestId],
@@ -172,7 +172,9 @@ export class NativeSceneService {
         recipe.scene !== input.scene ||
         JSON.stringify(recipe.alterNames) !==
           JSON.stringify(input.alterNames) ||
-        recipe.format !== input.format
+        (recipe.requestedFormat ?? recipe.format) !== input.format ||
+        recipe.repairSource?.kind !== input.repairSource?.kind ||
+        recipe.repairSource?.id !== input.repairSource?.id
       )
         throw new SystemError(
           "CONFLICT",
@@ -185,6 +187,8 @@ export class NativeSceneService {
         "VALIDATION_ERROR",
         "Native scene generation is not connected yet.",
       );
+    if (input.repairSource && input.alterNames.length) throw new SystemError("VALIDATION_ERROR", "Repair the selected image without adding new people.");
+    const source = input.repairSource ? await this.repairs.source(this.pool, ownerId, input.repairSource) : undefined;
     const profiles = await this.resolve(ownerId, input.alterNames);
     const references = profiles.flatMap((profile, personIndex) =>
       profile.appearanceReferenceImageIds.map((imageId, referenceIndex) => {
@@ -223,17 +227,25 @@ export class NativeSceneService {
     const prompt = identity
       ? `${identity.prompt}\n\n${references.map((reference, index) => `Image ${index + 1} is the selected appearance reference for ${reference.alterName}, person ${profiles.findIndex((profile) => profile.id === reference.alterId) + 1}.`).join("\n")}`
       : input.scene;
+    let repairFormat = input.format;
+    if (source) {
+      const metadata = await sharp(new Uint8Array(await new Response((await this.readImage(source.storage_key)).body).arrayBuffer()), { limitInputPixels: 36_000_000 }).metadata();
+      repairFormat = (metadata.width ?? 1) > (metadata.height ?? 1) ? "landscape" : (metadata.height ?? 1) > (metadata.width ?? 1) ? "portrait" : "square";
+    }
     const recipe: Recipe = {
       scene: input.scene,
       alterNames: input.alterNames,
-      prompt,
-      format: input.format,
+      prompt: source ? `Edit the supplied original image. Preserve its people, identities, composition and all details except the requested correction. Do not add people. Requested correction: ${input.scene}` : prompt,
+      repairSource: input.repairSource,
+      requestedFormat: input.format,
+      format: repairFormat,
       profiles: profiles.map((profile) => ({
         id: profile.id,
         version: profile.version,
       })),
       references,
     };
+    if (source) recipe.profiles = source.profiles;
     return this.transaction(async (client) => {
       await client.query(
         "insert into app_user(id,google_subject) values($1,$1) on conflict(id) do nothing",
@@ -252,7 +264,9 @@ export class NativeSceneService {
           prior.scene !== input.scene ||
           JSON.stringify(prior.alterNames) !==
             JSON.stringify(input.alterNames) ||
-          prior.format !== input.format
+          (prior.requestedFormat ?? prior.format) !== input.format ||
+          prior.repairSource?.kind !== input.repairSource?.kind ||
+        prior.repairSource?.id !== input.repairSource?.id
         )
           throw new SystemError(
             "CONFLICT",
@@ -260,15 +274,6 @@ export class NativeSceneService {
           );
         return nativeSceneView(replay.rows[0]);
       }
-      const quota = await client.query(
-        "select count(*)::int as count from native_scene_render where owner_id=$1 and created_at >= date_trunc('day',now())",
-        [ownerId],
-      );
-      if (Number(quota.rows[0].count) >= this.dailyLimit)
-        throw new SystemError(
-          "QUOTA_EXCEEDED",
-          "The daily native-scene limit has been reached.",
-        );
       if (
         (
           await client.query(
@@ -295,6 +300,12 @@ export class NativeSceneService {
         "insert into native_scene_render(owner_id,request_id,state,model,recipe) values($1,$2::uuid,'QUEUED',$3,$4::jsonb) returning *",
         [ownerId, input.requestId, model, JSON.stringify(recipe)],
       );
+      if (input.repairSource) {
+        await this.repairs.validate(client, ownerId, recipe);
+        const column = { private: "source_private_id", native: "source_native_id", group: "source_group_id" }[input.repairSource.kind];
+        await client.query(`update native_scene_render set ${column}=$1 where owner_id=$2 and id=$3`, [input.repairSource.id, ownerId, inserted.rows[0].id]);
+      }
+      await this.allowance.reserve(client, ownerId, "native", inserted.rows[0].id);
       return nativeSceneView(inserted.rows[0]);
     });
   }
@@ -319,12 +330,7 @@ export class NativeSceneService {
     return nativeSceneView(row);
   }
   async process(ownerId: string, id: string) {
-    const job = (
-      await this.pool.query(
-        "update native_scene_render set state='RUNNING',started_at=now() where owner_id=$1 and id=$2::uuid and state='QUEUED' returning *",
-        [ownerId, id],
-      )
-    ).rows[0];
+    const job = await this.allowance.claim(ownerId, "native", id);
     if (!job) return;
     let savedKey: string | undefined;
     try {
@@ -338,6 +344,10 @@ export class NativeSceneService {
           );
       }
       const images = [];
+      if (recipe.repairSource) {
+        const source = await this.repairs.source(this.pool, ownerId, recipe.repairSource);
+        images.push({ bytes: new Uint8Array(await new Response((await this.readImage(source.storage_key)).body).arrayBuffer()), contentType: source.content_type, name: "original-image" });
+      }
       for (const reference of recipe.references) {
         const row = (
           await this.pool.query(
@@ -359,11 +369,13 @@ export class NativeSceneService {
           name: reference.name,
         });
       }
+      await this.allowance.dispatch(ownerId, "native", id, c => this.repairs.validate(c, ownerId, recipe));
       const output = await this.provider({
         prompt: recipe.prompt,
         model: job.model,
         references: images,
         size: nativeSceneSizes[recipe.format],
+        onUsage: usage => this.allowance.recordUsage(ownerId, "native", id, usage),
       });
       const photo = await normalizeFinishedPhoto(output);
       const hash = createHash("sha256").update(photo.bytes).digest("hex");
@@ -378,6 +390,8 @@ export class NativeSceneService {
         await client.query("select id from app_user where id=$1 for update", [
           ownerId,
         ]);
+        await this.allowance.assertAccess(client, ownerId);
+        await this.repairs.validate(client, ownerId, recipe);
         for (const snapshot of recipe.profiles) {
           const current = (
             await client.query(
@@ -425,19 +439,11 @@ export class NativeSceneService {
       }
       const known =
         error instanceof Error &&
-        /^(A person's appearance changed|A selected appearance reference|Scene generation was interrupted)/.test(
+        /^(A person's appearance changed|A selected appearance reference|Scene generation was interrupted|Private image storage|Image access|Repair source)/.test(
           error.message,
         );
-      await this.pool.query(
-        "update native_scene_render set state='FAILED',error_message=$1,finished_at=now() where owner_id=$2 and id=$3::uuid and state='RUNNING'",
-        [
-          known
-            ? (error as Error).message
-            : "The scene could not be generated and saved. Try again later.",
-          ownerId,
-          id,
-        ],
-      );
+      await this.allowance.failJob(ownerId, "native", id,
+        error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN", "NOT_FOUND"].includes(error.code) ? error.userMessage : known ? (error as Error).message : "The scene could not be generated and saved. Try again later.");
     }
   }
   async image(ownerId: string, id: string) {

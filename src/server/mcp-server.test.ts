@@ -29,7 +29,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
       assert.ok(tool.outputSchema, `${tool.name} must declare outputSchema`);
-      assert.equal(tool.annotations?.openWorldHint, tool.name === "generate_scene", `${tool.name} must declare its external-provider boundary`);
+      assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");

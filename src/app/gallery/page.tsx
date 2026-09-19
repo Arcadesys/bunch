@@ -63,7 +63,7 @@ export default async function PrivateGalleryPage() {
             {profile.images.map((image, index) => (
               <figure className="gallery-card" key={image.id}>
                 <Image src={imageUrl(image.id)} alt={`Private picture ${index + 1} for ${profile.name}`} width={480} height={480} unoptimized />
-                <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption>
+                <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption><Link className="button button-secondary" href={`/images?repairKind=private&repairId=${image.id}`}>Repair this image</Link>
               </figure>
             ))}
           </div>

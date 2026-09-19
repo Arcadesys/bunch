@@ -133,12 +133,12 @@ async function main() {
       // Vercel transfer requests must have a shorter maximum duration than this grace period.
       const rows = (
         await pool.query(
-          "select storage_key from pilot_upload where state='RESERVED' and created_at<now()-interval '1 hour'",
+          "select storage_key from pilot_upload where created_at<now()-interval '1 hour'",
         )
       ).rows;
       for (const row of rows) {
         const attached = await pool.query(
-          "select 1 from private_image where storage_key=$1",
+          "select 1 from private_image where storage_key=$1 union all select 1 from native_scene_render where storage_key=$1 union all select 1 from group_photo_render where storage_key=$1 union all select 1 from group_photo_project where backplate_storage_key=$1",
           [row.storage_key],
         );
         if (attached.rowCount)

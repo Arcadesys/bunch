@@ -1,4 +1,5 @@
 "use client";
+import { ImageAllowanceSettings } from "./image-allowance-settings";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { GalleryShareControls } from "./gallery-share-controls";
@@ -338,6 +339,6 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
           )}
         </>
       )}
-    </main>
+    {account?.role === "OPERATOR" && account.state === "ACTIVE" && <ImageAllowanceSettings />}</main>
   );
 }

@@ -68,6 +68,8 @@ export const test = base.extend<{ harness: Harness }>({
       }
       if (!url.pathname.startsWith("/api/")) return route.continue();
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
+      if (url.pathname === "/api/v1/image-allowance") return reply({ limit: 10, used: 0, reserved: 0, remaining: 10, resetsAt: "2026-09-20T05:00:00Z" });
+      if (url.pathname === "/api/v1/account/image-allowances") return reply([]);
       if (url.pathname === "/api/v1/catch-up/review") return reply({ review: null, revision: 0 });
       if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") {
         const selected=url.searchParams.get("periodId");
