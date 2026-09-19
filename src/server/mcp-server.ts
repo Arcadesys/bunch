@@ -59,6 +59,8 @@ import { lineupWidget } from "@/server/lineup-widget";
 import { sceneWidget } from "@/server/scene-widget";
 import { nativeSceneInputSchema, nativeSceneRenderSchema, type NativeSceneRender } from "@/domain/native-scene";
 import { getNativeSceneService, type NativeSceneService } from "@/server/native-scene-service";
+import { getMcpUsageService } from "@/server/mcp-usage-service";
+import { getPilotService } from "@/server/pilot-service";
 
 // The authority in these ui:// URIs is a frozen cache key, not an address. Live
 // ChatGPT conversations hold the tool-to-resource mapping and keep requesting the
@@ -84,6 +86,14 @@ const coverageOutputSchema = z.object({ draft: coverageSchema });
 const noteOutputSchema = z.object({ note: legacyNoteViewSchema });
 const preferenceOutputSchema = z.object({ preference: preferenceViewSchema });
 const privateGalleryOutputSchema = z.object({ url: z.string().url() });
+const usageStatsSchema = z.object({
+  windowDays: z.number().int(),
+  totalInvocations: z.number().int(),
+  totalErrors: z.number().int(),
+  byTool: z.array(z.object({ tool: z.string(), count: z.number().int(), errors: z.number().int() })),
+  byDay: z.array(z.object({ day: z.string(), count: z.number().int() })),
+  byOwner: z.array(z.object({ ownerId: z.string(), count: z.number().int() })),
+});
 
 const importantThreadSuggestionViewSchema = importantThreadCreateSchema.extend({
   id: uuidSchema,
@@ -179,6 +189,23 @@ function requiredPublicOrigin() {
 
 export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository, summaryOverride?: ConversationSummaryService, scheduleNativeScene?: (ownerId: string, renderId: string) => void, nativeSceneServiceOverride?: Pick<NativeSceneService, "start" | "get" | "list">) {
   const server = new McpServer({ name: "Working Monkeys", version: "0.7.0" }, { instructions: "Use Working Monkeys only for owner-authorized private records. Use get_current_presence to distinguish hosting responsibility from overlapping fronting episodes. Record hosting with set_system_host and independently start/end fronting episodes only after explicit user statements. Never infer an end or absence. Use a selected periodId for saved-record catch-up. An explicit self-identification may offer conversation catch-up but never authorizes a front switch. After a confirmed arrival, automatically prepare conversation catch-up and summarize available messages in ChatGPT without another catch-up confirmation. Follow the mutation result instructions to select the exact arrival; do not repeat a summary on a replay. For a separate explicit catch-up request, resolve the named profile with list_alters, call prepare_conversation_catch_up, and use only host capabilities actually available to read messages in the requested window. Report topics, decisions, open matters, source links, and coverage gaps. System does not automatically receive ChatGPT history: if the host lacks access, say that Working Monkeys supplied dates but the host cannot retrieve other conversations, then offer selected conversations or a capable host. For a fronting episode, retrieve its catch-up session and every get_episode_records page, read get_episode_review for the current revision, then save_episode_review_v1. Distinguish Bunch records from available memory and conversation context, and label missing coverage or an unknown prior end. For legacy or separately selected windows, call save_conversation_catch_up with the exact dates, summary, and coverage gaps. Save it for 30 days using one requestId reused on retries. Never persist raw transcripts. Retrieve prior summaries with list_conversation_catch_ups/get_conversation_catch_up; do not treat a saved summary as new source evidence. For notes, preserve the approved body and record an actor only when named. For the profile lineup or selected profile pictures, use render_alter_lineup. The catch-up widget shows saved records only, and its review actions never complete underlying tasks. For saving an important thread, use suggest_important_thread only with the user-approved link, summary, key decision or action, flagger, and recipients. Then use confirm_important_thread only after the user explicitly approves that specific suggestion. Never save raw transcripts. For photos, use the authenticated private gallery or the existing private upload workflow so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. To draw named alters, call generate_scene directly with their exact names. The prepare image tools only build packets for external image-studio adapters; a chat host's own image tool cannot receive their private references. Never draw a named alter from text or reference IDs alone, and never ask the user to upload a photo Bunch already holds. The scene widget follows the job and shows the finished private image in chat. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
+  // Every tool call funnels through this wrapper, so invocation counts cover
+  // reads and writes alike (activity_event only ever logged mutations). The
+  // cast preserves registerTool's generic signature for every call site below.
+  type RegisterTool = typeof server.registerTool;
+  const usage = getMcpUsageService();
+  const rawRegisterTool: RegisterTool = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: unknown, cb: (...cbArgs: unknown[]) => unknown) => rawRegisterTool(name, config as never, (async (...cbArgs: unknown[]) => {
+    const startedAt = Date.now();
+    try {
+      const result = await cb(...cbArgs);
+      await usage.record(ownerId, name, Date.now() - startedAt, Boolean((result as { isError?: boolean } | undefined)?.isError));
+      return result;
+    } catch (error) {
+      await usage.record(ownerId, name, Date.now() - startedAt, true);
+      throw error;
+    }
+  }) as never)) as RegisterTool;
   registerSystemSkill(server);
   registerDemoSystemTool(server);
   server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({
@@ -406,5 +433,17 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
 
   const recordedCoverageSchema = z.object({ period: z.object({ startsOn: z.string().date(), endsOn: z.string().date() }), coverage: z.array(z.object({ id: uuidSchema, alterId: uuidSchema, alterName: z.string(), startsOn: z.string().date(), endsOn: z.string().date().optional() })), handoff: z.string() });
   server.registerTool("get_recorded_coverage", { title: "Get recorded coverage handoff", description: "Use this when the user asks who had recorded coverage during a stated period, including last week. Returns only confirmed records and a concise handoff prompt such as 'go talk to Name for this.'", inputSchema: { startsOn: z.string().date(), endsOn: z.string().date() }, outputSchema: recordedCoverageSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async ({ startsOn, endsOn }) => { const coverage = await repository.confirmedDuring(ownerId, startsOn, endsOn); const handoff = coverage.length === 1 ? `The recorded coverage is ${coverage[0].alterName}. Go talk to ${coverage[0].alterName} for their context.` : coverage.length ? `There are ${coverage.length} confirmed records; ask which coverage period the user means.` : "No confirmed coverage is recorded for that period."; return { structuredContent: { period: { startsOn, endsOn }, coverage, handoff }, content: [{ type: "text", text: handoff }] }; });
+
+  server.registerTool("get_usage_stats", {
+    title: "Get Bunch usage stats (operator only)",
+    description: "Operator-only admin tool. Returns MCP tool invocation counts for the requested trailing window: totals, a per-tool breakdown with error counts, a per-day series, and a per-owner breakdown (at most 25 owners). Every non-operator account receives FORBIDDEN.",
+    inputSchema: { windowDays: z.number().int().min(1).max(90).default(30) },
+    outputSchema: usageStatsSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ windowDays }) => {
+    await getPilotService().assertOperator(ownerId);
+    const stats = await usage.summary(windowDays);
+    return { structuredContent: stats, content: [{ type: "text", text: `In the last ${stats.windowDays} day(s): ${stats.totalInvocations} tool invocation(s) across ${stats.byTool.length} tool(s), ${stats.totalErrors} error(s).` }] };
+  });
   return server;
 }

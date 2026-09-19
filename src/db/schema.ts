@@ -275,6 +275,18 @@ export const activityEvent = pgTable("activity_event", {
   index("activity_event_owner_entity_idx").on(table.ownerId, table.entityType, table.entityId, table.createdAt),
 ]);
 
+export const mcpInvocation = pgTable("mcp_invocation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  toolName: text("tool_name").notNull(),
+  isError: boolean("is_error").notNull().default(false),
+  durationMs: integer("duration_ms").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("mcp_invocation_tool_created_idx").on(table.toolName, table.createdAt),
+  index("mcp_invocation_owner_created_idx").on(table.ownerId, table.createdAt),
+]);
+
 export const mutationReceipt = pgTable("mutation_receipt", {
   ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   requestId: uuid("request_id").notNull(),
