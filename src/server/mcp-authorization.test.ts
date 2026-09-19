@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
-import { COMPANION_SCOPE, issueImageReadCapability, issueSceneImageReadCapability, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { COMPANION_SCOPE, getMcpAuthorizationConfig, issueImageReadCapability, issueSceneImageReadCapability, mcpWwwAuthenticate, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
 import { SystemError } from "@/server/system-error";
 
 const config: McpAuthorizationConfig = {
   issuer: "https://tenant.example.auth0.com/",
   audience: "https://system.example/mcp",
+  acceptedAudiences: ["https://system.example/mcp"],
   jwksUri: new URL("https://tenant.example.auth0.com/.well-known/jwks.json"),
 };
 
@@ -36,9 +37,76 @@ test("MCP JWT verification rejects the wrong resource audience", async () => {
   await assert.rejects(() => verifyCompanionAccessToken(token, config, getKey), /aud/i);
 });
 
+test("MCP JWT verification accepts a configured legacy resource audience", async () => {
+  const legacyAudience = "https://system-arcades-me.vercel.app/mcp";
+  const { token, getKey } = await fixtureToken({ audience: legacyAudience });
+  const ownerId = await verifyCompanionAccessToken(token, {
+    ...config,
+    acceptedAudiences: [config.audience, legacyAudience],
+  }, getKey);
+  assert.equal(ownerId, ownerIdFromAuth0Subject("google-oauth2|immutable-google-subject"));
+});
+
+test("MCP JWT verification rejects the wrong issuer", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const token = await new SignJWT({ scope: COMPANION_SCOPE })
+    .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+    .setSubject("google-oauth2|immutable-google-subject")
+    .setIssuer("https://other-tenant.example.auth0.com/")
+    .setAudience(config.audience)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  await assert.rejects(() => verifyCompanionAccessToken(token, config, async () => publicKey), /iss/i);
+});
+
 test("MCP JWT verification rejects a token without the companion scope", async () => {
   const { token, getKey } = await fixtureToken({ scope: "openid email" });
   await assert.rejects(() => verifyCompanionAccessToken(token, config, getKey), /companion scope/i);
+});
+
+test("legacy resource URLs are normalized, unique, and validation-only", () => {
+  const original = {
+    AUTH0_DOMAIN: process.env.AUTH0_DOMAIN,
+    MCP_RESOURCE_URL: process.env.MCP_RESOURCE_URL,
+    MCP_LEGACY_RESOURCE_URLS: process.env.MCP_LEGACY_RESOURCE_URLS,
+    SYSTEM_PUBLIC_ORIGIN: process.env.SYSTEM_PUBLIC_ORIGIN,
+  };
+  process.env.AUTH0_DOMAIN = "tenant.example.auth0.com";
+  process.env.MCP_RESOURCE_URL = "https://system.thearcades.me/mcp";
+  process.env.MCP_LEGACY_RESOURCE_URLS = " https://system-arcades-me.vercel.app/mcp/ , https://system-arcades-me.vercel.app/mcp, https://system.thearcades.me/mcp ";
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://system.thearcades.me";
+  try {
+    const authorization = getMcpAuthorizationConfig();
+    assert.equal(authorization.audience, "https://system.thearcades.me/mcp");
+    assert.deepEqual(authorization.acceptedAudiences, ["https://system.thearcades.me/mcp", "https://system-arcades-me.vercel.app/mcp"]);
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("OAuth challenges keep advertising the canonical resource metadata", () => {
+  const original = {
+    MCP_RESOURCE_URL: process.env.MCP_RESOURCE_URL,
+    MCP_LEGACY_RESOURCE_URLS: process.env.MCP_LEGACY_RESOURCE_URLS,
+    SYSTEM_PUBLIC_ORIGIN: process.env.SYSTEM_PUBLIC_ORIGIN,
+  };
+  process.env.MCP_RESOURCE_URL = "https://system.thearcades.me/mcp";
+  process.env.MCP_LEGACY_RESOURCE_URLS = "https://system-arcades-me.vercel.app/mcp";
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://system.thearcades.me";
+  try {
+    const challenge = mcpWwwAuthenticate();
+    assert.match(challenge, /resource_metadata="https:\/\/system\.thearcades\.me\/\.well-known\/oauth-protected-resource"/);
+    assert.doesNotMatch(challenge, /system-arcades-me\.vercel\.app/);
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("malformed bearer credentials are rejected before OAuth configuration is loaded", async () => {

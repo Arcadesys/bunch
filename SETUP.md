@@ -131,7 +131,9 @@ tenant, with `$ORIGIN` standing in for your deployed origin:
    MCP clients can use it.
 6. Set `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`,
    `APP_BASE_URL`, `MCP_RESOURCE_URL`, and `SYSTEM_PUBLIC_ORIGIN` in your host's
-   environment. Keep `SYSTEM_DEMO_MODE=false`.
+   environment. Keep `SYSTEM_DEMO_MODE=false`. During a resource-URL migration,
+   set `MCP_LEGACY_RESOURCE_URLS` to a comma-separated list of former audiences;
+   discovery and OAuth challenges continue to advertise only `MCP_RESOURCE_URL`.
 7. Verify the website login and the MCP flow with MCP Inspector before connecting
    the same `/mcp` URL in a ChatGPT client.
 
