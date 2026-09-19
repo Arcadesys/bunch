@@ -1,4 +1,5 @@
 "use client";
+import { ImageAllowanceNotice } from "@/app/image-allowance";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -178,7 +179,7 @@ export default function GroupPhotoPage() {
     {!project && <section className="panel group-photo-intro"><h2>Start with the real photo</h2><p>Choose your scene, then place people where you want them together.</p><form className="upload-form" onSubmit={uploadBackplate}><label>Choose a JPEG, PNG, or WebP photo<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button" disabled={busy} type="submit">{busy ? "Opening scene…" : "Use this scene"}</button></form></section>}
     {!project && recent.length > 0 && <section className="panel"><h2>Recent scenes</h2><ul className="recent-scenes">{recent.map((scene, index) => <li key={scene.id}><a href={`/group-photo?project=${scene.id}`}>Open scene {index + 1} · {new Date(scene.createdAt).toLocaleDateString()}</a></li>)}</ul></section>}
     {project && <section className="panel photo-finisher" aria-label="Finish group photo">
-      <h2>Finish your photo</h2>
+      <h2>Finish your photo</h2><ImageAllowanceNotice refreshKey={`${latestRender?.id}:${latestRender?.state}`} />
       <p>Your scene, token groups and layer order guide the finished photo. Each person needs a selected appearance reference in People.</p>
       {finisherAvailable === false && <p>Photo finishing is not connected yet. You can keep arranging and saving this scene.</p>}
       <button className="button" type="button" disabled={busy || rendering || !project.placements.length || finisherAvailable === false} onClick={() => void finishPhoto()}>{rendering ? "Finishing photo…" : latestRender?.state === "FAILED" ? "Try finishing again" : "Finish photo"}</button>
@@ -190,7 +191,7 @@ export default function GroupPhotoPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} alt="Finished group photo" onError={() => setPhotoError(true)} onLoad={() => setPhotoError(false)} />
         {photoError && <p role="alert">The saved photo could not be displayed. Reopen this scene to try loading it again.</p>}
-        <a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a>
+        <a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a><p><a href={`/images?repairKind=group&repairId=${finishedPhoto.id}`}>Repair this image</a></p>
       </figure>}
       <p><a href="/group-photo">Start or reopen another scene</a></p>
     </section>}

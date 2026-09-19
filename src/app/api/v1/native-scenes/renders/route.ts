@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const service = getNativeSceneService();
     const renders = await service.list(ownerId);
     for (const render of renders.filter(render => render.state === "QUEUED")) after(() => service.process(ownerId, render.id).catch(() => console.error("[native-scene] processing unavailable")));
-    return NextResponse.json({ data: renders, meta: { available: service.isAvailable() } }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ data: renders, meta: { available: service.isAvailable(), allowance: await service.allowance.read(ownerId) } }, { headers: { "Cache-Control": "private, no-store" } });
   });
 }
 
@@ -24,6 +24,6 @@ export async function POST(request: Request) {
     const service = getNativeSceneService();
     const render = await service.start(ownerId, input);
     if (render.state === "QUEUED") after(() => service.process(ownerId, render.id).catch(() => console.error("[native-scene] processing unavailable")));
-    return NextResponse.json({ data: render, meta: { available: service.isAvailable() } }, { status: render.state === "COMPLETE" ? 200 : 202 });
+    return NextResponse.json({ data: render, meta: { available: service.isAvailable(), allowance: await service.allowance.read(ownerId) } }, { status: render.state === "COMPLETE" ? 200 : 202 });
   });
 }

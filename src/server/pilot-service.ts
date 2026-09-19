@@ -44,6 +44,7 @@ const unavailable = () =>
     "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "image_usage",
   "native_scene_render",
   "group_photo_render",
   "group_photo_placement",

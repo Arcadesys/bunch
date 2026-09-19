@@ -1,3 +1,5 @@
+import { ImageAllowanceService } from "./image-allowance";
+import { ImageRepairService } from "./image-repair";
 import { createHash } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import sharp from "sharp";
@@ -19,12 +21,14 @@ export function renderView(row: Record<string, unknown>): GroupPhotoRender {
   return { id: String(row.id), sourceVersion: Number(row.source_version), state: row.state as GroupPhotoRender["state"], createdAt: new Date(String(row.created_at)).toISOString(), finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null, errorMessage: row.error_message ? String(row.error_message) : null, width: row.width ? Number(row.width) : null, height: row.height ? Number(row.height) : null, contentHash: row.content_hash ? String(row.content_hash) : null };
 }
 export class GroupPhotoRenderService {
+  readonly allowance: ImageAllowanceService;
   private provider: GroupPhotoProvider;
   private available: () => boolean;
   private readImage: typeof readPrivateImage;
   private saveImage: typeof savePrivateImage;
   private removeImages: typeof deletePrivateImages;
   constructor(readonly pool: Pool = getDatabasePool(), dependencies: Dependencies = {}) {
+    this.allowance = new ImageAllowanceService(pool);
     this.provider = dependencies.provider ?? openAIGroupPhotoProvider;
     this.available = dependencies.available ?? photoFinisherAvailable;
     this.readImage = dependencies.readImage ?? readPrivateImage;
@@ -37,9 +41,9 @@ export class GroupPhotoRenderService {
     catch (error) { await c.query("rollback"); throw error; } finally { c.release(); }
   }
   private async expire(ownerId: string) {
-    // Never retry an uncertain provider call automatically: it may already be billable.
-    await this.pool.query("update group_photo_render set state='FAILED', error_message='Photo finishing was interrupted. Your scene is saved. You can try again.', finished_at=now() where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at < now()-interval '6 minutes'", [ownerId]);
+    await this.allowance.expire(ownerId);
   }
+
   async list(ownerId: string, projectId: string) {
     await this.expire(ownerId);
     const rows = await this.pool.query("select * from group_photo_render where owner_id=$1 and project_id=$2::uuid order by created_at desc limit 20", [ownerId, projectId]);
@@ -47,6 +51,7 @@ export class GroupPhotoRenderService {
   }
   async start(ownerId: string, projectId: string, expectedVersion: number, requestId: string) {
     await this.expire(ownerId);
+    await this.allowance.assertAccess(this.pool, ownerId);
     const existing = await this.pool.query("select * from group_photo_render where owner_id=$1 and request_id=$2::uuid", [ownerId, requestId]);
     if (existing.rows[0]) {
       if (existing.rows[0].project_id !== projectId || Number(existing.rows[0].source_version) !== expectedVersion) throw new SystemError("CONFLICT", "This finish request belongs to another scene version.");
@@ -81,12 +86,12 @@ export class GroupPhotoRenderService {
       if ((await c.query("select 1 from group_photo_render where owner_id=$1 and state in ('QUEUED','RUNNING')", [ownerId])).rowCount) throw new SystemError("CONFLICT", "A photo is already finishing. Wait for it before starting another.");
       if ((await c.query("select 1 from native_scene_render where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at >= now()-interval '6 minutes'", [ownerId])).rowCount) throw new SystemError("CONFLICT", "An image is already generating. Wait for it before finishing another photo.");
       const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL, JSON.stringify(recipe)]);
+      await this.allowance.reserve(c, ownerId, "group", result.rows[0].id);
       return renderView(result.rows[0]);
     });
   }
   async process(ownerId: string, renderId: string) {
-    const claimed = await this.pool.query("update group_photo_render set state='RUNNING',started_at=now() where id=$1::uuid and owner_id=$2 and state='QUEUED' returning *", [renderId, ownerId]);
-    const job = claimed.rows[0];
+    const job = await this.allowance.claim(ownerId, "group", renderId);
     if (!job) return;
     let savedKey: string | undefined;
     try {
@@ -106,7 +111,11 @@ export class GroupPhotoRenderService {
         images.push({ bytes: new Uint8Array(await new Response((await this.readImage(row.storage_key)).body).arrayBuffer()), contentType: row.content_type, name: reference.name });
       }
       const size = (metadata.width ?? 1) > (metadata.height ?? 1) * 1.2 ? "1536x1024" : (metadata.height ?? 1) > (metadata.width ?? 1) * 1.2 ? "1024x1536" : "1024x1024";
-      const output = await this.provider({ prompt: recipe.prompt, model: job.model, images, size });
+      await this.allowance.dispatch(ownerId, "group", renderId, async c => {
+        await new ImageRepairService(this.pool).validate(c, ownerId, recipe);
+        if (!(await c.query("select 1 from group_photo_project where owner_id=$1 and id=$2 and version=$3", [ownerId, job.project_id, job.source_version])).rowCount) throw new Error("Photo finishing was interrupted. The scene changed.");
+      });
+      const output = await this.provider({ prompt: recipe.prompt, model: job.model, images, size, onUsage: usage => this.allowance.recordUsage(ownerId, "group", renderId, usage) });
       const photo = await normalizeFinishedPhoto(output);
       const hash = createHash("sha256").update(photo.bytes).digest("hex");
       const stored = await this.saveImage(ownerId, new File([new Uint8Array(photo.bytes)], "group-photo.jpg", { type: photo.contentType }));
@@ -114,6 +123,8 @@ export class GroupPhotoRenderService {
       await this.transaction(async c => {
         // Serialize attachment with erasure; never recreate someone's photo after erasure.
         await c.query("select id from app_user where id=$1 for update", [ownerId]);
+        await this.allowance.assertAccess(c, ownerId);
+        await new ImageRepairService(this.pool).validate(c, ownerId, recipe);
         for (const profile of recipe.profiles) {
           const current = (await c.query("select version from alter_profile where owner_id=$1 and id=$2::uuid and archived_at is null for share", [ownerId, profile.id])).rows[0];
           if (!current || Number(current.version) !== profile.version) throw new Error("A person's appearance changed. Finish the scene again using their current references.");
@@ -132,7 +143,7 @@ export class GroupPhotoRenderService {
       // Never return arbitrary provider/storage error strings, which can contain request data.
       const known = error instanceof Error && /^(A person's appearance changed|A selected appearance reference|Photo finishing was interrupted)/.test(error.message);
       const message = known ? (error as Error).message : "The photo could not be finished and saved. Your scene is safe. Try again later.";
-      await this.pool.query("update group_photo_render set state='FAILED',error_message=$1,finished_at=now() where id=$2::uuid and owner_id=$3 and state='RUNNING'", [message, renderId, ownerId]);
+      await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message);
     }
   }
   async image(ownerId: string, projectId: string, renderId: string) {
