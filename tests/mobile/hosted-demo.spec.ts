@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 // Run against the same built server used by the browser gate. No private DB
 // credentials or authentication bypass are needed to demonstrate the API.
-test("hosted default sample is public while private tools still challenge", async ({ request }) => {
+test("hosted default sample is public while private tools still challenge", async ({ request, baseURL }) => {
   const response = await request.get("/api/demo/system");
   expect(response.status()).toBe(200);
   const demo = await response.json();
@@ -15,7 +15,14 @@ test("hosted default sample is public while private tools still challenge", asyn
   const sample = await call("get_demo_system");
   expect(sample.status()).toBe(200);
   expect((await sample.json()).result.structuredContent).toEqual(demo);
-  for (const name of ["connect_private_system", "list_alters", "create_todo"]) {
+  const connect = await call("connect_private_system");
+  expect(connect.status()).toBe(200);
+  const connectResult = (await connect.json()).result;
+  expect(connectResult.isError).toBe(true);
+  expect(connectResult._meta["mcp/www_authenticate"]).toEqual([
+    `Bearer resource_metadata="${baseURL}/.well-known/oauth-protected-resource", scope="system:companion", error="invalid_token", error_description="Authentication is required to connect your private Bunch system."`,
+  ]);
+  for (const name of ["list_alters", "create_todo"]) {
     const privateCall = await call(name);
     expect(privateCall.status()).toBe(401);
     expect(privateCall.headers()["www-authenticate"]).toContain("Bearer");

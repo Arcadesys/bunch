@@ -1,4 +1,4 @@
-import { createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
+import { CONNECT_PRIVATE_SYSTEM_TOOL_NAME, createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
 import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "@/server/mcp-server";
@@ -15,6 +15,7 @@ const PUBLIC_RPC_METHODS = new Set([
   "ping",
 ]);
 const LOGGABLE_RPC_METHOD = /^[a-z][a-z0-9._/-]{0,80}$/;
+const ANONYMOUS_TOOL_NAMES = new Set([...DEMO_TOOL_NAMES, CONNECT_PRIVATE_SYSTEM_TOOL_NAME]);
 
 type McpServer = ReturnType<typeof createMcpServer>;
 type McpTransport = WebStandardStreamableHTTPServerTransport;
@@ -56,7 +57,7 @@ async function classifyRequest(request: Request): Promise<RequestClassification>
   const toolName = body.params && typeof body.params === "object" && !Array.isArray(body.params)
     ? (body.params as { name?: unknown }).name
     : undefined;
-  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && DEMO_TOOL_NAMES.has(toolName), rpcMethod };
+  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && ANONYMOUS_TOOL_NAMES.has(toolName), rpcMethod };
 }
 
 function defaultTransport() {

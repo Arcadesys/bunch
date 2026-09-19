@@ -78,18 +78,39 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
 });
 
+test("connect_private_system returns the tool-level OAuth challenge required by ChatGPT", async () => {
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+  try {
+    const response = await handleMcpRequest(rpc("tools/call", { name: "connect_private_system", arguments: {} }), noPrivateAccess);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const result = (await response.json()).result;
+    assert.equal(result.isError, true);
+    assert.deepEqual(result._meta?.["mcp/www_authenticate"], [
+      'Bearer resource_metadata="https://bunch.example/.well-known/oauth-protected-resource", scope="system:companion", error="invalid_token", error_description="Authentication is required to connect your private Bunch system."',
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /Fenton|Benny|Dot/);
+  } finally {
+    if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+    else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
+  }
+});
+
 test("private calls, resources, and every supplied invalid credential remain unauthorized", async () => {
-  for (const name of ["connect_private_system", "get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
+  for (const name of ["get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
     const response = await handleMcpRequest(rpc("tools/call", { name, arguments: {} }), noPrivateAccess);
     assert.equal(response.status, 401, name);
     assert.match(response.headers.get("www-authenticate")!, /Bearer/);
   }
   assert.equal((await handleMcpRequest(rpc("resources/read", { uri: "private" }), noPrivateAccess)).status, 401);
   for (const authorization of ["", "Basic abc", "Bearer expired", "Bearer revoked"]) {
-    for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
-      const result = await handleMcpRequest(rpc(method, { name: "get_demo_system", arguments: {} }, { authorization }), noPrivateAccess);
-      assert.equal(result.status, 401);
-      assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+    for (const name of ["get_demo_system", "connect_private_system"]) {
+      for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
+        const result = await handleMcpRequest(rpc(method, { name, arguments: {} }, { authorization }), noPrivateAccess);
+        assert.equal(result.status, 401);
+        assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+      }
     }
   }
 });
