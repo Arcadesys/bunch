@@ -1,7 +1,7 @@
 import { CONNECT_PRIVATE_SYSTEM_TOOL_NAME, createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
 import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createMcpServer } from "@/server/mcp-server";
+import { createMcpServer, isPublicMcpUiResourceUri } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
 const PUBLIC_RPC_METHODS = new Set([
@@ -31,6 +31,7 @@ export type McpHttpOptions = {
 
 type RequestClassification = {
   anonymousDemo: boolean;
+  publicUiResource: boolean;
   rpcMethod: string | undefined;
 };
 
@@ -47,20 +48,24 @@ async function classifyRequest(request: Request): Promise<RequestClassification>
   const rpcMethod = suppliedMethod
     ? (LOGGABLE_RPC_METHOD.test(suppliedMethod) ? suppliedMethod : "other")
     : undefined;
-  if (request.headers.has("authorization")) return { anonymousDemo: false, rpcMethod };
+  if (request.headers.has("authorization")) return { anonymousDemo: false, publicUiResource: false, rpcMethod };
 
   // Streamable HTTP clients probe GET for an SSE stream while establishing a
   // connection. Keep that probe anonymous so mixed-auth clients can reach the
   // transport without triggering OAuth; the transport still exposes no Demo or
   // private records through the stream. DELETE and malformed/unknown requests
   // stay behind authorization.
-  if (request.method === "GET") return { anonymousDemo: true, rpcMethod };
-  if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, rpcMethod };
-  if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, rpcMethod };
-  const toolName = body.params && typeof body.params === "object" && !Array.isArray(body.params)
-    ? (body.params as { name?: unknown }).name
+  if (request.method === "GET") return { anonymousDemo: true, publicUiResource: false, rpcMethod };
+  if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, publicUiResource: false, rpcMethod };
+  if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, publicUiResource: false, rpcMethod };
+  const params = body.params && typeof body.params === "object" && !Array.isArray(body.params)
+    ? body.params as { name?: unknown; uri?: unknown }
     : undefined;
-  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && ANONYMOUS_TOOL_NAMES.has(toolName), rpcMethod };
+  if (suppliedMethod === "resources/read" && isPublicMcpUiResourceUri(params?.uri)) {
+    return { anonymousDemo: true, publicUiResource: true, rpcMethod };
+  }
+  const toolName = params?.name;
+  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && ANONYMOUS_TOOL_NAMES.has(toolName), publicUiResource: false, rpcMethod };
 }
 
 function defaultTransport() {
@@ -131,7 +136,7 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   try {
     const transport = createTransport();
     server = ownerId === null
-      ? createDemoServer()
+      ? (classification.publicUiResource ? createPrivateServer(DISCOVERY_OWNER_ID, options.scheduleNativeScene) : createDemoServer())
       : createPrivateServer(ownerId, options.scheduleNativeScene);
     await server.connect(transport);
     response = await transport.handleRequest(request);

@@ -127,6 +127,32 @@ test("anonymous tool discovery merges demo and private descriptors without autho
   ]);
 });
 
+test("anonymous discovery can read only an advertised public UI resource", async () => {
+  let authorizeCalls = 0;
+  let receivedOwner: string | undefined;
+  const privateLifecycle = serverLifecycle();
+  const response = await handleMcpRequest(rpc("resources/read", {
+    uri: "ui://system-arcades-me.vercel.app/companion-v13.html",
+  }), {
+    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize public UI discovery"); },
+    createDemoServer: () => { throw new Error("must not create Demo server for a private tool's public UI resource"); },
+    createPrivateServer: (ownerId) => {
+      receivedOwner = ownerId;
+      return privateLifecycle.server;
+    },
+    createTransport: () => transportReturning(Response.json({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { contents: [{ uri: "ui://system-arcades-me.vercel.app/companion-v13.html", text: "public widget shell" }] },
+    })),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(authorizeCalls, 0);
+  assert.equal(receivedOwner, "discovery:anonymous");
+  assert.deepEqual(privateLifecycle.calls, { connect: 1, close: 1 });
+});
+
 test("protected and malformed request shapes never fall back to the Demo system", async () => {
   const requests = [
     rpc("tools/call", { name: "list_alters", arguments: {} }),

@@ -78,6 +78,20 @@ const LEGACY_WIDGET_URIS = [
   "ui://system.arcades.me/companion-v7.html",
   "ui://system.arcades.me/companion-v8.html",
 ] as const;
+const LEGACY_CATCH_UP_WIDGET_URIS = [11, 12].map((version) => `ui://system-arcades-me.vercel.app/companion-v${version}.html`);
+const LEGACY_LINEUP_WIDGET_URIS = [1, 2].map((version) => `ui://system-arcades-me.vercel.app/alter-lineup-v${version}.html`);
+export const PUBLIC_MCP_UI_RESOURCE_URIS = new Set<string>([
+  WIDGET_URI,
+  LINEUP_WIDGET_URI,
+  SCENE_WIDGET_URI,
+  ...LEGACY_CATCH_UP_WIDGET_URIS,
+  ...LEGACY_LINEUP_WIDGET_URIS,
+  ...LEGACY_WIDGET_URIS,
+]);
+
+export function isPublicMcpUiResourceUri(value: unknown): value is string {
+  return typeof value === "string" && PUBLIC_MCP_UI_RESOURCE_URIS.has(value);
+}
 const coverageSchema = z.object({ id: uuidSchema, ownerId: z.string(), alterId: uuidSchema.optional(), startsOn: z.string().date(), endsOn: z.string().date().optional(), status: z.enum(["DRAFT", "CONFIRMED", "REJECTED"]), reasons: z.array(z.string()), createdAt: z.string().datetime(), confirmedAt: z.string().datetime().optional() });
 const legacyNoteViewSchema = z.object({ id: uuidSchema, ownerId: z.string(), body: z.string(), alterId: uuidSchema.optional(), coverageId: uuidSchema.optional(), actorAlterId: uuidSchema.optional(), createdAt: z.string().datetime() });
 const preferenceViewSchema = z.object({ key: z.string(), value: z.string(), updatedAt: z.string().datetime() });
@@ -236,12 +250,12 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   server.registerResource("system-native-scene", SCENE_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: sceneMeta }, async () => ({ contents: [{ uri: SCENE_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: sceneWidget(publicOrigin), _meta: sceneMeta }] }));
   // Preserve previously advertised catch-up and lineup descriptors as well as
   // the older companion resources, whose payload uses the original shape.
-  for (const version of [11, 12]) {
-    const uri = `ui://system-arcades-me.vercel.app/companion-v${version}.html`;
+  for (const [index, uri] of LEGACY_CATCH_UP_WIDGET_URIS.entries()) {
+    const version = index + 11;
     server.registerResource(`system-catch-up-legacy-${version}`, uri, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: catchUpWidget(publicOrigin), _meta: widgetMeta }] }));
   }
-  for (const version of [1, 2]) {
-    const previousLineupUri = `ui://system-arcades-me.vercel.app/alter-lineup-v${version}.html`;
+  for (const [index, previousLineupUri] of LEGACY_LINEUP_WIDGET_URIS.entries()) {
+    const version = index + 1;
     server.registerResource(`system-alter-lineup-legacy-${version}`, previousLineupUri, { mimeType: "text/html;profile=mcp-app", _meta: lineupMeta }, async () => ({ contents: [{ uri: previousLineupUri, mimeType: "text/html;profile=mcp-app", text: lineupWidget(publicOrigin), _meta: lineupMeta }] }));
   }
   for (const [index, uri] of LEGACY_WIDGET_URIS.entries()) {
