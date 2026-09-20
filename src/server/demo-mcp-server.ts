@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { demoSystemSchema, getDemoSystem } from "./demo-system";
 import { mcpWwwAuthenticate } from "./mcp-authorization";
@@ -34,9 +36,20 @@ export function registerDemoSystemTool(server: McpServer) {
     inputSchema: {}, outputSchema: { ...metadata, people: demoSystemSchema.shape.people }, annotations, _meta,
   }, async () => result({ people: getDemoSystem().people }));
   server.registerTool("get_demo_person", {
-    title: "Demo system: person details", description: "Read one fictional person's description, preferences, and relationships. Dot is no relation to Fenton or Benny.",
+    title: "Demo system: person details", description: "Read one fictional person's description, profile picture, preferences, and relationships. Dot is no relation to Fenton or Benny.",
     inputSchema: z.object({ personId }).strict(), outputSchema: { ...metadata, person: demoSystemSchema.shape.people.element, relationships: demoSystemSchema.shape.relationships }, annotations, _meta,
-  }, async ({ personId }) => { const demo = getDemoSystem(); return result({ person: demo.people.find(p => p.id === personId)!, relationships: demo.relationships.filter(r => r.people.includes(personId)) }); });
+  }, async ({ personId }) => {
+    const demo = getDemoSystem();
+    const person = demo.people.find(p => p.id === personId)!;
+    const image = await readFile(join(process.cwd(), "public", person.profilePicture.url));
+    return {
+      structuredContent: { label: "Demo system" as const, fictional: true as const, readOnly: true as const, person, relationships: demo.relationships.filter(r => r.people.includes(personId)) },
+      content: [
+        { type: "text" as const, text: "Demo system — fictional, read-only records at the fixed sample date. Not the user's private data." },
+        { type: "image" as const, data: image.toString("base64"), mimeType: person.profilePicture.contentType },
+      ],
+    };
+  });
   server.registerTool("list_demo_tasks", {
     title: "Demo system: tasks", description: "Browse fictional tasks, optionally filtered by Relevant to person and OPEN/DONE status. Shared relevance is separate from who handles the work and from presence.",
     inputSchema: z.object({ relevantTo: personId.optional(), status: z.enum(["OPEN", "DONE"]).optional() }).strict(), outputSchema: { ...metadata, tasks: demoSystemSchema.shape.tasks }, annotations, _meta,

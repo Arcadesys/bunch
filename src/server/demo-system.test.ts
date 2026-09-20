@@ -22,6 +22,7 @@ const noPrivateCredentials = {
 test("fictional sample preserves names, relationships, gift authorship, shared relevance, and review semantics", () => {
   const demo = getDemoSystem();
   assert.deepEqual(demo.people.map(p => p.name), ["Fenton", "Benny", "Dot"]);
+  assert.deepEqual(demo.people.map(p => p.profilePicture.url), ["/demo/people/fenton.png", "/demo/people/benny.png", "/demo/people/dot.png"]);
   assert.match(demo.people[2].description, /kid.*no relation/s);
   assert.match(demo.relationships[0].description, /tease.*love/);
   const task = demo.tasks.find(t => t.id === "thank-you-note")!;
@@ -55,6 +56,14 @@ test("public REST endpoint returns only immutable fiction without a database", a
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(await response.json(), getDemoSystem());
+});
+
+test("demo person reads include a rendered profile picture while remaining read-only", async () => {
+  const response = await handleMcpRequest(rpc("tools/call", { name: "get_demo_person", arguments: { personId: "benny" } }), noPrivateAccess);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.result.structuredContent.person.profilePicture.url, "/demo/people/benny.png");
+  assert.equal(result.result.content.some((item: { type: string }) => item.type === "image"), true);
 });
 
 test("anonymous hosted MCP discovers and reads demo in production without private access", async () => {
