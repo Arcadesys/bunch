@@ -313,6 +313,10 @@ class UnconfiguredRepository implements SystemRepository {
   savePreference(): Promise<SystemPreference> { return Promise.reject(this.unavailable()); }
 }
 
+// Chosen once at import: demo mode gets in-memory storage, a configured DATABASE_URL
+// gets Postgres, and anything else gets a stub that throws on use rather than
+// pretending to be empty. This is the legacy record path; SystemService owns the
+// versioned, transactional one and is always Postgres-backed.
 export const repository: SystemRepository = process.env.SYSTEM_DEMO_MODE === "true"
   ? new MemorySystemRepository()
   : process.env.DATABASE_URL ? new NeonSystemRepository() : new UnconfiguredRepository();

@@ -4,7 +4,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-  await page.goto("/");
+  await page.goto("/home/catch-up");
   await expect(page).toHaveTitle("Bunch — your private companion");
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("initial-viewport.png"), fullPage: false });
@@ -26,7 +26,7 @@ test("catch-up loads, acknowledges, and reloads server-owned review state", asyn
 });
 
 test("defer is opt-in and next switch is an explicit return choice", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home/catch-up");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
@@ -38,7 +38,7 @@ test("defer is opt-in and next switch is an explicit return choice", async ({ pa
 });
 
 test("missing custom defer time sends no write", async ({ page, harness }) => {
-  await page.goto("/");
+  await page.goto("/home/catch-up");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Review later", exact: true }).click();
@@ -50,7 +50,7 @@ test("missing custom defer time sends no write", async ({ page, harness }) => {
 
 test("stale write is announced without false success or optimistic state", async ({ page, harness }) => {
   harness.writeStatus = 409;
-  await page.goto("/");
+  await page.goto("/home/catch-up");
   await page.getByText(/More saved changes/).click();
   const row = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Fixture note", exact: true }) });
   await row.getByRole("button", { name: "Mark reviewed", exact: true }).click();
@@ -60,15 +60,15 @@ test("stale write is announced without false success or optimistic state", async
 });
 
 test("navigation opens saved records and identifies the active page", async ({ page }) => {
-  await page.goto("/");
-  const nav = page.getByRole("navigation", { name: "Bunch navigation" });
-  for (const [label, path, type] of [["Todos", "/board", "todo"], ["Notes", "/notes", "note"], ["Threads", "/threads", "thread"]]) {
-    await nav.getByRole("link", { name: "Options", exact: true }).click();
-    await page.getByRole("link").filter({ has: page.getByRole("heading", { name: label, exact: true }) }).click();
-    await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await expect(nav.getByRole("link", { name: "Options", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.goto("/home");
+  for (const [label, path, type] of [["Manage todos", "/board", "todo"], ["Leave a note", "/notes", "note"], ["Save a thread", "/threads", "thread"]]) {
+    if (label === "Save a thread") await page.getByText("More places").click();
+    await page.getByRole("link", { name: label, exact: false }).click();
+    await expect(page).toHaveURL(new RegExp(`${path}(#create-record)?$`));
+    await expect(page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Home", exact: true })).toBeVisible();
     await expect(page.getByRole("article")).toHaveCount(1);
     await expect(page.getByRole("article")).toContainText(`Fixture ${type}`);
+    await page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Home", exact: true }).click();
   }
 });
 
@@ -90,7 +90,7 @@ test("thread suggestion requires a separate confirmation and excludes transcript
 
 test("first-time and empty catch-up states render without writes", async ({ page, harness }) => {
   harness.session!.firstTime = true;
-  await page.goto("/");
+  await page.goto("/home/catch-up");
   await page.locator(".catch-up-window > summary").click();
   await expect(page.getByText(/First catch-up for this experience/)).toBeVisible();
   harness.session = null;

@@ -5,7 +5,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./mcp-server";
 import type { SystemService } from "./system-service";
 
-test("DIDdy presence tools carry explicit kinds, versions, and retry metadata", async () => {
+// The MCP server has no default origin, so every test that builds one must say
+// where this instance is served from. Pinned rather than defaulted: these
+// assertions must not change with whatever origin the shell happens to export.
+process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+
+test("Working Monkeys presence tools carry explicit kinds, versions, and retry metadata", async () => {
   const alterId = "11111111-1111-4111-8111-111111111111";
   const episodeId = "22222222-2222-4222-8222-222222222222";
   const requestId = "33333333-3333-4333-8333-333333333333";
@@ -58,7 +63,8 @@ test("confirmed arrivals direct ChatGPT to the exact catch-up, while clears and 
     const start = await client.callTool({ name: "start_fronting_episode", arguments: { requestId, alterId } });
     assert.equal(start.isError, undefined);
     assert.match(JSON.stringify(start.content), new RegExp(`periodId ${id}`));
-    assert.match(JSON.stringify(start.content), /Generate the returned conversation catch-up in ChatGPT now/);
+    assert.match(JSON.stringify(start.content), /Draft a brief, source-linked catch-up/);
+    assert.match(JSON.stringify(start.content), /only after explicit approval/);
     const host = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId, expectedVersion: null } });
     assert.match(JSON.stringify(host.content), /hosting.startedAt equals 2026-09-05T12:00:00.000Z/);
     const cleared = await client.callTool({ name: "set_system_host", arguments: { requestId, alterId: null, expectedVersion: 1 } });

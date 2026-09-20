@@ -1,7 +1,6 @@
 {
-  "name": "system-arcades-me",
-  "version": "0.1.0",
-  "private": true,
+  "name": "bunch",
+  "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,12 +18,14 @@
     "record:front": "tsx scripts/record-current-front.ts",
     "record:note": "tsx scripts/save-system-note.ts",
     "verify:hosted-mcp": "tsx scripts/verify-hosted-mcp.ts",
+    "verify:hosted-mcp:public": "tsx scripts/verify-public-mcp.ts",
     "eval:mcp": "node -e \"if (!process.env.TEST_DATABASE_URL) { console.error('TEST_DATABASE_URL is required for MCP evals'); process.exit(1); }\" && node --import tsx --test src/server/arrival-catch-up.eval.test.ts",
     "pilot:admin": "tsx scripts/pilot-admin.ts",
     "pilot:backup": "tsx scripts/pilot-backup.ts",
     "eval:pilot": "node -e \"if (!process.env.TEST_DATABASE_URL) { console.error('TEST_DATABASE_URL is required'); process.exit(1); }\" && node --import tsx --test src/server/pilot.integration.test.ts",
     "plugin:pack": "python3 scripts/package-plugin.py",
-    "demo:load-images": "tsx scripts/load-demo-images.ts"
+    "demo:load-images": "tsx scripts/load-demo-images.ts",
+    "test:group-photo:real": "playwright test --config playwright.group-photo.config.ts"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.28.0",
@@ -39,6 +40,7 @@
     "pg": "^8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "sharp": "0.35.4",
     "zod": "4.5.4"
   },
   "devDependencies": {

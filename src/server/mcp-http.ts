@@ -1,74 +1,252 @@
-import { createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
+import { CONNECT_PRIVATE_SYSTEM_TOOL_NAME, createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
 import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
-async function rpcMethod(request: Request) {
-  if (!request.headers.get("content-type")?.includes("application/json")) return undefined;
-  try {
-    const body = await request.clone().json() as { method?: unknown };
-    return typeof body.method === "string" && ["initialize","notifications/initialized","tools/list","tools/call","resources/list","resources/read","ping"].includes(body.method) ? body.method : "other";
-  } catch {
-    return undefined;
-  }
-}
+const PUBLIC_RPC_METHODS = new Set([
+  "server/discover",
+  "initialize",
+  "notifications/initialized",
+  "tools/list",
+  "resources/list",
+  "resources/templates/list",
+  "prompts/list",
+  "ping",
+]);
+const LOGGABLE_RPC_METHOD = /^[a-z][a-z0-9._/-]{0,80}$/;
+const ANONYMOUS_TOOL_NAMES = new Set([...DEMO_TOOL_NAMES, CONNECT_PRIVATE_SYSTEM_TOOL_NAME]);
+const DISCOVERY_OWNER_ID = "discovery:anonymous";
 
-type Dependencies = {
-  authorize: typeof requireCompanionAccessToken;
-  privateServer: typeof createMcpServer;
+type McpServer = ReturnType<typeof createMcpServer>;
+type McpTransport = WebStandardStreamableHTTPServerTransport;
+
+export type McpHttpOptions = {
+  authorize?: typeof requireCompanionAccessToken;
+  createDemoServer?: () => Pick<McpServer, "connect" | "close">;
+  createPrivateServer?: (ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) => Pick<McpServer, "connect" | "close">;
+  createTransport?: () => McpTransport;
+  scheduleNativeScene?: (ownerId: string, renderId: string) => void;
 };
 
-// Only a truly absent Authorization header selects public fiction. Invalid,
-// empty, expired, or revoked credentials must never silently become a demo.
-async function permitsAnonymousDemo(request: Request) {
-  if (request.headers.has("authorization")) return false;
-  // Streamable HTTP clients probe GET for an SSE stream after initialize.
-  // This stateless server returns 405, not an OAuth prompt for demo visitors.
-  if (request.method === "GET") return true;
-  if (request.method !== "POST") return false;
-  try {
-    const body = await request.clone().json();
-    if (!body || Array.isArray(body) || body.jsonrpc !== "2.0") return false;
-    if (["initialize", "notifications/initialized", "tools/list", "ping"].includes(body.method)) return true;
-    return body.method === "tools/call" && DEMO_TOOL_NAMES.has(body.params?.name);
-  } catch { return false; }
+type RequestClassification = {
+  anonymousDemo: boolean;
+  rpcMethod: string | undefined;
+};
+
+async function classifyRequest(request: Request): Promise<RequestClassification> {
+  let body: Record<string, unknown> | undefined;
+  if (request.headers.get("content-type")?.includes("application/json")) {
+    try {
+      const parsed = await request.clone().json();
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") body = parsed as Record<string, unknown>;
+    } catch { /* malformed bodies remain protected */ }
+  }
+
+  const suppliedMethod = typeof body?.method === "string" ? body.method : undefined;
+  const rpcMethod = suppliedMethod
+    ? (LOGGABLE_RPC_METHOD.test(suppliedMethod) ? suppliedMethod : "other")
+    : undefined;
+  if (request.headers.has("authorization")) return { anonymousDemo: false, rpcMethod };
+
+  // Streamable HTTP clients probe GET for an SSE stream while establishing a
+  // connection. Keep that probe anonymous so mixed-auth clients can reach the
+  // transport without triggering OAuth; the transport still exposes no Demo or
+  // private records through the stream. DELETE and malformed/unknown requests
+  // stay behind authorization.
+  if (request.method === "GET") return { anonymousDemo: true, rpcMethod };
+  if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, rpcMethod };
+  if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, rpcMethod };
+  const toolName = body.params && typeof body.params === "object" && !Array.isArray(body.params)
+    ? (body.params as { name?: unknown }).name
+    : undefined;
+  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && ANONYMOUS_TOOL_NAMES.has(toolName), rpcMethod };
 }
 
-export async function handleMcpRequest(request: Request, dependencies: Dependencies = { authorize: requireCompanionAccessToken, privateServer: createMcpServer }) {
-  const method = await rpcMethod(request);
-  try {
-    const anonymousDemo = await permitsAnonymousDemo(request);
-    if (anonymousDemo && request.method === "GET") return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
-    const ownerId = anonymousDemo ? null : await dependencies.authorize(request);
-    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    const server = ownerId === null ? createDemoMcpServer() : dependencies.privateServer(ownerId);
-    await server.connect(transport);
-    let response: Response;
-    try { response = await transport.handleRequest(request); } finally { await server.close(); }
-    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: method, status: response.status });
-    return addOAuthSecuritySchemes(response);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unauthorized";
-    console.warn("[mcp] rejected request", { httpMethod: request.method, rpcMethod: method, reason: error instanceof SystemError ? error.code : "REQUEST_REJECTED" });
-    let challenge = `Bearer scope="${COMPANION_SCOPE}"`;
-    try { challenge = mcpWwwAuthenticate("invalid_token"); } catch { /* configuration error remains unauthorized */ }
-    return Response.json({ error: message }, { status: error instanceof SystemError && error.code === "RATE_LIMITED" ? 429 : error instanceof SystemError && error.code === "FORBIDDEN" ? 403 : 401, headers: { "WWW-Authenticate": challenge } });
+function defaultTransport() {
+  return new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+}
+
+function defaultPrivateServer(ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) {
+  return createMcpServer(ownerId, undefined, undefined, undefined, undefined, scheduleNativeScene);
+}
+
+function safeChallenge() {
+  try { return mcpWwwAuthenticate("invalid_token"); }
+  catch { return `Bearer scope="${COMPANION_SCOPE}", error="invalid_token"`; }
+}
+
+function failureResponse(error: unknown, phase: "authorization" | "request") {
+  let status = 500;
+  let message = "Bunch could not process this MCP request.";
+  let challenge = false;
+
+  if (phase === "authorization") {
+    if (error instanceof SystemError && error.code === "UNAUTHORIZED") {
+      status = 401;
+      message = "Authentication required.";
+      challenge = true;
+    } else if (error instanceof SystemError && error.code === "FORBIDDEN") {
+      status = 403;
+      message = error.userMessage;
+    } else if (error instanceof SystemError && error.code === "RATE_LIMITED") {
+      status = 429;
+      message = error.userMessage;
+    }
   }
+
+  const headers = new Headers({ "Cache-Control": "no-store" });
+  if (challenge) headers.set("WWW-Authenticate", safeChallenge());
+  return Response.json({ error: message }, { status, headers });
+}
+
+export async function handleMcpRequest(request: Request, options: McpHttpOptions = {}) {
+  const classification = await classifyRequest(request);
+
+  const authorize = options.authorize ?? requireCompanionAccessToken;
+  let ownerId: string | null = null;
+  if (!classification.anonymousDemo) {
+    try {
+      ownerId = await authorize(request);
+    } catch (error) {
+      console.warn("[mcp] rejected authorization", {
+        httpMethod: request.method,
+        rpcMethod: classification.rpcMethod,
+        reason: error instanceof SystemError ? error.code : "AUTHORIZATION_FAILED",
+      });
+      return failureResponse(error, "authorization");
+    }
+  }
+
+  const createTransport = options.createTransport ?? defaultTransport;
+  const createDemoServer = options.createDemoServer ?? createDemoMcpServer;
+  const createPrivateServer = options.createPrivateServer ?? defaultPrivateServer;
+  if (ownerId === null && classification.rpcMethod === "tools/list") {
+    return handleAnonymousToolCatalog(request, createDemoServer, createPrivateServer, createTransport, options.scheduleNativeScene);
+  }
+  let server: Pick<McpServer, "connect" | "close"> | undefined;
+  let response: Response | undefined;
+  let requestFailure: unknown;
+
+  try {
+    const transport = createTransport();
+    server = ownerId === null
+      ? createDemoServer()
+      : createPrivateServer(ownerId, options.scheduleNativeScene);
+    await server.connect(transport);
+    response = await transport.handleRequest(request);
+    response = await addOAuthSecuritySchemes(response);
+    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: classification.rpcMethod, status: response.status });
+  } catch (error) {
+    requestFailure = error;
+    console.warn("[mcp] request failed", { httpMethod: request.method, rpcMethod: classification.rpcMethod, reason: "REQUEST_FAILED" });
+  } finally {
+    if (server) {
+      try { await server.close(); }
+      catch {
+        console.warn("[mcp] cleanup failed", { httpMethod: request.method, rpcMethod: classification.rpcMethod, reason: "CLEANUP_FAILED" });
+      }
+    }
+  }
+
+  return requestFailure || !response ? failureResponse(requestFailure, "request") : response;
+}
+
+async function handleAnonymousToolCatalog(
+  request: Request,
+  createDemoServer: NonNullable<McpHttpOptions["createDemoServer"]>,
+  createPrivateServer: NonNullable<McpHttpOptions["createPrivateServer"]>,
+  createTransport: NonNullable<McpHttpOptions["createTransport"]>,
+  scheduleNativeScene?: McpHttpOptions["scheduleNativeScene"],
+) {
+  const servers: Array<Pick<McpServer, "connect" | "close">> = [];
+  try {
+    const demoServer = createDemoServer();
+    const privateServer = createPrivateServer(DISCOVERY_OWNER_ID, scheduleNativeScene);
+    servers.push(demoServer, privateServer);
+
+    const demoTransport = createTransport();
+    const privateTransport = createTransport();
+    await demoServer.connect(demoTransport);
+    await privateServer.connect(privateTransport);
+
+    const [demoResponse, privateResponse] = await Promise.all([
+      demoTransport.handleRequest(request.clone()),
+      privateTransport.handleRequest(request.clone()),
+    ]);
+    const response = await mergeToolCatalogs(demoResponse, privateResponse);
+    const decorated = await addOAuthSecuritySchemes(response);
+    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: "tools/list", status: decorated.status });
+    return decorated;
+  } catch (error) {
+    console.warn("[mcp] request failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "REQUEST_FAILED" });
+    return failureResponse(error, "request");
+  } finally {
+    for (const server of servers) {
+      try { await server.close(); }
+      catch {
+        console.warn("[mcp] cleanup failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "CLEANUP_FAILED" });
+      }
+    }
+  }
+}
+
+async function mergeToolCatalogs(demoResponse: Response, privateResponse: Response) {
+  const [demoPayload, privatePayload] = await Promise.all([demoResponse.json(), privateResponse.json()]);
+  if (!hasToolList(demoPayload) || !hasToolList(privatePayload)) throw new Error("Invalid MCP tool catalog response.");
+
+  const tools = [...demoPayload.result.tools];
+  const names = new Set(tools.flatMap((tool) => tool && typeof tool === "object" && !Array.isArray(tool) && typeof (tool as { name?: unknown }).name === "string"
+    ? [(tool as { name: string }).name]
+    : []));
+  for (const tool of privatePayload.result.tools) {
+    const name = tool && typeof tool === "object" && !Array.isArray(tool) ? (tool as { name?: unknown }).name : undefined;
+    if (typeof name === "string" && names.has(name)) continue;
+    tools.push(tool);
+    if (typeof name === "string") names.add(name);
+  }
+
+  const headers = new Headers(demoResponse.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify({ ...demoPayload, result: { ...demoPayload.result, tools } }), {
+    status: demoResponse.status,
+    statusText: demoResponse.statusText,
+    headers,
+  });
+}
+
+function hasToolList(payload: unknown): payload is { result: { tools: unknown[] } } {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const result = (payload as { result?: unknown }).result;
+  return Boolean(result && typeof result === "object" && !Array.isArray(result) && Array.isArray((result as { tools?: unknown }).tools));
 }
 
 export async function addOAuthSecuritySchemes(response: Response) {
-  const contentType = response.headers.get("content-type") ?? "";
-  response.headers.set("Cache-Control", "no-store");
-  if (!contentType.includes("application/json")) return response;
-  const payload = await response.json() as { result?: { tools?: Array<Record<string, unknown>> } };
-  if (payload.result?.tools) {
-    payload.result.tools = payload.result.tools.map((tool) => ({
-      ...tool,
-      securitySchemes: typeof tool.name === "string" && DEMO_TOOL_NAMES.has(tool.name) ? [{ type: "noauth" }] : [{ type: "oauth2", scopes: [COMPANION_SCOPE] }],
-    }));
-  }
   const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store");
+  const unchanged = () => new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  if (!headers.get("content-type")?.includes("application/json")) return unchanged();
+
+  let payload: unknown;
+  try { payload = await response.clone().json(); }
+  catch { return unchanged(); }
+  if (!hasToolList(payload)) return unchanged();
+
+  payload.result.tools = payload.result.tools.map((tool) => {
+    if (!tool || typeof tool !== "object" || Array.isArray(tool)) return tool;
+    const descriptor = tool as Record<string, unknown>;
+    const securitySchemes = typeof descriptor.name === "string" && DEMO_TOOL_NAMES.has(descriptor.name)
+      ? [{ type: "noauth" }]
+      : [{ type: "oauth2", scopes: [COMPANION_SCOPE] }];
+    const meta = descriptor._meta && typeof descriptor._meta === "object" && !Array.isArray(descriptor._meta)
+      ? descriptor._meta as Record<string, unknown>
+      : {};
+    return {
+      ...descriptor,
+      securitySchemes,
+      _meta: { ...meta, securitySchemes },
+    };
+  });
   headers.delete("content-length");
-  return Response.json(payload, { status: response.status, statusText: response.statusText, headers });
+  return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers });
 }

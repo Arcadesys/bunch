@@ -11,6 +11,9 @@ export function normalizePgConnectionString(connectionString: string) {
   return url.toString();
 }
 
+// One pooled connection for request handling. Migrations deliberately do not use
+// this: they need an unpooled session to hold an advisory lock. The global cache is
+// dev-only, where hot reload would otherwise leak a pool per reload.
 export function getDatabasePool() {
   if (globalDatabase.systemPool) return globalDatabase.systemPool;
   const connectionString = process.env.DATABASE_URL;

@@ -138,7 +138,7 @@ test("@eval export includes original image downloads and deletion requires exact
   await page
     .getByRole("button", { name: "Export records and image list" })
     .click();
-  expect((await download).suggestedFilename()).toBe("diddy-records.json");
+  expect((await download).suggestedFilename()).toBe("bunch-records.json");
   await expect(
     page.getByRole("link", { name: "Download original image 1" }),
   ).toBeVisible();

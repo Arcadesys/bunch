@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "diddy": {
-      "type": "http",
-      "url": "https://system.thearcades.me/mcp"
-    }
-  }
-}

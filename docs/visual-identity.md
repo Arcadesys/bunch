@@ -50,7 +50,7 @@ requiring independently selected appearance references.
 
 This branch ports the implementation onto main at c2216d7, preserving newer
 sharing, episode reviews, independent appearance editing, and navigation.
-It adds migration 0012, with nullable text and empty-default arrays only.
+It adds `drizzle/0012_visual_identity.sql`, with nullable text and empty-default arrays only.
 No private identity backfill is included.
 
 Local checks on the port: 105 unit/database tests without skips; 207 browser
@@ -61,7 +61,7 @@ reference fallback, private metadata, retained drafts and retry behavior.
 Mobile CSS keeps recent-change links at least 44px tall and enlarged-text buttons
 inside their containers. The existing progressive disclosure is preserved.
 
-Apply migration 0012 to the intended database before merging/deploying code that
+Apply `drizzle/0012_visual_identity.sql` to the intended database before merging/deploying code that
 reads the new columns. Confirm deployed endpoint readiness separately from
 authenticated profile editing and generated-image fidelity; the latter still
 needs visual review in the consuming image workflow.

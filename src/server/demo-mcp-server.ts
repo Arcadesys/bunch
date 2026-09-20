@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { demoSystemSchema, getDemoSystem } from "./demo-system";
+import { mcpWwwAuthenticate } from "./mcp-authorization";
+import { ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool } from "./mcp-account-profile";
+
+export const CONNECT_PRIVATE_SYSTEM_TOOL_NAME = "connect_private_system";
+const CONNECT_PRIVATE_SYSTEM_DESCRIPTION = "Authentication is required to connect your private Bunch system.";
 
 export const DEMO_TOOL_NAMES = new Set([
   "get_demo_system", "list_demo_people", "get_demo_person", "list_demo_tasks",
@@ -70,7 +75,7 @@ export function registerDemoSystemTool(server: McpServer) {
 
 export const connectPrivateSystemTool = {
   title: "Connect private system",
-  description: "Sign in to use your own private Bunch system instead of the fictional Demo system. After connecting, refresh tools/list to discover the private tools. Existing authenticated access and tenant restrictions apply.",
+  description: "Sign in to use your own private Bunch system instead of the fictional Demo system. Private actions are advertised during discovery and become usable only after authorization. Existing authenticated access and tenant restrictions apply.",
   inputSchema: {},
   outputSchema: { mode: z.literal("private"), authenticated: z.literal(true) },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -79,11 +84,27 @@ export const connectPrivateSystemTool = {
 
 export function createDemoMcpServer() {
   const server = new McpServer({ name: "Bunch", version: "0.7.0" }, {
-    instructions: "You are connected to Bunch's Demo system. Call get_demo_system for the default populated fictional sample. Label it Demo system and never treat it as the user's personal people, history, or commitments. No demo changes are saved. For personal records, call connect_private_system to authenticate, then refresh tools/list. Never substitute fictional data for a failed private request.",
+    instructions: "You are connected to Bunch's Demo system. Call get_demo_system for the default populated fictional sample. Label it Demo system and never treat it as the user's personal people, history, or commitments. No demo changes are saved. For personal records, call connect_private_system to authenticate, then use the already-advertised private actions. Never substitute fictional data for a failed private request.",
   });
   registerDemoSystemTool(server);
-  // The HTTP boundary challenges this tool before execution. Keep a closed
-  // fallback here too, so an in-process caller cannot claim authentication.
-  server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({ isError: true, content: [{ type: "text", text: "Authentication is required to connect your private system." }] }));
+  // This public bootstrap is the one anonymous exception for a private tool.
+  // Its MCP result carries the OAuth challenge but never returns private data.
+  server.registerTool(CONNECT_PRIVATE_SYSTEM_TOOL_NAME, connectPrivateSystemTool, async () => ({
+    isError: true,
+    content: [{ type: "text", text: CONNECT_PRIVATE_SYSTEM_DESCRIPTION }],
+    _meta: {
+      "mcp/www_authenticate": [mcpWwwAuthenticate("invalid_token", CONNECT_PRIVATE_SYSTEM_DESCRIPTION)],
+    },
+  }));
+  // ChatGPT resolves the stable account identity while completing OAuth. The
+  // descriptor must therefore be visible during anonymous discovery, but the
+  // HTTP router keeps every invocation behind bearer-token authorization.
+  server.registerTool(ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool, async () => ({
+    isError: true,
+    content: [{ type: "text", text: CONNECT_PRIVATE_SYSTEM_DESCRIPTION }],
+    _meta: {
+      "mcp/www_authenticate": [mcpWwwAuthenticate("invalid_token", CONNECT_PRIVATE_SYSTEM_DESCRIPTION)],
+    },
+  }));
   return server;
 }

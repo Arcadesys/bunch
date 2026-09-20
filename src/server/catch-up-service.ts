@@ -153,6 +153,9 @@ export function getDemoCatchUpSession(ownerId = "demo:catch-up") {
   return session;
 }
 
+// A review layer over records that already exist. Marking a catch-up item reviewed
+// never edits the underlying note, todo, or decision - it only records that someone
+// arriving has now seen it.
 export class CatchUpService {
   constructor(private readonly pool: Pool = getDatabasePool()) {}
 
@@ -197,8 +200,8 @@ export class CatchUpService {
       "This handoff does not give System access to ChatGPT conversation history.",
       "Generate the catch-up now in ChatGPT: show the window and elapsedSeconds as a readable duration, then summarize what happened. A capable host may retrieve available conversations in this window, read messages rather than only titles, and report topics, decisions, open matters, source links, and coverage gaps.",
       "If the host cannot retrieve other conversations, say so clearly; do not claim that nothing happened or fabricate a summary.",
-      "For a FRONTING period, get_catch_up with periodId returns the session. Read every page with get_episode_records, then get_episode_review for its revision. Save using save_episode_review_v1 with that exact session and recipient, even when the previous end is unknown. Distinguish MEMORY and CONVERSATION references from DIDDY records; label missing context. Do not require invented dates. Other legacy catch-ups retain the original save operation.",
-      "Keep conversation findings separate from current authenticated facts and real-world completion. For legacy or separately selected windows only, call save_conversation_catch_up with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
+      "For a FRONTING period, get_catch_up with periodId returns the session. Read every page with get_episode_records, then get_episode_review for its revision. Draft a brief review, show it with sources and gaps, and call save_episode_review_v1 only after the user explicitly authorizes that exact write. Use the exact session and recipient, even when the previous end is unknown. Distinguish MEMORY and CONVERSATION references from DIDDY records; label missing context. Do not require invented dates. Other legacy catch-ups retain the original save operation.",
+      "Keep conversation findings separate from current authenticated facts and real-world completion. For legacy or separately selected windows only, draft first and call save_conversation_catch_up only after user approval, with the exact window, alterId, summary and coverage gaps. Retain it for 30 days and reuse its requestId on retries. Never persist raw transcripts.",
     ];
     if (ownerId.startsWith("demo:")) {
       if (input.alterId !== demoAlterId) throw new SystemError("NOT_FOUND", "The alter to catch up was not found or is archived.");
@@ -223,7 +226,7 @@ export class CatchUpService {
         const prior=await client.query<{ended_at:Date|string}>(`select ended_at from presence_period where owner_id=$1 and alter_id=$2::uuid and kind=$3::presence_kind and id<>$5::uuid and ended_at<=$4::timestamptz order by ended_at desc limit 1`,[ownerId,profile.id,period.kind,period.started_at,period.id]);
         const source={presencePeriodId:period.id,kind:period.kind};
         if(!prior.rows[0] || !isValidWindow(prior.rows[0].ended_at, period.started_at))return conversationHandoff({status:"NEEDS_DATES",alterId:profile.id,alterName:profile.name,source,historyAccess:"HOST_REQUIRED",instructions:[...instructions,"No earlier recorded end for this experience kind is available. Choose explicit dates."]});
-        return conversationHandoff({status:"READY",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",source,window:{startAt:iso(prior.rows[0].ended_at),endAt:iso(period.started_at),timeZone:input.timeZone,provenance:"RECORDED_PRESENCE_WINDOW"},instructions});
+        return conversationHandoff({status:"READY",alterId:profile.id,alterName:profile.name,historyAccess:"HOST_REQUIRED",source,window:{startAt:iso(prior.rows[0].ended_at),endAt:iso(period.started_at),timeZone:input.timeZone,provenance:period.kind === "FRONTING" ? "RECORDED_FRONTING_WINDOW" : "RECORDED_PRESENCE_WINDOW"},instructions});
       }
 
       const current = await client.query<{ id: string; started_at: Date | string }>("select id, started_at from fronting_session where owner_id = $1 and alter_id = $2::uuid and (($3::uuid is null and ended_at is null) or id=$3::uuid)", [ownerId, profile.id, input.frontingSessionId ?? null]);

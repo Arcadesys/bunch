@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/catch-up";
-import { AppNavigation } from "./app-navigation";
+import { AppNavigation, PRESENCE_CHANGED_EVENT } from "./app-navigation";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import { CurrentFrontSummary } from "./current-front-summary";
 import { SavedReturnReview } from "./saved-return-review";
@@ -56,13 +56,13 @@ async function requestCatchUp(periodId?: string) {
 
 type CatchUpLoadState = "loading" | "ready" | "unauthorized" | "error";
 
-export function CatchUpCommandCenter({ initialView = "CATCH_UP" }: { initialView?: CommandView }) {
+export function CatchUpCommandCenter({ initialView = "CATCH_UP", focused = false, quiet = false }: { initialView?: CommandView; focused?: boolean; quiet?: boolean }) {
   if (initialView === "BOARD" || initialView === "NOTES" || initialView === "THREADS") return <SavedRecords key={initialView} view={initialView} />;
-  return <CatchUpView initialView={initialView} />;
+  return <CatchUpView initialView={initialView} focused={focused} quiet={quiet} />;
 }
 
-function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
-  const [overwhelmed, setOverwhelmed] = useState(false);
+function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" | "HISTORY"; focused: boolean; quiet: boolean }) {
+  const [overwhelmed, setOverwhelmed] = useState(quiet);
   const nextStepHeading = useRef<HTMLHeadingElement>(null);
   const [frontRefresh,setFrontRefresh] = useState(0);
   const selectedPeriod = useRef<string | undefined>(undefined);
@@ -126,6 +126,15 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
+  // A change confirmed from the navigation header refreshes this page too,
+  // because each page mounts its own navigation and shares no state with it.
+  const latestPresenceChanged = useRef(presenceChanged);
+  useEffect(() => { latestPresenceChanged.current = presenceChanged; });
+  useEffect(() => {
+    const onPresenceChanged = (event: Event) => latestPresenceChanged.current((event as CustomEvent<{ periodId?: string }>).detail?.periodId);
+    window.addEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+    return () => window.removeEventListener(PRESENCE_CHANGED_EVENT, onPresenceChanged);
+  }, []);
 
   const primaryItems = useMemo(() => {
     const urgency = (item: CatchUpItem) => Number(/BLOCKED/.test(item.statusLabel ?? "")) * 4 + Number(/HIGH/.test(item.statusLabel ?? "")) * 2 + Number(Boolean(item.dueOn && new Date(`${item.dueOn}T23:59:59`).getTime() < new Date(session?.windowEnd ?? 0).getTime()));
@@ -160,12 +169,13 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
   return <main className="command-shell task-home">
     <AppNavigation current={initialView} />
     <section className="command-main">
+      {focused ? <Link className="tool-home-link" href="/home">← Home</Link> : null}
       <section className="command-hero" aria-labelledby="welcome-heading">
 
         <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Help me resume my day.</p></div>
         {loadState === "unauthorized" ? <a className="command-button" href="/auth/login">Sign in with Google</a> : null}
       </section>
-      <nav className="home-tasks" aria-label="Things you can do">
+      {!focused ? <nav className="home-tasks" aria-label="Things you can do">
         <h2>Choose an action</h2>
         <div className="home-task-grid">
           <a href="#catch-up-records">Read my catch-up</a>
@@ -177,7 +187,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
           <Link href="/account#gallery-share-heading">Share photo gallery</Link>
           <Link href="/threads#create-record">Save a thread</Link>
         </div>
-      </nav>
+      </nav> : null}
       <section id="catch-up-records" tabIndex={-1} className="home-catch-up" aria-labelledby="catch-up-section-heading">
       <h2 id="catch-up-section-heading">Your catch-up</h2>
       <p>Read what was saved for this recorded period. Mark reviewed means you’ve read it; a todo stays open until you complete it in Todos.</p>
@@ -211,13 +221,18 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
       </>}
       <a className="task-return" href="#welcome-heading">Back to Home actions</a>
       </section>
-      <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
+      {focused ? <section className="home-presence focused-presence" aria-labelledby="current-presence-heading">
+        <h2 id="current-presence-heading">Current presence record</h2>
+        <p>Review the last saved record here. Use Switch above to record an explicit change.</p>
+        <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
+      </section> : null}
+      {!focused ? <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
         <h2 id="hosting-actions-heading">Hosting and fronting controls</h2>
         <p>Choose a current fronter’s catch-up, or explicitly record a change. Hosting and fronting are separate records.</p>
         <FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} />
         <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
         <a className="task-return" href="#welcome-heading">Back to Home actions</a>
-      </section>
+      </section> : null}
     </section>
   </main>;
 }
@@ -232,6 +247,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
   const [suggestion, setSuggestion] = useState<{ id: string; version: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const submitInFlight = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -239,7 +255,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
     submitInFlight.current = true;
     setBusy(true);
     setFormNotice("");
-    const formElement = event.currentTarget;
+    const formElement = formRef.current ?? event.currentTarget;
     const form = new FormData(formElement);
     const requestId = crypto.randomUUID();
     const endpoint = view === "BOARD" ? "/api/v1/todos" : view === "NOTES" ? "/api/v1/notes" : "/api/v1/important-threads";
@@ -255,7 +271,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
         setSuggestion({ id: payload.data.id, version: payload.data.version });
         announce("Thread suggestion saved. Confirm it only after the summary and key action are correct.");
       } else {
-        formElement.reset();
+        formRef.current?.reset();
         announce(view === "BOARD" ? "Todo saved to Todos." : "Note saved to Notes.");
       }
     } catch (error) { announce(error instanceof Error ? error.message : "Unable to save the record."); }
@@ -279,11 +295,11 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
     finally { submitInFlight.current = false; setBusy(false); }
   }
 
-  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/">Back to Home</Link></div></div>;
-  if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
-  if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
+  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/home">Back to Home</Link></div></div>;
+  if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form ref={formRef} onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
+  if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form ref={formRef} onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
   const invalidateSuggestion = () => setSuggestion(null);
-  return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Save a thread</h2><p>Review the saved summary and action before confirming it for catch-up. No transcript is stored.</p><form onSubmit={submit}><label>Source<select disabled={busy} name="source" onChange={invalidateSuggestion}><option value="CODEX">Codex</option><option value="CHATGPT">ChatGPT</option></select></label><label>Thread link<input disabled={busy} name="url" type="url" required onChange={invalidateSuggestion} /></label><label>Title<input disabled={busy} name="title" required maxLength={500} onChange={invalidateSuggestion} /></label><label>Approved summary<textarea disabled={busy} name="summary" required rows={3} maxLength={5000} onChange={invalidateSuggestion} /></label><label>Key decision or action<textarea disabled={busy} name="nextAction" required rows={2} maxLength={5000} onChange={invalidateSuggestion} /></label><Recipients profiles={profiles} disabled={busy} label="Recipients" onChange={invalidateSuggestion} /><button className="command-button" disabled={busy}>Save suggestion</button>{suggestion ? <button className="command-button secondary" type="button" disabled={busy} onClick={confirmSuggestion}>Confirm important thread</button> : null}</form>{feedback}</section>;
+  return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Save a thread</h2><p>Review the saved summary and action before confirming it for catch-up. No transcript is stored.</p><form ref={formRef} onSubmit={submit}><label>Source<select disabled={busy} name="source" onChange={invalidateSuggestion}><option value="CODEX">Codex</option><option value="CHATGPT">ChatGPT</option></select></label><label>Thread link<input disabled={busy} name="url" type="url" required onChange={invalidateSuggestion} /></label><label>Title<input disabled={busy} name="title" required maxLength={500} onChange={invalidateSuggestion} /></label><label>Approved summary<textarea disabled={busy} name="summary" required rows={3} maxLength={5000} onChange={invalidateSuggestion} /></label><label>Key decision or action<textarea disabled={busy} name="nextAction" required rows={2} maxLength={5000} onChange={invalidateSuggestion} /></label><Recipients profiles={profiles} disabled={busy} label="Recipients" onChange={invalidateSuggestion} /><button className="command-button" disabled={busy}>Save suggestion</button>{suggestion ? <button className="command-button secondary" type="button" disabled={busy} onClick={confirmSuggestion}>Confirm important thread</button> : null}</form>{feedback}</section>;
 }
 
 function CatchUpRow({ item, disabled, onState }: { item: CatchUpItem; disabled: boolean; onState: (item: CatchUpItem, state: CatchUpReviewState, defer?: { choice: string; custom: string }) => void }) {

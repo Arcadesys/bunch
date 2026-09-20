@@ -5,19 +5,27 @@ import { requireOwnerId } from "@/server/auth";
 import { repository } from "@/server/repository";
 import { draftSchema, profileSchema, resolveDraftSchema } from "@/server/schemas";
 import { getSystemService } from "@/server/system-service";
+import { normalizeSystemError, SystemError, systemErrorStatus } from "@/server/system-error";
 
 export const runtime = "nodejs";
 
 function errorResponse(error: unknown) {
+  const normalized = normalizeSystemError(error);
+  if (normalized instanceof SystemError) {
+    return NextResponse.json(
+      { error: normalized.userMessage },
+      { status: systemErrorStatus(normalized), headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
   const message = error instanceof Error ? error.message : "Unexpected server error.";
-  return NextResponse.json({ error: message }, { status: message.includes("Sign in") ? 401 : 400 });
+  return NextResponse.json({ error: message }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function GET(request: Request) {
   try {
     const ownerId = await requireOwnerId(request);
     const [currentFront, profiles, assignments] = await Promise.all([getSystemService().getCurrentFront(ownerId), repository.listProfiles(ownerId), repository.listAssignments(ownerId)]);
-    return NextResponse.json({ currentFront, profiles, assignments });
+    return NextResponse.json({ currentFront, profiles, assignments }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

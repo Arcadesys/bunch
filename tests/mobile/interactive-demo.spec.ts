@@ -1,0 +1,57 @@
+import { expect, test } from "@playwright/test";
+
+test("signed-out demo supports arrival, local photos, sample images, and reset without private requests", async ({ page }) => {
+  const privateRequests: string[] = [];
+  const errors: string[] = [];
+  page.on("request", request => { if (/\/api\/(v1|system)|\/mcp/.test(request.url())) privateRequests.push(request.url()); });
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/");
+  await page.getByRole("link", { name: "Try the interactive demo" }).click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await expect(page).toHaveTitle("Try Demo system — Bunch");
+  await page.getByRole("button", { name: "Try switching in as Benny" }).click();
+  await expect(page.getByRole("heading", { name: "Catch-up for Benny" })).toBeVisible();
+  await page.getByRole("button", { name: "Mark catch-up as read" }).click();
+  await expect(page.getByRole("status")).toContainText("thank-you task is still open");
+  await page.getByLabel("Try this as").selectOption("fenton");
+  await page.getByRole("button", { name: "Try switching in as Fenton" }).click();
+  await expect(page.getByText("Fronting in this demo:").locator("..")).toContainText("Benny, Dot, Fenton");
+  await page.getByLabel("Try this as").selectOption("dot");
+  await page.getByRole("button", { name: "Try switching in as Dot" }).click();
+  await expect(page.getByText("No sample notes or tasks are assigned relevance to Dot.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Add a photo", exact: false }).click();
+  await page.getByLabel("Choose a photo").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
+  await expect(page.getByAltText("Local photo preview for Dot")).toBeVisible();
+  await page.getByRole("button", { name: "Create an image", exact: false }).click();
+  await page.getByLabel("Choose an image idea").selectOption("night");
+  await page.getByRole("button", { name: "Generate sample image" }).click();
+  await expect(page.getByRole("img", { name: "Sample illustration of a garden beneath a starry sky" })).toBeVisible();
+  await page.getByRole("button", { name: "Keep in demo gallery" }).click();
+  await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(2);
+  await page.getByLabel("Try this as").selectOption("benny");
+  await expect(page.getByText("No pictures yet.", { exact: false })).toBeVisible();
+  await page.getByLabel("Try this as").selectOption("dot");
+  await page.getByRole("button", { name: "Remove picture" }).first().click();
+  await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(1);
+  await page.getByText("Change demo colors", { exact: true }).click();
+  await page.getByRole("button", { name: "Berry", exact: true }).click();
+  await page.getByRole("button", { name: "Save theme", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "berry");
+  await page.getByRole("button", { name: "Reset demo" }).click();
+  await expect(page.getByLabel("Try this as")).toHaveValue("benny");
+  await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Catch-up for Benny" })).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "midnight");
+  expect(await page.evaluate(() => localStorage.getItem("bunch-demo-appearance-v1"))).toBeNull();
+  expect(privateRequests).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("demo remains readable with enlarged text and rejects unsupported photos", async ({ page }) => {
+  await page.goto("/demo");
+  await page.evaluate(() => { document.documentElement.style.fontSize = "40px"; document.documentElement.dataset.theme = "light"; });
+  await page.getByRole("button", { name: "Add a photo", exact: false }).click();
+  await page.getByLabel("Choose a photo").setInputFiles({ name: "text.txt", mimeType: "text/plain", buffer: Buffer.from("not a photo") });
+  await expect(page.getByRole("status")).toContainText("Choose a JPEG, PNG, or WebP");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});
