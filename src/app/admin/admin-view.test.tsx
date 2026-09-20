@@ -12,4 +12,7 @@ test("admin view has a clear heading, navigation, and labeled controls", () => {
   assert.match(html, /aria-labelledby="account-controls-heading"/);
   assert.match(html, />Manage invitations<\/a>/);
   assert.match(html, />Manage image allowances<\/a>/);
+  assert.match(html, /AI image spend/);
+  assert.match(html, /Cost per active user-day/);
+  assert.match(html, /Thirty-day spend by model and quality/);
 });

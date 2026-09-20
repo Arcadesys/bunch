@@ -18,7 +18,7 @@ type Dependencies = {
   readImage?: typeof readPrivateImage; saveImage?: typeof savePrivateImage; removeImages?: typeof deletePrivateImages;
 };
 export function renderView(row: Record<string, unknown>): GroupPhotoRender {
-  return { id: String(row.id), sourceVersion: Number(row.source_version), state: row.state as GroupPhotoRender["state"], createdAt: new Date(String(row.created_at)).toISOString(), finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null, errorMessage: row.error_message ? String(row.error_message) : null, width: row.width ? Number(row.width) : null, height: row.height ? Number(row.height) : null, contentHash: row.content_hash ? String(row.content_hash) : null };
+  return { id: String(row.id), sourceVersion: Number(row.source_version), state: row.state as GroupPhotoRender["state"], createdAt: new Date(String(row.created_at)).toISOString(), finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null, errorMessage: row.error_message ? String(row.error_message) : null, width: row.width ? Number(row.width) : null, height: row.height ? Number(row.height) : null, contentHash: row.content_hash ? String(row.content_hash) : null, model: String(row.model), quality: (row.quality ?? "high") as GroupPhotoRender["quality"], costMode: (row.cost_mode ?? "STANDARD") as GroupPhotoRender["costMode"] };
 }
 export class GroupPhotoRenderService {
   readonly allowance: ImageAllowanceService;
@@ -85,8 +85,9 @@ export class GroupPhotoRenderService {
       if (Number(locked.rows[0].version) !== expectedVersion || project.version !== expectedVersion) throw new SystemError("CONFLICT", "Your scene changed. Reload it before finishing.");
       if ((await c.query("select 1 from group_photo_render where owner_id=$1 and state in ('QUEUED','RUNNING')", [ownerId])).rowCount) throw new SystemError("CONFLICT", "A photo is already finishing. Wait for it before starting another.");
       if ((await c.query("select 1 from native_scene_render where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at >= now()-interval '6 minutes'", [ownerId])).rowCount) throw new SystemError("CONFLICT", "An image is already generating. Wait for it before finishing another photo.");
-      const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL, JSON.stringify(recipe)]);
-      await this.allowance.reserve(c, ownerId, "group", result.rows[0].id);
+      const plan = await this.allowance.plan(c, ownerId, { action: "photo_finish", size: "1024x1024", referenceCount: references.length + 1, legacyModel: process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL });
+      const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,quality,cost_mode,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, plan.model, plan.quality, plan.mode, JSON.stringify(recipe)]);
+      await this.allowance.reserve(c, ownerId, "group", result.rows[0].id, plan);
       return renderView(result.rows[0]);
     });
   }
@@ -114,8 +115,8 @@ export class GroupPhotoRenderService {
       await this.allowance.dispatch(ownerId, "group", renderId, async c => {
         await new ImageRepairService(this.pool).validate(c, ownerId, recipe);
         if (!(await c.query("select 1 from group_photo_project where owner_id=$1 and id=$2 and version=$3", [ownerId, job.project_id, job.source_version])).rowCount) throw new Error("Photo finishing was interrupted. The scene changed.");
-      });
-      const output = await this.provider({ prompt: recipe.prompt, model: job.model, images, size, onUsage: usage => this.allowance.recordUsage(ownerId, "group", renderId, usage) });
+      }, size);
+      const output = await this.provider({ prompt: recipe.prompt, model: job.model, quality: job.quality, images, size, onUsage: usage => this.allowance.recordUsage(ownerId, "group", renderId, usage) });
       const photo = await normalizeFinishedPhoto(output);
       const hash = createHash("sha256").update(photo.bytes).digest("hex");
       const stored = await this.saveImage(ownerId, new File([new Uint8Array(photo.bytes)], "group-photo.jpg", { type: photo.contentType }));

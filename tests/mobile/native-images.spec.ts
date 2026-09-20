@@ -222,7 +222,7 @@ test("repair preserves the original, shows allowance, and reopens both images", 
   let body: Record<string, unknown> | undefined;
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  const allowance = () => ({ limit: 10, used: submitted ? 2 : 1, reserved: 0, remaining: submitted ? 8 : 9, resetsAt: "2026-09-20T05:00:00Z" });
+  const allowance = () => ({ limit: 10, used: submitted ? 2 : 1, reserved: 0, remaining: submitted ? 8 : 9, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: .04, softLimitUsd: .1, hardLimitUsd: .25, mode: "STANDARD", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "medium", label: "Prompt-only value route" }, identitySensitive: { model: "gpt-image-2.5-sunburst", quality: "high", label: "Identity-preserving route" } } });
   await page.route("**/api/v1/alters**", route => route.fulfill({ json: { data: [] } }));
   await page.route("**/api/v1/image-repair-sources", route => route.fulfill({ json: { data: [{ kind: "native", id: original.id, label: original.scene, url: `/api/v1/native-scenes/renders/${original.id}/image` }] } }));
   await page.route("**/api/v1/native-scenes/renders", async route => {
@@ -259,9 +259,13 @@ test("repair preserves the original, shows allowance, and reopens both images", 
 
 test("exhausted allowance disables generation and explains reset", async ({ page }) => {
   await page.route("**/api/v1/alters**", route => route.fulfill({ json: { data: [] } }));
-  await page.route("**/api/v1/native-scenes/renders", route => route.fulfill({ json: { data: [], meta: { available: true, allowance: { limit: 10, used: 10, reserved: 0, remaining: 0, resetsAt: "2026-09-20T05:00:00Z" } } } }));
+  await page.route("**/api/v1/native-scenes/renders", route => route.fulfill({ json: { data: [], meta: { available: true, allowance: { limit: 10, used: 10, reserved: 0, remaining: 0, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: .25, softLimitUsd: .1, hardLimitUsd: .25, mode: "PAUSED", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "low", label: "Paid images paused until reset" }, identitySensitive: { model: "gpt-image-2", quality: "low", label: "Paid images paused until reset" } } } } } }));
   await page.goto("/images");
   await expect(page.getByText("0 of 10 image uses remaining")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Generate private image" })).toBeDisabled();
+  await expect(page.getByText(/Paid images paused.*\$0\.25 today/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Paid images paused" })).toBeDisabled();
   await expect(page.getByText(/Resets .*your local time/)).toBeVisible();
+  await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+  await expect(page.locator(".image-spend-state strong", { hasText: "Paid images paused" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });

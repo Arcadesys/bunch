@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { AdminView } from "./admin-view";
 import { requireAdminId } from "@/server/admin-access";
 import { SystemError } from "@/server/system-error";
+import { getMcpUsageService } from "@/server/mcp-usage-service";
 
 export default async function AdminPage() {
   const request = new Request("http://localhost/admin", {
@@ -19,5 +20,7 @@ export default async function AdminPage() {
     throw error;
   }
 
-  return <AdminView />;
+  const usage = getMcpUsageService();
+  const [stats7, stats30] = await Promise.all([usage.summary(7), usage.summary(30)]);
+  return <AdminView stats7={stats7} stats30={stats30} />;
 }

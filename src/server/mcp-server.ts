@@ -95,6 +95,14 @@ const usageStatsSchema = z.object({
   byTool: z.array(z.object({ tool: z.string(), count: z.number().int(), errors: z.number().int() })),
   byDay: z.array(z.object({ day: z.string(), count: z.number().int() })),
   byOwner: z.array(z.object({ ownerId: z.string(), count: z.number().int() })),
+  aiSpend: z.object({
+    totalUsd: z.number(), meaningfulActions: z.number().int(), costPerActionUsd: z.number(), activeUserDays: z.number().int(), costPerActiveUserDayUsd: z.number(),
+    chargedFailures: z.number().int(), estimatedRows: z.number().int(), economyActions: z.number().int(),
+    byAction: z.array(z.object({ action: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byModelQuality: z.array(z.object({ model: z.string(), quality: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byAccount: z.array(z.object({ ownerId: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byDay: z.array(z.object({ day: z.string(), costUsd: z.number(), actions: z.number().int() })),
+  }),
 });
 const accountProfileSchema = z.object({
   id: z.string().min(1).regex(/\S/).describe("Opaque profile identifier, unique within Bunch and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile."),
@@ -432,11 +440,12 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   // never to the model; text and structured content carry only the job.
   const sceneResult = async (render: NativeSceneRender, started: boolean) => {
     const browserUrl = `${publicOrigin}/images?render=${encodeURIComponent(render.id)}`;
+    const economyNotice = render.costMode === "ECONOMY" ? " Economy mode used a lower-cost route; check identity details and do not treat the result as canon automatically." : "";
     const text = render.state === "COMPLETE"
-      ? `Private scene generated and saved. The Bunch scene widget shows it in this chat. Display is not confirmed; do not describe the image as visible without checking the rendered widget. If the host cannot render widgets, open its authenticated preview: ${browserUrl}`
+      ? `Private scene generated and saved.${economyNotice} The Bunch scene widget shows it in this chat. Display is not confirmed; do not describe the image as visible without checking the rendered widget. If the host cannot render widgets, open its authenticated preview: ${browserUrl}`
       : render.state === "FAILED"
         ? `Private scene generation failed. Do not retry automatically; offer a new explicit generation. Authenticated record: ${browserUrl}`
-        : `${started ? "Private scene generation started" : `Private scene generation is ${render.state.toLowerCase()}`}. The Bunch scene widget follows the job and shows the image in this chat when it completes; do not describe the image before then. If the host cannot render widgets, check get_scene_generation or open its authenticated preview: ${browserUrl}`;
+        : `${started ? "Private scene generation started" : `Private scene generation is ${render.state.toLowerCase()}`}.${economyNotice} The Bunch scene widget follows the job and shows the image in this chat when it completes; do not describe the image before then. If the host cannot render widgets, check get_scene_generation or open its authenticated preview: ${browserUrl}`;
     const sceneImage = render.state === "COMPLETE" ? { src: `${publicOrigin}/api/system/native-scenes/inline/${encodeURIComponent(render.id)}?cap=${encodeURIComponent(issueSceneImageReadCapability(ownerId, render.id))}` } : undefined;
     const allowance = await imageAllowance();
     return { structuredContent: { ...render, ...(allowance ? { allowance } : {}) }, content: [{ type: "text" as const, text }], _meta: sceneImage ? { browserUrl, sceneImage } : { browserUrl } };
@@ -485,7 +494,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   }, async ({ windowDays }) => {
     await getPilotService().assertOperator(ownerId);
     const stats = await usage.summary(windowDays);
-    return { structuredContent: stats, content: [{ type: "text", text: `In the last ${stats.windowDays} day(s): ${stats.totalInvocations} tool invocation(s) across ${stats.byTool.length} tool(s), ${stats.totalErrors} error(s).` }] };
+    return { structuredContent: stats, content: [{ type: "text", text: `In the last ${stats.windowDays} day(s): ${stats.totalInvocations} tool invocation(s), ${stats.aiSpend.meaningfulActions} paid image action(s), and $${stats.aiSpend.totalUsd.toFixed(3)} estimated or confirmed AI spend.` }] };
   });
   return server;
 }

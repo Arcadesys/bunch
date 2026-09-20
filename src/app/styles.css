@@ -2006,6 +2006,20 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .image-allowance-compact strong { white-space: nowrap; }
 .image-allowance-compact details { text-align: right; }
 .image-allowance-compact summary { min-height: 32px; cursor: pointer; color: var(--accent); font-size: .62rem; }
+.image-spend-state { border: 2px solid var(--line); padding: .75rem; background: var(--surface); }
+.image-spend-state.economy { border-color: #fbbf24; }
+.image-spend-state.paused { border-color: #ffb4b4; }
+.admin-spend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1rem; }
+.admin-spend-grid article { border: 2px solid var(--line); padding: 1rem; }
+.admin-spend-grid dl { display: grid; gap: .65rem; margin: 0; }
+.admin-spend-grid dl div { display: flex; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); padding-top: .65rem; }
+.admin-spend-grid dt { font-weight: 700; }
+.admin-spend-grid dd { margin: 0; font-variant-numeric: tabular-nums; }
+.admin-spend-table { max-width: 100%; margin-top: 1rem; overflow-x: auto; border: 2px solid var(--line); }
+.admin-spend-table:focus-visible { outline: 5px solid #fbbf24; outline-offset: 3px; }
+.admin-spend-table table { width: 100%; min-width: 38rem; border-collapse: collapse; }
+.admin-spend-table caption { padding: .75rem; text-align: left; font-size: 1.15rem; font-weight: 800; }
+.admin-spend-table th, .admin-spend-table td { padding: .75rem; border-top: 1px solid var(--line); text-align: left; }
 .image-allowance-compact details[open] { position: absolute; right: .7rem; bottom: calc(100% + .4rem); width: min(30rem, calc(100vw - 24px)); padding: .75rem; border: 1px solid rgb(255 138 0 / 35%); border-radius: 10px; background: #0b0b18; box-shadow: 0 12px 28px rgb(0 0 0 / 55%); }
 .image-allowance-compact p { margin: .35rem 0 0; }
 .photo-finisher-unavailable { position: absolute; right: .7rem; bottom: calc(100% + .4rem); max-width: 32rem; margin: 0; padding: .65rem; border: 1px solid var(--line); background: #0b0b18; font-size: .7rem; }
@@ -2017,7 +2031,7 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .finished-photo img { display: block; width: 100%; height: auto; border: 1px solid rgb(226 232 240 / 30%); border-radius: 10px; }
 .finished-photo-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
 .finished-photo-actions a, .recent-scenes a { display: inline-flex; min-height: 48px; align-items: center; padding: .5rem .65rem; font-size: .76rem; font-weight: 750; }
-:root[data-high-contrast="on"] .group-photo-workspace, :root[data-high-contrast="on"] .people-tray, :root[data-high-contrast="on"] .photo-finisher, :root[data-high-contrast="on"] .people-tray-heading, :root[data-high-contrast="on"] .person-token, :root[data-high-contrast="on"] .placement-grid button { border-color: #fff; background: #000; color: #fff; }
+:root[data-high-contrast="on"] .group-photo-workspace, :root[data-high-contrast="on"] .people-tray, :root[data-high-contrast="on"] .photo-finisher, :root[data-high-contrast="on"] .people-tray-heading, :root[data-high-contrast="on"] .person-token, :root[data-high-contrast="on"] .placement-grid button, :root[data-high-contrast="on"] .image-spend-state, :root[data-high-contrast="on"] .admin-spend-grid article, :root[data-high-contrast="on"] .admin-spend-table { border-color: #fff; background: #000; color: #fff; }
 
 @media (max-width: 900px) {
   .group-photo-page.has-project { padding-bottom: 1rem; }

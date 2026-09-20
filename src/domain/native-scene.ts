@@ -6,7 +6,13 @@ export const repairSourceSchema = z.object({
   id: uuidSchema,
 }).strict();
 export type RepairSource = z.infer<typeof repairSourceSchema>;
-export const imageAllowanceSchema = z.object({ limit: z.number().int(), used: z.number().int(), reserved: z.number().int(), remaining: z.number().int(), resetsAt: z.string().datetime() });
+const plannedRouteSchema = z.object({ model: z.string(), quality: z.enum(["low", "medium", "high"]), label: z.string() });
+export const imageAllowanceSchema = z.object({
+  limit: z.number().int(), used: z.number().int(), reserved: z.number().int(), remaining: z.number().int(), resetsAt: z.string().datetime(),
+  spendTodayUsd: z.number().nonnegative(), softLimitUsd: z.number().positive(), hardLimitUsd: z.number().positive(),
+  mode: z.enum(["STANDARD", "ECONOMY", "PAUSED"]), routingStage: z.enum(["off", "shadow", "operator", "pilot"]),
+  nextPlannedRoutes: z.object({ promptOnly: plannedRouteSchema, identitySensitive: plannedRouteSchema }),
+});
 export type ImageAllowance = z.infer<typeof imageAllowanceSchema>;
 
 export const nativeSceneInputSchema = z
@@ -31,6 +37,9 @@ export const nativeSceneRenderSchema = z.object({
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
   contentHash: z.string().nullable(),
+  model: z.string(),
+  quality: z.enum(["low", "medium", "high"]),
+  costMode: z.enum(["STANDARD", "ECONOMY", "PAUSED"]),
   repairSource: repairSourceSchema.optional(),
 });
 export type NativeSceneRender = z.infer<typeof nativeSceneRenderSchema>;
