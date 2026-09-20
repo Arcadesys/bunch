@@ -93,6 +93,40 @@ test("anonymous routing selects only the demo server and a fresh transport", asy
   });
 });
 
+test("anonymous tool discovery merges demo and private descriptors without authorizing access", async () => {
+  let authorizeCalls = 0;
+  let transportCalls = 0;
+  let receivedOwner: string | undefined;
+  const demoLifecycle = serverLifecycle();
+  const privateLifecycle = serverLifecycle();
+  const response = await handleMcpRequest(rpc("tools/list"), {
+    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize discovery"); },
+    createDemoServer: () => demoLifecycle.server,
+    createPrivateServer: (ownerId) => {
+      receivedOwner = ownerId;
+      return privateLifecycle.server;
+    },
+    createTransport: () => {
+      const response = transportCalls === 0
+        ? Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "get_demo_system" }, { name: "get_account_profile" }] } })
+        : Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "get_account_profile" }, { name: "list_alters" }] } });
+      transportCalls += 1;
+      return transportReturning(response);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(authorizeCalls, 0);
+  assert.equal(receivedOwner, "discovery:anonymous");
+  assert.equal(transportCalls, 2);
+  assert.deepEqual(demoLifecycle.calls, { connect: 1, close: 1 });
+  assert.deepEqual(privateLifecycle.calls, { connect: 1, close: 1 });
+  assert.deepEqual((await response.json()).result.tools, [
+    { name: "get_demo_system", securitySchemes: [{ type: "noauth" }], _meta: { securitySchemes: [{ type: "noauth" }] } },
+    { name: "get_account_profile", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }], _meta: { securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] } },
+    { name: "list_alters", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }], _meta: { securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] } },
+  ]);
+});
+
 test("protected and malformed request shapes never fall back to the Demo system", async () => {
   const requests = [
     rpc("tools/call", { name: "list_alters", arguments: {} }),

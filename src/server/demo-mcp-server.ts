@@ -62,7 +62,7 @@ export function registerDemoSystemTool(server: McpServer) {
 
 export const connectPrivateSystemTool = {
   title: "Connect private system",
-  description: "Sign in to use your own private Bunch system instead of the fictional Demo system. After connecting, refresh tools/list to discover the private tools. Existing authenticated access and tenant restrictions apply.",
+  description: "Sign in to use your own private Bunch system instead of the fictional Demo system. Private actions are advertised during discovery and become usable only after authorization. Existing authenticated access and tenant restrictions apply.",
   inputSchema: {},
   outputSchema: { mode: z.literal("private"), authenticated: z.literal(true) },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -71,7 +71,7 @@ export const connectPrivateSystemTool = {
 
 export function createDemoMcpServer() {
   const server = new McpServer({ name: "Bunch", version: "0.7.0" }, {
-    instructions: "You are connected to Bunch's Demo system. Call get_demo_system for the default populated fictional sample. Label it Demo system and never treat it as the user's personal people, history, or commitments. No demo changes are saved. For personal records, call connect_private_system to authenticate, then refresh tools/list. Never substitute fictional data for a failed private request.",
+    instructions: "You are connected to Bunch's Demo system. Call get_demo_system for the default populated fictional sample. Label it Demo system and never treat it as the user's personal people, history, or commitments. No demo changes are saved. For personal records, call connect_private_system to authenticate, then use the already-advertised private actions. Never substitute fictional data for a failed private request.",
   });
   registerDemoSystemTool(server);
   // This public bootstrap is the one anonymous exception for a private tool.

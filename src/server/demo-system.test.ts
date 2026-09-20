@@ -15,6 +15,9 @@ const noPrivateAccess = {
   authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
   createPrivateServer: () => { throw new Error("Private server must not be reached"); },
 };
+const noPrivateCredentials = {
+  authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
+};
 
 test("fictional sample preserves names, relationships, gift authorship, shared relevance, and review semantics", () => {
   const demo = getDemoSystem();
@@ -65,9 +68,17 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
   assert.equal(init.status, 200);
   assert.match((await init.json()).result.instructions, /Demo system/);
-  const listing = await handleMcpRequest(rpc("tools/list"), noPrivateAccess);
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+  const listing = await handleMcpRequest(rpc("tools/list"), noPrivateCredentials);
+  if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+  else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
+  assert.equal(listing.status, 200);
   const tools = (await listing.json()).result.tools;
-  assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system", ACCOUNT_PROFILE_TOOL_NAME]);
+  const toolNames = tools.map((tool: { name: string }) => tool.name);
+  for (const name of [...DEMO_TOOL_NAMES, "connect_private_system", ACCOUNT_PROFILE_TOOL_NAME, "list_alters", "get_current_presence", "render_alter_lineup", "open_private_photo_gallery"]) {
+    assert.ok(toolNames.includes(name), name);
+  }
   assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
   const profile = tools.find((tool: { name: string }) => tool.name === ACCOUNT_PROFILE_TOOL_NAME);
   assert.ok(profile);
@@ -75,6 +86,8 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   assert.deepEqual(profile.outputSchema.required, ["id"]);
   assert.equal(profile.outputSchema.additionalProperties, false);
   assert.deepEqual(profile.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+  const privateTool = tools.find((tool: { name: string }) => tool.name === "list_alters");
+  assert.deepEqual(privateTool.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
   for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
     const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
     assert.equal(discovery.status, 200, method);
