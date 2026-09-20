@@ -4,6 +4,7 @@
 
 import { compositionGuidance } from "@/domain/group-photo";
 import { connectPrivateSystemTool, registerDemoSystemTool } from "./demo-mcp-server";
+import { ACCOUNT_PROFILE_TOOL_NAME, accountProfileId, accountProfileTool } from "./mcp-account-profile";
 import { furrySceneInputSchema, imagePromptInputSchema, imagePromptResultSchema } from "@/domain/image-prompt";
 import { prepareAlterImagePrompt, prepareFurryScene } from "@/server/image-prompt";
 import { getGroupPhotoService } from "@/server/group-photo-service";
@@ -61,8 +62,6 @@ import { nativeSceneInputSchema, nativeSceneRenderSchema, imageAllowanceSchema, 
 import { getNativeSceneService, type NativeSceneService } from "@/server/native-scene-service";
 import { getMcpUsageService } from "@/server/mcp-usage-service";
 import { getPilotService } from "@/server/pilot-service";
-import { createHash } from "node:crypto";
-import { COMPANION_SCOPE } from "@/server/mcp-authorization";
 
 // The authority in these ui:// URIs is a frozen cache key, not an address. Live
 // ChatGPT conversations hold the tool-to-resource mapping and keep requesting the
@@ -104,17 +103,6 @@ const usageStatsSchema = z.object({
     byDay: z.array(z.object({ day: z.string(), costUsd: z.number(), actions: z.number().int() })),
   }),
 });
-const accountProfileSchema = z.object({
-  id: z.string().min(1).regex(/\S/).describe("Opaque profile identifier, unique within Bunch and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile."),
-  name: z.string().describe("Display name for the authenticated Bunch profile.").optional(),
-  email: z.string().email().describe("Email address for display; not used as the profile identity.").optional(),
-  nickname: z.string().describe("A useful label that helps distinguish connected Bunch profiles.").optional(),
-}).strict();
-
-export function accountProfileId(ownerId: string) {
-  return `bunch_${createHash("sha256").update("bunch-account-profile\0").update(ownerId).digest("base64url").slice(0, 24)}`;
-}
-
 const importantThreadSuggestionViewSchema = importantThreadCreateSchema.extend({
   id: uuidSchema,
   status: z.literal("SUGGESTED"),
@@ -232,17 +220,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     structuredContent: { mode: "private", authenticated: true },
     content: [{ type: "text", text: "Connected to your private Bunch system. Refresh tools/list, then use get_companion_state for your own records. Demo system remains available only when explicitly requested." }],
   }));
-  server.registerTool("get_account_profile", {
-    title: "Get connected Bunch account",
-    description: "Read the stable, non-sensitive profile for the Bunch account authorized by this connection. Use it to distinguish connected accounts; it never accepts an owner ID and never exposes the authentication subject.",
-    inputSchema: z.object({}).strict(),
-    outputSchema: accountProfileSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    _meta: {
-      "openai/profile": true,
-      securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }],
-    },
-  }, async () => {
+  server.registerTool(ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool, async () => {
     const account = await (loadAccount ?? ((id: string) => getPilotService().account(id)))(ownerId);
     const profile = account?.display_name.trim()
       ? { id: accountProfileId(ownerId), name: account.display_name.trim() }

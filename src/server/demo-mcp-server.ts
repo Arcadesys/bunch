@@ -2,6 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { demoSystemSchema, getDemoSystem } from "./demo-system";
 import { mcpWwwAuthenticate } from "./mcp-authorization";
+import { ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool } from "./mcp-account-profile";
 
 export const CONNECT_PRIVATE_SYSTEM_TOOL_NAME = "connect_private_system";
 const CONNECT_PRIVATE_SYSTEM_DESCRIPTION = "Authentication is required to connect your private Bunch system.";
@@ -76,6 +77,16 @@ export function createDemoMcpServer() {
   // This public bootstrap is the one anonymous exception for a private tool.
   // Its MCP result carries the OAuth challenge but never returns private data.
   server.registerTool(CONNECT_PRIVATE_SYSTEM_TOOL_NAME, connectPrivateSystemTool, async () => ({
+    isError: true,
+    content: [{ type: "text", text: CONNECT_PRIVATE_SYSTEM_DESCRIPTION }],
+    _meta: {
+      "mcp/www_authenticate": [mcpWwwAuthenticate("invalid_token", CONNECT_PRIVATE_SYSTEM_DESCRIPTION)],
+    },
+  }));
+  // ChatGPT resolves the stable account identity while completing OAuth. The
+  // descriptor must therefore be visible during anonymous discovery, but the
+  // HTTP router keeps every invocation behind bearer-token authorization.
+  server.registerTool(ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool, async () => ({
     isError: true,
     content: [{ type: "text", text: CONNECT_PRIVATE_SYSTEM_DESCRIPTION }],
     _meta: {

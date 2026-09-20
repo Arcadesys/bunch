@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEMO_TOOL_NAMES } from "./demo-mcp-server";
+import { ACCOUNT_PROFILE_TOOL_NAME } from "./mcp-account-profile";
 import { getDemoSystem } from "./demo-system";
 import { GET } from "@/app/api/demo/system/route";
 import { handleMcpRequest } from "./mcp-http";
@@ -66,9 +67,14 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   assert.match((await init.json()).result.instructions, /Demo system/);
   const listing = await handleMcpRequest(rpc("tools/list"), noPrivateAccess);
   const tools = (await listing.json()).result.tools;
-  assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system"]);
+  assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system", ACCOUNT_PROFILE_TOOL_NAME]);
   assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
-  assert.deepEqual(tools.at(-1).securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+  const profile = tools.find((tool: { name: string }) => tool.name === ACCOUNT_PROFILE_TOOL_NAME);
+  assert.ok(profile);
+  assert.equal(profile._meta?.["openai/profile"], true);
+  assert.deepEqual(profile.outputSchema.required, ["id"]);
+  assert.equal(profile.outputSchema.additionalProperties, false);
+  assert.deepEqual(profile.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
   for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
     const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
     assert.equal(discovery.status, 200, method);
