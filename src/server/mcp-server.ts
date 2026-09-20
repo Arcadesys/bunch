@@ -218,7 +218,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   registerDemoSystemTool(server);
   server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({
     structuredContent: { mode: "private", authenticated: true },
-    content: [{ type: "text", text: "Connected to your private Bunch system. Refresh tools/list, then use get_companion_state for your own records. Demo system remains available only when explicitly requested." }],
+    content: [{ type: "text", text: "Connected to your private Bunch system. Use the already-advertised private actions for your own records. Demo system remains available only when explicitly requested." }],
   }));
   server.registerTool(ACCOUNT_PROFILE_TOOL_NAME, accountProfileTool, async () => {
     const account = await (loadAccount ?? ((id: string) => getPilotService().account(id)))(ownerId);
@@ -255,7 +255,16 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     return { structuredContent: { url }, content: [{ type: "text", text: `Open your authenticated private photo gallery: ${url}` }] };
   });
 
-  const service = serviceOverride ?? getSystemService();
+  // Catalog discovery registers handlers but does not execute them. Keep the
+  // database-backed service lazy so an anonymous tools/list can advertise the
+  // private actions without opening private storage.
+  const service = serviceOverride ?? new Proxy({} as ReturnType<typeof getSystemService>, {
+    get(_target, property) {
+      const current = getSystemService();
+      const value = Reflect.get(current, property, current);
+      return typeof value === "function" ? value.bind(current) : value;
+    },
+  });
   async function allActiveProfiles() {
     const profiles: z.infer<typeof alterViewSchema>[] = [];
     let cursor: string | undefined;

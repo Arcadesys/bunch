@@ -16,6 +16,7 @@ const PUBLIC_RPC_METHODS = new Set([
 ]);
 const LOGGABLE_RPC_METHOD = /^[a-z][a-z0-9._/-]{0,80}$/;
 const ANONYMOUS_TOOL_NAMES = new Set([...DEMO_TOOL_NAMES, CONNECT_PRIVATE_SYSTEM_TOOL_NAME]);
+const DISCOVERY_OWNER_ID = "discovery:anonymous";
 
 type McpServer = ReturnType<typeof createMcpServer>;
 type McpTransport = WebStandardStreamableHTTPServerTransport;
@@ -120,6 +121,9 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   const createTransport = options.createTransport ?? defaultTransport;
   const createDemoServer = options.createDemoServer ?? createDemoMcpServer;
   const createPrivateServer = options.createPrivateServer ?? defaultPrivateServer;
+  if (ownerId === null && classification.rpcMethod === "tools/list") {
+    return handleAnonymousToolCatalog(request, createDemoServer, createPrivateServer, createTransport, options.scheduleNativeScene);
+  }
   let server: Pick<McpServer, "connect" | "close"> | undefined;
   let response: Response | undefined;
   let requestFailure: unknown;
@@ -146,6 +150,69 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   }
 
   return requestFailure || !response ? failureResponse(requestFailure, "request") : response;
+}
+
+async function handleAnonymousToolCatalog(
+  request: Request,
+  createDemoServer: NonNullable<McpHttpOptions["createDemoServer"]>,
+  createPrivateServer: NonNullable<McpHttpOptions["createPrivateServer"]>,
+  createTransport: NonNullable<McpHttpOptions["createTransport"]>,
+  scheduleNativeScene?: McpHttpOptions["scheduleNativeScene"],
+) {
+  const servers: Array<Pick<McpServer, "connect" | "close">> = [];
+  try {
+    const demoServer = createDemoServer();
+    const privateServer = createPrivateServer(DISCOVERY_OWNER_ID, scheduleNativeScene);
+    servers.push(demoServer, privateServer);
+
+    const demoTransport = createTransport();
+    const privateTransport = createTransport();
+    await demoServer.connect(demoTransport);
+    await privateServer.connect(privateTransport);
+
+    const [demoResponse, privateResponse] = await Promise.all([
+      demoTransport.handleRequest(request.clone()),
+      privateTransport.handleRequest(request.clone()),
+    ]);
+    const response = await mergeToolCatalogs(demoResponse, privateResponse);
+    const decorated = await addOAuthSecuritySchemes(response);
+    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: "tools/list", status: decorated.status });
+    return decorated;
+  } catch (error) {
+    console.warn("[mcp] request failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "REQUEST_FAILED" });
+    return failureResponse(error, "request");
+  } finally {
+    for (const server of servers) {
+      try { await server.close(); }
+      catch {
+        console.warn("[mcp] cleanup failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "CLEANUP_FAILED" });
+      }
+    }
+  }
+}
+
+async function mergeToolCatalogs(demoResponse: Response, privateResponse: Response) {
+  const [demoPayload, privatePayload] = await Promise.all([demoResponse.json(), privateResponse.json()]);
+  if (!hasToolList(demoPayload) || !hasToolList(privatePayload)) throw new Error("Invalid MCP tool catalog response.");
+
+  const tools = [...demoPayload.result.tools];
+  const names = new Set(tools.flatMap((tool) => tool && typeof tool === "object" && !Array.isArray(tool) && typeof (tool as { name?: unknown }).name === "string"
+    ? [(tool as { name: string }).name]
+    : []));
+  for (const tool of privatePayload.result.tools) {
+    const name = tool && typeof tool === "object" && !Array.isArray(tool) ? (tool as { name?: unknown }).name : undefined;
+    if (typeof name === "string" && names.has(name)) continue;
+    tools.push(tool);
+    if (typeof name === "string") names.add(name);
+  }
+
+  const headers = new Headers(demoResponse.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify({ ...demoPayload, result: { ...demoPayload.result, tools } }), {
+    status: demoResponse.status,
+    statusText: demoResponse.statusText,
+    headers,
+  });
 }
 
 function hasToolList(payload: unknown): payload is { result: { tools: unknown[] } } {
