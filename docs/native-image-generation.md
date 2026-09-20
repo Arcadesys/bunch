@@ -14,8 +14,8 @@ scene, object, or style image and names one or more alters, route to
 confirmed exact alias before preparing the handoff. The uploaded image is image
 1; the ordered private appearance-reference images follow it. The widget
 transfers reference bytes to transient ChatGPT files with `library: false`,
-then keeps the resulting capabilities in widget-only state and asks ChatGPT's
-image tool to generate. Reference bytes are necessary for identity fidelity;
+keeps the Bunch capabilities widget-only, and asks ChatGPT's image tool to
+generate with the resulting transient file IDs. Reference bytes are necessary for identity fidelity;
 reference IDs, prose, URLs, and storage identifiers are not image content.
 
 If an alter is unknown, ambiguous, archived, or has no selected appearance

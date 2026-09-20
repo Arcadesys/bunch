@@ -56,6 +56,7 @@ test("resolves exact names and aliases in requested order while keeping capabili
   assert.equal(result._meta.referenceMedia.length, 2);
   assert.match(result._meta.referenceMedia[0].src, /cap=/);
   assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|https:\/\/bunch\.example|storageKey/);
+  assert.doesNotMatch(JSON.stringify(result), /https:\/\/files\.example/);
 });
 
 test("preserves unknown, ambiguous, and missing-reference validation", async () => {

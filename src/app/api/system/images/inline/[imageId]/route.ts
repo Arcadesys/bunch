@@ -6,6 +6,18 @@ import { repository } from "@/server/repository";
 
 export const runtime = "nodejs";
 
+export function privateInlineImageHeaders(contentType: string, etag?: string) {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "private, no-store",
+    "Content-Type": contentType,
+    "Cross-Origin-Resource-Policy": "cross-origin",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    ...(etag ? { ETag: etag } : {}),
+  };
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ imageId: string }> }) {
   try {
     const { imageId } = await params;
@@ -18,14 +30,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ imag
 
     const stored = await readPrivateImage(image.storageKey);
     return new NextResponse(stored.body, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Type": stored.contentType,
-        "Cross-Origin-Resource-Policy": "cross-origin",
-        "Referrer-Policy": "no-referrer",
-        "X-Content-Type-Options": "nosniff",
-        ...(stored.etag ? { ETag: stored.etag } : {}),
-      },
+      headers: privateInlineImageHeaders(stored.contentType, stored.etag),
     });
   } catch {
     return new NextResponse("Not found", { status: 404 });

@@ -5,7 +5,8 @@
  * string as a text/html MCP App resource without exposing reference
  * capabilities to the model or to the visible card.
  */
-export function chatgptAlterImageWidget() {
+export function chatgptAlterImageWidget(publicOrigin: string) {
+  const safeOrigin = JSON.stringify(new URL(publicOrigin).origin);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -15,7 +16,7 @@ export function chatgptAlterImageWidget() {
 <title>Preparing references</title>
 <style>
 :root{color-scheme:dark;font:20px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8fafc;background:#0b1020}
-*{box-sizing:border-box}body{margin:0;padding:20px;background:#0b1020}.card{max-width:900px;margin:auto;border:3px solid #cbd5e1;border-radius:18px;overflow:hidden;background:#111827;box-shadow:0 12px 40px #0008}.header{padding:26px 30px;background:#172554;border-bottom:3px solid #cbd5e1}.eyebrow{margin:0 0 5px;color:#bae6fd;font-size:.9rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.title{margin:0;font-size:clamp(1.45rem,3vw,2rem);line-height:1.15}.body{padding:26px 30px}.request{margin:0 0 22px;font-size:1.1rem;font-weight:800}.file{display:flex;align-items:center;gap:14px;margin:0 0 24px;padding:14px 16px;border:2px solid #64748b;border-radius:12px;background:#0f172a}.file-icon{display:grid;place-items:center;width:50px;height:50px;border-radius:8px;background:#38bdf8;color:#082f49;font-size:1.5rem;font-weight:950}.file-copy{min-width:0}.file-label{margin:0;font-weight:900}.file-detail{margin:2px 0 0;color:#cbd5e1;font-size:.9rem;overflow-wrap:anywhere}.statuses{display:grid;gap:14px;margin:0;padding:0;list-style:none}.status{display:flex;align-items:flex-start;gap:14px;padding:15px 16px;border:2px solid #475569;border-radius:12px;background:#0f172a}.status-icon{flex:0 0 auto;display:grid;place-items:center;width:38px;height:38px;border:2px solid #94a3b8;border-radius:50%;font-size:1.05rem;font-weight:950}.status[data-state="done"]{border-color:#4ade80}.status[data-state="active"]{border-color:#38bdf8}.status[data-state="error"]{border-color:#fca5a5}.status[data-state="done"] .status-icon{background:#166534;border-color:#86efac}.status[data-state="active"] .status-icon{background:#075985;border-color:#7dd3fc}.status[data-state="error"] .status-icon{background:#7f1d1d;border-color:#fecaca}.status-copy{min-width:0}.status-title{margin:0;font-weight:900}.status-detail{margin:3px 0 0;color:#cbd5e1;font-size:.92rem}.privacy{margin:26px 0 0;padding:16px 18px;border:2px solid #fbbf24;border-radius:12px;background:#422006;color:#fef3c7;font-weight:800}.output{margin-top:28px;padding:28px 20px;min-height:235px;display:grid;place-items:center;text-align:center;border:3px dashed #64748b;border-radius:14px;background:#020617}.output-title{margin:0;font-size:1.2rem;font-weight:900}.output-detail{margin:8px 0 0;color:#cbd5e1}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:600px){body{padding:0}.card{border-width:0;border-radius:0}.header,.body{padding:22px 18px}.status{padding:13px}.output{min-height:190px}}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;padding:20px;background:#0b1020}.card{max-width:900px;margin:auto;border:3px solid #cbd5e1;border-radius:18px;overflow:hidden;background:#111827;box-shadow:0 12px 40px #0008}.header{padding:26px 30px;background:#172554;border-bottom:3px solid #cbd5e1}.eyebrow{margin:0 0 5px;color:#bae6fd;font-size:.9rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.title{margin:0;font-size:clamp(1.45rem,3vw,2rem);line-height:1.15}.body{padding:26px 30px}.request{margin:0 0 22px;font-size:1.1rem;font-weight:800}.file{display:flex;align-items:center;gap:14px;margin:0 0 24px;padding:14px 16px;border:2px solid #64748b;border-radius:12px;background:#0f172a}.file-icon{display:grid;place-items:center;width:50px;height:50px;border-radius:8px;background:#38bdf8;color:#082f49;font-size:1.5rem;font-weight:950}.file-copy{min-width:0}.file-label{margin:0;font-weight:900}.file-detail{margin:2px 0 0;color:#cbd5e1;font-size:.9rem;overflow-wrap:anywhere}.statuses{display:grid;gap:14px;margin:0;padding:0;list-style:none}.status{display:flex;align-items:flex-start;gap:14px;padding:15px 16px;border:2px solid #475569;border-radius:12px;background:#0f172a}.status-icon{flex:0 0 auto;display:grid;place-items:center;width:38px;height:38px;border:2px solid #94a3b8;border-radius:50%;font-size:1.05rem;font-weight:950}.status[data-state="done"]{border-color:#4ade80}.status[data-state="active"]{border-color:#38bdf8}.status[data-state="error"]{border-color:#fca5a5}.status[data-state="done"] .status-icon{background:#166534;border-color:#86efac}.status[data-state="active"] .status-icon{background:#075985;border-color:#7dd3fc}.status[data-state="error"] .status-icon{background:#7f1d1d;border-color:#fecaca}.status-copy{min-width:0}.status-title{margin:0;font-weight:900}.status-detail{margin:3px 0 0;color:#cbd5e1;font-size:.92rem}.privacy{margin:26px 0 0;padding:16px 18px;border:2px solid #fbbf24;border-radius:12px;background:#422006;color:#fef3c7;font-weight:800}.output{margin-top:28px;padding:28px 20px;min-height:235px;display:grid;place-items:center;text-align:center;border:3px dashed #64748b;border-radius:14px;background:#020617}.output-title{margin:0;font-size:1.2rem;font-weight:900}.output-detail{margin:8px 0 0;color:#cbd5e1}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:600px){body{padding:0}.card{border-width:0;border-radius:0}.header,.body{padding:22px 18px}.status{padding:13px}.output{min-height:190px}}
 </style>
 </head>
 <body>
@@ -36,6 +37,7 @@ export function chatgptAlterImageWidget() {
 </main>
 <script>
 (() => {
+  const SITE = ${safeOrigin};
   const MAX_BYTES = 5 * 1024 * 1024;
   const IMAGE_TYPES = new Set(['image/jpeg','image/png','image/webp']);
   const el = id => document.getElementById(id);
@@ -66,7 +68,6 @@ export function chatgptAlterImageWidget() {
   const setState = async state => {
     window.__bunchWidgetState = state;
     if (window.openai?.setWidgetState) await window.openai.setWidgetState(state);
-    bridge({jsonrpc:'2.0', method:'ui/notifications/widget-state', params:{state}});
   };
   const sendFollowUp = prompt => {
     if (window.openai?.sendFollowUpMessage) return Promise.resolve(window.openai.sendFollowUpMessage({prompt}));
@@ -76,36 +77,42 @@ export function chatgptAlterImageWidget() {
   const safeIdentity = value => typeof value === 'string' ? value : '';
   async function run(value, metadata) {
     const data = outputFrom(value), meta = metadata || metaFrom(value);
-    const scene = data.sceneImage || data.scene_image || {};
-    const alterNames = Array.isArray(data.alterNames) ? data.alterNames.map(safeIdentity).filter(Boolean) : [];
+    const scene = meta.sceneImage || meta.scene_image || {};
+    const identities = Array.isArray(data.identities) ? data.identities : [];
+    const alterNames = identities.map(identity => safeIdentity(identity?.alterName)).filter(Boolean);
+    const expectedReferenceNames = identities.flatMap(identity => Array.from({length:Number(identity?.referenceCount) || 0}, () => safeIdentity(identity?.alterName))).filter(Boolean);
     const media = Array.isArray(meta.referenceMedia) ? meta.referenceMedia : [];
     const current = getState();
     if (alterNames.length) text('title', 'Preparing ' + alterNames.join(', ') + ' references');
     text('request', data.scene ? 'Generate an image of ' + data.scene + '.' : 'Preparing your image generation…');
-    if (!scene.file_id || !alterNames.length || media.length !== alterNames.length) { fail('Required scene or appearance references are unavailable.'); return; }
+    if (!scene.file_id || !alterNames.length || !expectedReferenceNames.length || media.length !== expectedReferenceNames.length) { fail('Required scene or appearance references are unavailable.'); return; }
     el('scene-file').hidden = false; text('scene-detail', 'Uploaded scene image'); phase('scene', 'The uploaded scene image is ready.');
     if (current.phase === 'sent' || current.phase === 'complete') { phase('reference', 'Private references are already prepared for this request.'); phase('generation', 'ChatGPT is handling this generation.'); return; }
     try {
-      if (!window.openai?.uploadFile || !window.openai?.setWidgetState || !window.openai?.sendFollowUpMessage) throw new Error('ChatGPT image handoff is unavailable in this host.');
+      if (!window.openai?.uploadFile || !window.openai?.setWidgetState) throw new Error('ChatGPT image handoff is unavailable in this host.');
       const imageIds = [scene.file_id];
       const prepared = [];
       for (let index = 0; index < media.length; index += 1) {
         const item = media[index];
-        const response = await fetch(item.src, {redirect:'error', credentials:'same-origin'});
+        const url = new URL(item.src);
+        if (url.origin !== SITE || !url.pathname.startsWith('/api/system/images/inline/') || !url.searchParams.has('cap') || safeIdentity(item.alterName) !== expectedReferenceNames[index]) throw new Error('A private reference is not authorized for this handoff.');
+        const response = await fetch(url, {redirect:'error', credentials:'same-origin'});
         if (!response.ok) throw new Error('A private reference could not be fetched.');
-        const type = (response.headers.get('content-type') || item.contentType || '').split(';')[0].toLowerCase();
+        const declaredType = safeIdentity(item.contentType).toLowerCase();
+        const type = (response.headers.get('content-type') || declaredType).split(';')[0].toLowerCase();
+        const declaredLength = Number(response.headers.get('content-length') || 0);
         const blob = await response.blob();
-        if (!IMAGE_TYPES.has(type) || blob.size > MAX_BYTES) throw new Error('A private reference is not a supported image.');
+        if (!IMAGE_TYPES.has(type) || (declaredType && type !== declaredType) || declaredLength > MAX_BYTES || blob.size > MAX_BYTES) throw new Error('A private reference is not a supported image.');
         const file = new File([blob], 'reference-' + (index + 1) + '.' + (type === 'image/jpeg' ? 'jpg' : type.slice(6)), {type});
         const uploaded = await window.openai.uploadFile(file, {library:false});
         if (!uploaded?.fileId && !uploaded?.id) throw new Error('A private reference could not be uploaded.');
-        imageIds.push(uploaded.fileId || uploaded.id); prepared.push(alterNames[index]);
+        imageIds.push(uploaded.fileId || uploaded.id); prepared.push(expectedReferenceNames[index]);
       }
       phase('reference', 'Private references are ready for ' + prepared.join(', ') + '.');
       const modelContent = 'Use image 1 as the scene image. The following images are private appearance references, in order: ' + prepared.map((name, index) => 'image ' + (index + 2) + ' is for ' + name).join('; ') + '.';
       const state = {phase:'sent', imageIds, modelContent, privateContent:{phase:'sent'}};
       await setState(state);
-      await sendFollowUp('Generate the requested image using the uploaded images. Image 1 is the scene; the remaining images are private appearance references in the order described in the handoff.');
+      await sendFollowUp('Use ChatGPT image generation now for this request: ' + data.scene + '. Image 1 is the scene; the remaining images are private appearance references in the order described in the handoff. Do not call Bunch again for this generation.');
       phase('generation', 'Generating securely in ChatGPT now.');
       text('announce', 'References transferred securely. ChatGPT is generating the image.');
     } catch (error) { fail(error instanceof Error ? error.message : 'The secure image handoff could not start.'); }

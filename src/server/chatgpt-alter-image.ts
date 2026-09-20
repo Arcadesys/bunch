@@ -29,7 +29,11 @@ export async function prepareChatgptAlterImage(service: ProfileReader, ownerId: 
     structuredContent: result,
     content: [{ type: "text" as const, text: `Prepared ${result.referenceCount} private appearance reference${result.referenceCount === 1 ? "" : "s"} for the requested ChatGPT image generation. No image has been generated or saved.` }],
     _meta: {
-      sceneImage: input.sceneImage,
+      sceneImage: {
+        file_id: input.sceneImage.file_id,
+        ...(input.sceneImage.mime_type ? { mime_type: input.sceneImage.mime_type } : {}),
+        ...(input.sceneImage.file_name ? { file_name: input.sceneImage.file_name } : {}),
+      },
       referenceMedia: prepared._meta.referenceMedia,
     },
   };
