@@ -2,6 +2,18 @@ import { type Pool, type PoolClient } from "pg";
 import { getDatabasePool } from "@/db/client";
 import { SystemError } from "./system-error";
 import type { ImageAllowance } from "@/domain/native-scene";
+import {
+  actualImageCostMicrousd,
+  budgetModeFor,
+  IMAGE_HARD_LIMIT_MICROUSD,
+  IMAGE_SOFT_LIMIT_MICROUSD,
+  imageRoutingStage,
+  microUsdToUsd,
+  planImage,
+  type ImageAction,
+  type ImagePlan,
+  type ProviderUsage,
+} from "./image-cost";
 
 type Db = Pick<Pool, "query"> | PoolClient;
 export type ImageJobKind = "native" | "group";
@@ -33,16 +45,37 @@ export class ImageAllowanceService {
     const operatorDefault = Number.isInteger(configured) && configured >= 0 && configured <= 1000 ? configured : 20;
     const limit = a.image_daily_limit ?? (a.role === "FRIEND" ? 10 : operatorDefault);
     const r = (await db.query(`select count(*) filter(where state='DISPATCHED')::int as used,count(*) filter(where state='RESERVED')::int as reserved,
+      coalesce(sum(coalesce(cost_microusd,projected_cost_microusd,0)) filter(where state in ('RESERVED','DISPATCHED')),0)::bigint as spend,
       (((($2::timestamptz at time zone 'America/Chicago')::date+1)::timestamp at time zone 'America/Chicago')) as resets_at
       from image_usage where owner_id=$1 and admitted_on=($2::timestamptz at time zone 'America/Chicago')::date`, [owner, at])).rows[0];
-    return { limit: Number(limit), used: r.used, reserved: r.reserved, remaining: Math.max(0, Number(limit)-r.used-r.reserved), resetsAt: new Date(r.resets_at).toISOString() };
+    const spend = Number(r.spend);
+    const stage = imageRoutingStage();
+    const mode = budgetModeFor(spend, stage, String(a.role));
+    const promptOnly = planImage({ action: "generation", size: "1024x1024", referenceCount: 0, spendMicrousd: spend, role: String(a.role), stage });
+    const identity = planImage({ action: "repair", size: "1024x1024", referenceCount: 1, spendMicrousd: spend, role: String(a.role), stage });
+    const label = (plan: ImagePlan) => plan.mode === "PAUSED" ? "Paid images paused until reset" : plan.mode === "ECONOMY" ? "Economy mode" : plan.route === "LEGACY" ? "Current high-quality route" : plan.route === "IDENTITY" ? "Identity-preserving route" : "Prompt-only value route";
+    return {
+      limit: Number(limit), used: r.used, reserved: r.reserved, remaining: Math.max(0, Number(limit)-r.used-r.reserved), resetsAt: new Date(r.resets_at).toISOString(),
+      spendTodayUsd: microUsdToUsd(spend), softLimitUsd: microUsdToUsd(IMAGE_SOFT_LIMIT_MICROUSD), hardLimitUsd: microUsdToUsd(IMAGE_HARD_LIMIT_MICROUSD), mode, routingStage: stage,
+      nextPlannedRoutes: {
+        promptOnly: { model: promptOnly.model, quality: promptOnly.quality, label: label(promptOnly) },
+        identitySensitive: { model: identity.model, quality: identity.quality, label: label(identity) },
+      },
+    };
   }
-  async reserve(c: PoolClient, owner: string, kind: ImageJobKind, job: string) {
+  async plan(db: Db, owner: string, input: { action: ImageAction; size: string; referenceCount: number; legacyModel?: string }) {
+    const account = await this.assertAccess(db, owner);
+    const spend = Number((await db.query(`select coalesce(sum(coalesce(cost_microusd,projected_cost_microusd,0)),0)::bigint as spend from image_usage where owner_id=$1 and admitted_on=(now() at time zone 'America/Chicago')::date and state in ('RESERVED','DISPATCHED')`, [owner])).rows[0].spend);
+    return planImage({ ...input, spendMicrousd: spend, role: String(account.role) });
+  }
+  async reserve(c: PoolClient, owner: string, kind: ImageJobKind, job: string, plan: ImagePlan) {
     // Caller holds the app_user row lock and creates the job in this transaction.
     const allowance = await this.read(owner, c);
     if (!allowance.remaining) throw new SystemError("QUOTA_EXCEEDED", "Your daily image allowance has been reached.", { allowance });
+    if (plan.mode === "PAUSED") throw new SystemError("QUOTA_EXCEEDED", "Your daily AI spend ceiling has been reached. New paid images resume after the displayed reset time.", { allowance });
     await this.storagePreflight(c, owner);
-    await c.query("insert into image_usage(owner_id,job_kind,job_id) values($1,$2,$3)", [owner, kind, job]);
+    await c.query(`insert into image_usage(owner_id,job_kind,job_id,action,route,model,quality,size,reference_count,projected_cost_microusd,rate_card_version)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [owner, kind, job, plan.action, plan.route, plan.model, plan.quality, plan.size, plan.referenceCount, plan.projectedCostMicrousd, plan.rateCardVersion]);
   }
   async expire(owner: string) {
     await this.transaction(async c => {
@@ -79,17 +112,20 @@ export class ImageAllowanceService {
       await c.query(`update ${tableFor(kind)} set error_message=$3 where owner_id=$1 and id=$2`, [owner, job, message + (counted ? " This attempt used 1 image use." : " No image use was spent.")]);
     });
   }
-  async dispatch(owner: string, kind: ImageJobKind, job: string, validate?: (c: PoolClient) => Promise<void>) {
+  async dispatch(owner: string, kind: ImageJobKind, job: string, validate?: (c: PoolClient) => Promise<void>, actualSize?: string) {
     await this.transaction(async c => {
       await c.query("select id from app_user where id=$1 for update", [owner]);
       await this.storagePreflight(c, owner);
       if (validate) await validate(c);
-      const r = await c.query(`update image_usage set state='DISPATCHED',dispatched_at=now() where owner_id=$1 and job_kind=$2 and job_id=$3 and state='RESERVED' and exists(select 1 from ${tableFor(kind)} where id=$3 and owner_id=$1 and state='RUNNING' and created_at>=now()-interval '6 minutes') returning id`, [owner, kind, job]);
+      const r = await c.query(`update image_usage set state='DISPATCHED',dispatched_at=now(),size=coalesce($4,size) where owner_id=$1 and job_kind=$2 and job_id=$3 and state='RESERVED' and exists(select 1 from ${tableFor(kind)} where id=$3 and owner_id=$1 and state='RUNNING' and created_at>=now()-interval '6 minutes') returning id`, [owner, kind, job, actualSize ?? null]);
       if (!r.rowCount) throw new SystemError("CONFLICT", "Image processing was interrupted. Start a new request.");
     });
   }
-  async recordUsage(owner: string, kind: ImageJobKind, job: string, usage: Record<string, number>) {
-    await this.pool.query("update image_usage set provider_usage=$4 where owner_id=$1 and job_kind=$2 and job_id=$3", [owner, kind, job, JSON.stringify(usage)]);
+  async recordUsage(owner: string, kind: ImageJobKind, job: string, usage: ProviderUsage) {
+    const row = (await this.pool.query("select model from image_usage where owner_id=$1 and job_kind=$2 and job_id=$3", [owner, kind, job])).rows[0];
+    if (!row) return;
+    const cost = actualImageCostMicrousd(String(row.model), usage);
+    await this.pool.query(`update image_usage set provider_usage=$4,cost_microusd=$5,cost_status=$6 where owner_id=$1 and job_kind=$2 and job_id=$3`, [owner, kind, job, JSON.stringify(usage), cost, cost === null ? "ESTIMATED" : "PROVIDER_CONFIRMED"]);
   }
   async accounts(operator: string) {
     await this.requireOperator(this.pool, operator);

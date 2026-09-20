@@ -71,7 +71,7 @@ export const test = base.extend<{ harness: Harness }>({
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
       if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "GET") return reply(appearance);
       if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "PUT") { appearance = { ...request.postDataJSON(), updatedAt: new Date().toISOString() }; return reply(appearance); }
-      if (url.pathname === "/api/v1/image-allowance") return reply({ limit: 10, used: 0, reserved: 0, remaining: 10, resetsAt: "2026-09-20T05:00:00Z" });
+      if (url.pathname === "/api/v1/image-allowance") return reply({ limit: 10, used: 0, reserved: 0, remaining: 10, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: 0, softLimitUsd: .1, hardLimitUsd: .25, mode: "STANDARD", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "medium", label: "Prompt-only value route" }, identitySensitive: { model: "gpt-image-2.5-sunburst", quality: "high", label: "Identity-preserving route" } } });
       if (url.pathname === "/api/v1/account/image-allowances") return reply([]);
       if (url.pathname === "/api/v1/catch-up/review") return reply({ review: null, revision: 0 });
       if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") {

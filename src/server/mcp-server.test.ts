@@ -138,7 +138,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
 
 test("native scene MCP generation schedules once and returns only the authenticated reopen route", async () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null };
+  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null, model: "gpt-image-2", quality: "medium" as const, costMode: "STANDARD" as const };
   const calls: string[] = [];
   const sceneService = {
     start: async (ownerId: string, input: unknown) => { calls.push(`start:${ownerId}:${(input as { scene: string }).scene}`); return render; },
@@ -171,7 +171,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-widget-metadata-test-secret";
   const id = "33333333-3333-4333-8333-333333333333";
   const widgetUri = "ui://system-arcades-me.vercel.app/native-scene-v1.html";
-  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64) };
+  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64), model: "gpt-image-2", quality: "low" as const, costMode: "ECONOMY" as const };
   const sceneService = { start: async () => complete, get: async () => complete, list: async () => [complete] } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
   const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

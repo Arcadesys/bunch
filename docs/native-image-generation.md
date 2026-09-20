@@ -45,14 +45,15 @@ requests one fresh capability before pointing to that link.
 
 ## Configuration and release
 
-- Apply all migrations through `drizzle/0022_image_allowance_repairs.sql` before deploying. This backfills today’s existing native/group jobs as spent uses and queued jobs as reservations.
+- Apply all migrations through `drizzle/0023_ai_spend_ledger.sql` before deploying. This preserves the attempt backfill and adds versioned cost metadata without storing prompts or private-media identifiers.
 - Reuse the existing server-only `OPENAI_API_KEY` and private Blob configuration.
-- `NATIVE_SCENE_MODEL` optionally selects the image model. The provider supports prompt-only generation and reference-conditioned edits, following the [official Image API guide](https://developers.openai.com/api/docs/guides/image-generation).
+- `AI_COST_ROUTING_STAGE` controls rollout: `shadow` (default) records the current Sunburst/high path, `operator` enables routing and dollar gates only for the operator, `pilot` enables them for all pilot accounts, and `off` restores the configured legacy Sunburst/high route while retaining telemetry, the count allowance, and the hard daily spend pause. `NATIVE_SCENE_MODEL` and `GROUP_PHOTO_MODEL` remain legacy/off-route overrides.
+- Active routing uses GPT Image 2 medium for prompt-only scenes, Sunburst high for reference-sensitive generation/repair/photo finishing, and GPT Image 2 low after the $0.10 daily soft limit. At $0.25, paid images pause until Chicago midnight. The existing 10-use FRIEND limit remains independent.
 - Every active FRIEND account has **10 shared image uses per Chicago calendar day**. `NATIVE_SCENE_DAILY_LIMIT` now controls the OPERATOR/legacy default only (20). Account → Pilot image allowances lets the active operator override any account with 0–1000 uses or clear the override. Zero blocks new requests.
 - Native generation, repairs and Group Photo finishing share `image_usage`. Admission and job creation run under the owner row lock. Replays do not reserve again. The admission day stays fixed across midnight, regardless of worker start time.
 - Reservations reduce remaining uses immediately. Only failures before dispatch release them; provider failures, uncertain timeouts and storage failures after dispatch count. Deleting outputs never refunds dispatched uses. Expiry never retries a provider call.
-- `GET /api/v1/image-allowance` returns `limit`, `used`, `reserved`, `remaining`, `resetsAt`. Native/group responses and MCP expose the same accounting. Resets are midnight America/Chicago, including daylight-saving changes; UI shows the local equivalent.
-- This is an attempt cap, not a dollar budget. Numeric provider token usage is saved when returned, without provider messages or private image bytes.
+- `GET /api/v1/image-allowance` returns the count allowance, current dollar spend, routing stage/mode, limits, reset time, and next prompt-only/identity-sensitive routes. Native/group responses and MCP expose the same accounting. Resets are midnight America/Chicago, including daylight-saving changes; UI shows the local equivalent.
+- The ledger stores model, quality, size, action, route, reference count, versioned price basis, modality-specific token usage, and estimated/confirmed microdollar cost. It never stores prompts, reference IDs, provider messages, or private image bytes. Provider-confirmed usage replaces the conservative dispatch estimate when the response contains a complete modality breakdown.
 - Private scene outputs are independent artifacts. Generating does not change anyone's profile picture, appearance references, hosting or fronting.
 
 ## Execution and privacy
