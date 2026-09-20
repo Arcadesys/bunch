@@ -3,6 +3,7 @@
 // and drizzle-kit is used only to check this model against them.
 
 import {
+  type AnyPgColumn,
   boolean,
   bigint,
   check,
@@ -137,16 +138,17 @@ export const groupPhotoPlacement = pgTable("group_photo_placement", {
 export const groupPhotoRender = pgTable("group_photo_render", {
   id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
   projectId: uuid("project_id").notNull(), requestId: uuid("request_id").notNull(), sourceVersion: integer("source_version").notNull(),
-  state: text("state").notNull().default("QUEUED"), model: text("model").notNull(), recipe: jsonb("recipe").notNull(),
+  state: text("state").notNull().default("QUEUED"), model: text("model").notNull(), quality: text("quality").notNull().default("high"), costMode: text("cost_mode").notNull().default("STANDARD"), recipe: jsonb("recipe").notNull(),
   storageKey: text("storage_key").unique(), contentType: text("content_type"), contentHash: text("content_hash"), width: integer("width"), height: integer("height"), errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), startedAt: timestamp("started_at", { withTimezone: true }), finishedAt: timestamp("finished_at", { withTimezone: true }),
 }, table => [foreignKey({ columns: [table.ownerId, table.projectId], foreignColumns: [groupPhotoProject.ownerId, groupPhotoProject.id] }).onDelete("cascade"), unique().on(table.ownerId, table.requestId), uniqueIndex("group_photo_render_one_active_owner").on(table.ownerId).where(sql`${table.state} in ('QUEUED','RUNNING')`), index("group_photo_render_project_created").on(table.ownerId, table.projectId, table.createdAt)]);
 
 export const nativeSceneRender = pgTable("native_scene_render", {
+  sourcePrivateId: uuid("source_private_id").references(() => privateImage.id, { onDelete: "cascade" }), sourceNativeId: uuid("source_native_id").references((): AnyPgColumn => nativeSceneRender.id, { onDelete: "cascade" }), sourceGroupId: uuid("source_group_id").references(() => groupPhotoRender.id, { onDelete: "cascade" }),
   id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }), requestId: uuid("request_id").notNull(),
-  state: text("state").notNull().default("QUEUED"), model: text("model").notNull(), recipe: jsonb("recipe").notNull(), storageKey: text("storage_key").unique(), contentType: text("content_type"), contentHash: text("content_hash"), width: integer("width"), height: integer("height"), errorMessage: text("error_message"),
+  state: text("state").notNull().default("QUEUED"), model: text("model").notNull(), quality: text("quality").notNull().default("high"), costMode: text("cost_mode").notNull().default("STANDARD"), recipe: jsonb("recipe").notNull(), storageKey: text("storage_key").unique(), contentType: text("content_type"), contentHash: text("content_hash"), width: integer("width"), height: integer("height"), errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), startedAt: timestamp("started_at", { withTimezone: true }), finishedAt: timestamp("finished_at", { withTimezone: true }),
-}, table => [unique().on(table.ownerId, table.requestId), uniqueIndex("native_scene_render_one_active_owner").on(table.ownerId).where(sql`${table.state} in ('QUEUED','RUNNING')`), index("native_scene_render_owner_created").on(table.ownerId, table.createdAt)]);
+}, table => [check("native_scene_one_source", sql`num_nonnulls(${table.sourcePrivateId},${table.sourceNativeId},${table.sourceGroupId})<=1`), unique().on(table.ownerId, table.requestId), uniqueIndex("native_scene_render_one_active_owner").on(table.ownerId).where(sql`${table.state} in ('QUEUED','RUNNING')`), index("native_scene_render_owner_created").on(table.ownerId, table.createdAt)]);
 
 export const coverageAssignment = pgTable("coverage_assignment", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -273,6 +275,18 @@ export const activityEvent = pgTable("activity_event", {
 }, (table) => [
   foreignKey({ columns: [table.ownerId, table.actorAlterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "activity_event_owner_actor_fk" }).onDelete("restrict"),
   index("activity_event_owner_entity_idx").on(table.ownerId, table.entityType, table.entityId, table.createdAt),
+]);
+
+export const mcpInvocation = pgTable("mcp_invocation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  toolName: text("tool_name").notNull(),
+  isError: boolean("is_error").notNull().default(false),
+  durationMs: integer("duration_ms").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("mcp_invocation_tool_created_idx").on(table.toolName, table.createdAt),
+  index("mcp_invocation_owner_created_idx").on(table.ownerId, table.createdAt),
 ]);
 
 export const mutationReceipt = pgTable("mutation_receipt", {
@@ -447,9 +461,9 @@ export const pilotPolicy = pgTable("pilot_policy", {
 }, t=>[check("pilot_policy_singleton",sql`${t.id}`),check("pilot_capacity_range",sql`${t.maxFriends} between 0 and 20`)]);
 export const pilotAccount = pgTable("pilot_account", {
   ownerId:text("owner_id").primaryKey(), role:text("role").notNull(), state:text("state").notNull().default("ACTIVE"),
-  displayName:text("display_name").notNull().default("My system"),quotaBytes:bigint("quota_bytes",{mode:"number"}).notNull().default(52428800),
+  imageDailyLimit:integer("image_daily_limit"),displayName:text("display_name").notNull().default("My system"),quotaBytes:bigint("quota_bytes",{mode:"number"}).notNull().default(52428800),
   privacyAcceptedAt:timestamp("privacy_accepted_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),deletedAt:timestamp("deleted_at",{withTimezone:true}),
-},t=>[uniqueIndex("pilot_one_operator").on(t.role).where(sql`${t.role}='OPERATOR'`)]);
+},t=>[check("pilot_account_image_daily_limit_check", sql`${t.imageDailyLimit} between 0 and 1000`), uniqueIndex("pilot_one_operator").on(t.role).where(sql`${t.role}='OPERATOR'`)]);
 export const pilotInvitation=pgTable("pilot_invitation",{
   id:uuid("id").primaryKey().defaultRandom(),tokenHash:text("token_hash").notNull().unique(),email:text("email").notNull(),
   expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(),revokedAt:timestamp("revoked_at",{withTimezone:true}),
@@ -504,3 +518,12 @@ export const conversationSummary = pgTable("conversation_summary", {
   check("conversation_summary_body_length", sql`char_length(${t.summary}) between 1 and 20000`),
   check("conversation_summary_coverage_length", sql`char_length(${t.coverage}) between 1 and 4000`),
 ]);
+
+export const imageUsage = pgTable("image_usage", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  jobKind: text("job_kind").notNull(), jobId: uuid("job_id").notNull(), admittedOn: date("admitted_on").notNull().default(sql`(now() at time zone 'America/Chicago')::date`),
+  state: text("state").notNull().default("RESERVED"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }), providerUsage: jsonb("provider_usage"),
+  action: text("action").notNull().default("generation"), route: text("route").notNull().default("LEGACY"), model: text("model").notNull().default("gpt-image-2.5-sunburst"), quality: text("quality").notNull().default("high"), size: text("size").notNull().default("1024x1024"), referenceCount: integer("reference_count").notNull().default(0),
+  projectedCostMicrousd: bigint("projected_cost_microusd", { mode: "number" }).notNull().default(0), costMicrousd: bigint("cost_microusd", { mode: "number" }), costStatus: text("cost_status").notNull().default("ESTIMATED"), rateCardVersion: text("rate_card_version").notNull().default("openai-2026-09-08"),
+}, table => [check("image_usage_job_kind_check", sql`${table.jobKind} in ('native','group')`), check("image_usage_state_check", sql`${table.state} in ('RESERVED','DISPATCHED','RELEASED')`), unique().on(table.ownerId, table.jobKind, table.jobId), index("image_usage_owner_day").on(table.ownerId, table.admittedOn)]);

@@ -44,6 +44,7 @@ const unavailable = () =>
     "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "image_usage",
   "native_scene_render",
   "group_photo_render",
   "group_photo_placement",
@@ -57,6 +58,7 @@ export const OWNER_TABLES = [
   "todo_assignee",
   "activity_event",
   "mutation_receipt",
+  "mcp_invocation",
   "system_host",
   "presence_period",
   "fronting_session",
@@ -149,6 +151,13 @@ export class PilotService {
       );
     });
   }
+  // The single active OPERATOR account (enforced by the pilot_one_operator unique
+  // index) is the Bunch admin. Used to gate admin-only surfaces like usage stats.
+  async assertOperator(ownerId: string) {
+    const account = await this.account(ownerId);
+    if (account?.role !== "OPERATOR" || account.state !== "ACTIVE")
+      throw new SystemError("FORBIDDEN", "Only the active Bunch operator can view usage stats.");
+  }
   private async invitationAdministrator(ownerId: string, client: Pool | PoolClient = this.pool) {
     const result = await client.query<PilotAccount>(
       "select * from pilot_account where owner_id=$1",
@@ -186,10 +195,19 @@ export class PilotService {
       throw new SystemError("VALIDATION_ERROR", "Capacity and recovery evidence must be from the last seven days.");
     await this.transaction(async (c) => {
       await this.invitationAdministrator(ownerId, c);
-      await c.query("select id from pilot_policy where id for update");
+      const policy = (
+        await c.query("select max_friends,invitations_open from pilot_policy where id for update")
+      ).rows[0];
+      if (policy && input.slots < Number(policy.max_friends))
+        throw new SystemError(
+          "VALIDATION_ERROR",
+          "Pilot capacity cannot be reduced through the invitation controls.",
+        );
       await c.query("insert into pilot_account(owner_id,role,privacy_accepted_at) values($1,'OPERATOR',now()) on conflict(owner_id) do nothing", [ownerId]);
-      const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
-      if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
+      if (!policy?.invitations_open) {
+        const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
+        if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
+      }
       await c.query(
         "update pilot_policy set gate_enabled=true,friends_enabled=true,invitations_open=true,uploads_enabled=true,max_friends=$1,capacity_verified_at=$2,recovery_verified_at=$2,evidence=$3 where id",
         [input.slots, checkedAt.toISOString(), JSON.stringify({ capacityEvidence: input.capacityEvidence, recoveryEvidence: input.recoveryEvidence, checkedAt: input.checkedAt })],
@@ -329,7 +347,7 @@ export class PilotService {
         throw unavailable();
       const data: Record<string, unknown[]> = {};
       for (const table of OWNER_TABLES) {
-        if (table === "mutation_receipt" || table === "gallery_share") continue; // Internal retry payloads and bearer-token hashes are not user records.
+        if (table === "mutation_receipt" || table === "gallery_share" || table === "mcp_invocation") continue; // Internal retry payloads, bearer-token hashes, and usage telemetry are not user records.
         const rows = (
           await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;

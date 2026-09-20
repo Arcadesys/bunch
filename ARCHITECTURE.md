@@ -93,6 +93,13 @@ transfer one image into private storage, and nothing else.
 Demo mode writes to `private-uploads/` instead, so a local run needs no cloud
 account.
 
+## Atomic boundary from Furry Image Studio
+
+Bunch does not integrate with Furry Image Studio at runtime. Private scene
+generation and appearance-reference flows are handled entirely by Bunch core
+tools and storage boundaries, with no required Furry Image Studio APIs,
+connectors, or data contracts.
+
 ## Frozen contracts
 
 Three strings look like stale branding and are load-bearing. Each is commented in

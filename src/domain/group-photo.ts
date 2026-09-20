@@ -86,4 +86,5 @@ export type GroupPhotoRender = {
   id: string; sourceVersion: number; state: "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED";
   createdAt: string; finishedAt: string | null; errorMessage: string | null;
   width: number | null; height: number | null; contentHash: string | null;
+  model: string; quality: "low" | "medium" | "high"; costMode: "STANDARD" | "ECONOMY" | "PAUSED";
 };

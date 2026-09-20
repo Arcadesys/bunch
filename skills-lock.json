@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "auth0": {
+      "source": "auth0/agent-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/auth0/skills/auth0/SKILL.md",
+      "computedHash": "b754245df4cdde5cac96afab8c7ca92a8f884b7cc5f10a64b9ded8d85a6fa823"
+    },
     "neon": {
       "source": "neondatabase/agent-skills",
       "sourceType": "github",

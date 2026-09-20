@@ -1,9 +1,8 @@
-import { imagePromptResultSchema } from "@/domain/image-prompt";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createMcpServer } from "@/server/mcp-server";
+import { accountProfileId, createMcpServer } from "@/server/mcp-server";
 import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
 import type { NativeSceneService } from "@/server/native-scene-service";
@@ -20,7 +19,9 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
   const catchUp = new CatchUpService({} as never);
   catchUp.openForPresence = async () => null;
   catchUp.openForCurrentFronter = async () => null;
-  const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
+  const ownerId = "demo:descriptor-private-subject";
+  const loadedOwners: string[] = [];
+  const server = createMcpServer(ownerId, service, catchUp, { listProfiles: async () => [] }, undefined, undefined, undefined, async (id) => { loadedOwners.push(id); return { display_name: "  Arcade  " }; });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
@@ -30,13 +31,33 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
       assert.ok(tool.outputSchema, `${tool.name} must declare outputSchema`);
-      assert.equal(tool.annotations?.openWorldHint, tool.name === "generate_scene", `${tool.name} must declare its external-provider boundary`);
+      assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const profileDescriptor = byName.get("get_account_profile");
+    assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
+    assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+    assert.equal(profileDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(profileDescriptor?.inputSchema?.type, "object");
+    assert.deepEqual(profileDescriptor?.inputSchema?.properties, {});
+    assert.equal(profileDescriptor?.inputSchema?.additionalProperties, false);
+    assert.deepEqual(profileDescriptor?.outputSchema?.required, ["id"]);
+    assert.equal(profileDescriptor?.outputSchema?.additionalProperties, false);
+    const profileIdSchema = profileDescriptor?.outputSchema?.properties?.id as { minLength?: number; pattern?: string } | undefined;
+    assert.equal(profileIdSchema?.minLength, 1);
+    assert.equal(profileIdSchema?.pattern, "\\S");
+    const accountProfile = await client.callTool({ name: "get_account_profile", arguments: {} });
+    assert.deepEqual(accountProfile.structuredContent, { id: accountProfileId(ownerId), name: "Arcade" });
+    assert.deepEqual(loadedOwners, [ownerId]);
+    assert.equal((accountProfile.content as Array<{ text: string }>)[0].text, JSON.stringify(accountProfile.structuredContent));
+    assert.doesNotMatch(JSON.stringify(accountProfile), /descriptor-private-subject|demo:/);
+    assert.equal(accountProfileId(ownerId), accountProfileId(ownerId), "the same account must retain its profile ID");
+    assert.notEqual(accountProfileId(ownerId), accountProfileId("auth0:other-private-subject"), "different accounts must not share profile IDs");
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
-    assert.equal(byName.get("prepare_furry_transform")?.annotations?.readOnlyHint, true, "transform preparation must not change private state");
+    assert.equal(byName.has("prepare_furry_transform"), false);
+    assert.equal(byName.has("prepare_furry_result_upload"), false);
     assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
@@ -76,9 +97,11 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const html = "text" in content ? content.text : "";
     const legacyHtml = legacyWidgetContents.map((result) => "text" in result.contents[0] ? result.contents[0].text : "");
     assert.deepEqual(content._meta?.ui, {
+      domain: "https://bunch.example",
       csp: { connectDomains: ["https://bunch.example"], resourceDomains: ["https://bunch.example"] },
       prefersBorder: true,
     });
+    assert.equal(content._meta?.["openai/widgetDomain"], "https://bunch.example");
     assert.deepEqual(content._meta?.["openai/widgetCSP"], {
       connect_domains: ["https://bunch.example"],
       resource_domains: ["https://bunch.example"],
@@ -115,7 +138,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
 
 test("native scene MCP generation schedules once and returns only the authenticated reopen route", async () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null };
+  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null, model: "gpt-image-2", quality: "medium" as const, costMode: "STANDARD" as const };
   const calls: string[] = [];
   const sceneService = {
     start: async (ownerId: string, input: unknown) => { calls.push(`start:${ownerId}:${(input as { scene: string }).scene}`); return render; },
@@ -148,7 +171,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-widget-metadata-test-secret";
   const id = "33333333-3333-4333-8333-333333333333";
   const widgetUri = "ui://system-arcades-me.vercel.app/native-scene-v1.html";
-  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64) };
+  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64), model: "gpt-image-2", quality: "low" as const, costMode: "ECONOMY" as const };
   const sceneService = { start: async () => complete, get: async () => complete, list: async () => [complete] } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
   const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -263,28 +286,18 @@ test("lineup keeps private image capabilities in widget metadata only", async ()
   }
 });
 
-test("Furry transform preparation keeps selected reference media out of model-visible output", async () => {
-  const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
-  process.env.MCP_TOKEN_SIGNING_SECRET = "furry-transform-metadata-test-secret";
+test("Furry Image Studio hooks are not exposed through MCP", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const profile = { id: "11111111-1111-4111-8111-111111111111", name: "Melody Arcade", aliases: ["Melody"], strengths: [], boundaries: [], images: [], imageCount: 1, appearanceNotes: "Use the approved character references.", appearanceReferenceImageIds: ["22222222-2222-4222-8222-222222222222"], version: 1, createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-01T12:00:00Z" };
-  const service = { listAlters: async () => ({ data: [profile] }) } as unknown as SystemService;
-  const server = createMcpServer("demo:furry-transform", service, undefined, { listProfiles: async () => [{ ...profile, ownerId: "demo:furry-transform", images: [{ id: "22222222-2222-4222-8222-222222222222", storageKey: "private-reference-key", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00Z" }] }] });
+  const server = createMcpServer("demo:furry-transform", { listAlters: async () => ({ data: [] }) } as unknown as SystemService, undefined, { listProfiles: async () => [] });
   const client = new Client({ name: "furry-transform-test", version: "1.0.0" });
   try {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const result = await client.callTool({ name: "prepare_furry_transform", arguments: { alterName: "Melody Arcade" } });
-    const prepared = imagePromptResultSchema.parse(result.structuredContent);
-    assert.equal(prepared.ready, true);
-    assert.equal(prepared.identities[0].alterId, profile.id);
-    assert.equal(prepared.identities[0].reliesOnReference, true);
-    assert.match(prepared.prompt, /Canonical visual identity/);
-    assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|private-reference-key|image:read/);
-    assert.match((result._meta?.referenceMedia as Array<{ src: string }>)[0].src, /\/api\/system\/images\/inline\/.*\?cap=/);
+    const { tools } = await client.listTools();
+    const names = new Set(tools.map((tool) => tool.name));
+    assert.equal(names.has("prepare_furry_transform"), false);
+    assert.equal(names.has("prepare_furry_result_upload"), false);
   } finally {
-    if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
-    else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
     await client.close();
     await server.close();
   }

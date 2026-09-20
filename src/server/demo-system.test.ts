@@ -5,13 +5,14 @@ import { getDemoSystem } from "./demo-system";
 import { GET } from "@/app/api/demo/system/route";
 import { handleMcpRequest } from "./mcp-http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SystemError } from "./system-error";
 
 function rpc(method: string, params?: unknown, headers: Record<string, string> = {}) {
   return new Request("https://bunch.example/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
 }
 const noPrivateAccess = {
-  authorize: async () => { throw new Error("Authentication required"); },
-  privateServer: () => { throw new Error("Private server must not be reached"); },
+  authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
+  createPrivateServer: () => { throw new Error("Private server must not be reached"); },
 };
 
 test("fictional sample preserves names, relationships, gift authorship, shared relevance, and review semantics", () => {
@@ -55,8 +56,11 @@ test("public REST endpoint returns only immutable fiction without a database", a
 test("anonymous hosted MCP discovers and reads demo in production without private access", async () => {
   // There is intentionally no SYSTEM_DEMO_MODE or localhost condition.
   const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
-  assert.equal(stream.status, 405);
+  assert.equal(stream.status, 200);
+  assert.match(stream.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(stream.headers.get("cache-control"), "no-store");
   assert.equal(stream.headers.has("www-authenticate"), false);
+  await stream.body?.cancel();
   const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
   assert.equal(init.status, 200);
   assert.match((await init.json()).result.instructions, /Demo system/);
@@ -65,24 +69,51 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
   assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system"]);
   assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
   assert.deepEqual(tools.at(-1).securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+  for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
+    const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
+    assert.equal(discovery.status, 200, method);
+    assert.equal(discovery.headers.get("cache-control"), "no-store");
+    assert.equal((await discovery.json()).error?.code, -32601, method);
+  }
   const result = await handleMcpRequest(rpc("tools/call", { name: "get_demo_system", arguments: {} }), noPrivateAccess);
   assert.equal(result.status, 200);
   assert.equal(result.headers.get("cache-control"), "no-store");
   assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
 });
 
+test("connect_private_system returns the tool-level OAuth challenge required by ChatGPT", async () => {
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
+  try {
+    const response = await handleMcpRequest(rpc("tools/call", { name: "connect_private_system", arguments: {} }), noPrivateAccess);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const result = (await response.json()).result;
+    assert.equal(result.isError, true);
+    assert.deepEqual(result._meta?.["mcp/www_authenticate"], [
+      'Bearer resource_metadata="https://bunch.example/.well-known/oauth-protected-resource", scope="system:companion", error="invalid_token", error_description="Authentication is required to connect your private Bunch system."',
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /Fenton|Benny|Dot/);
+  } finally {
+    if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+    else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
+  }
+});
+
 test("private calls, resources, and every supplied invalid credential remain unauthorized", async () => {
-  for (const name of ["connect_private_system", "get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
+  for (const name of ["get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
     const response = await handleMcpRequest(rpc("tools/call", { name, arguments: {} }), noPrivateAccess);
     assert.equal(response.status, 401, name);
     assert.match(response.headers.get("www-authenticate")!, /Bearer/);
   }
   assert.equal((await handleMcpRequest(rpc("resources/read", { uri: "private" }), noPrivateAccess)).status, 401);
   for (const authorization of ["", "Basic abc", "Bearer expired", "Bearer revoked"]) {
-    for (const method of ["tools/list", "tools/call"]) {
-      const result = await handleMcpRequest(rpc(method, { name: "get_demo_system", arguments: {} }, { authorization }), noPrivateAccess);
-      assert.equal(result.status, 401);
-      assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+    for (const name of ["get_demo_system", "connect_private_system"]) {
+      for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
+        const result = await handleMcpRequest(rpc(method, { name, arguments: {} }, { authorization }), noPrivateAccess);
+        assert.equal(result.status, 401);
+        assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+      }
     }
   }
 });
@@ -91,7 +122,7 @@ test("authenticated routing preserves each verified owner and never falls back o
   for (const ownerId of ["auth0:tenant-one", "auth0:tenant-two"]) {
     const dependencies = {
       authorize: async (request: Request) => { assert.equal(request.headers.get("authorization"), "Bearer valid"); return ownerId; },
-      privateServer: (verifiedOwner: string) => {
+      createPrivateServer: (verifiedOwner: string) => {
         assert.equal(verifiedOwner, ownerId);
         const server = new McpServer({ name: "private-test", version: "1" });
         server.registerTool("get_companion_state", { inputSchema: {} }, async () => ({ content: [{ type: "text", text: verifiedOwner }] }));

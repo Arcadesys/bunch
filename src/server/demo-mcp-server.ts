@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { demoSystemSchema, getDemoSystem } from "./demo-system";
+import { mcpWwwAuthenticate } from "./mcp-authorization";
+
+export const CONNECT_PRIVATE_SYSTEM_TOOL_NAME = "connect_private_system";
+const CONNECT_PRIVATE_SYSTEM_DESCRIPTION = "Authentication is required to connect your private Bunch system.";
 
 export const DEMO_TOOL_NAMES = new Set([
   "get_demo_system", "list_demo_people", "get_demo_person", "list_demo_tasks",
@@ -69,8 +73,14 @@ export function createDemoMcpServer() {
     instructions: "You are connected to Bunch's Demo system. Call get_demo_system for the default populated fictional sample. Label it Demo system and never treat it as the user's personal people, history, or commitments. No demo changes are saved. For personal records, call connect_private_system to authenticate, then refresh tools/list. Never substitute fictional data for a failed private request.",
   });
   registerDemoSystemTool(server);
-  // The HTTP boundary challenges this tool before execution. Keep a closed
-  // fallback here too, so an in-process caller cannot claim authentication.
-  server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({ isError: true, content: [{ type: "text", text: "Authentication is required to connect your private system." }] }));
+  // This public bootstrap is the one anonymous exception for a private tool.
+  // Its MCP result carries the OAuth challenge but never returns private data.
+  server.registerTool(CONNECT_PRIVATE_SYSTEM_TOOL_NAME, connectPrivateSystemTool, async () => ({
+    isError: true,
+    content: [{ type: "text", text: CONNECT_PRIVATE_SYSTEM_DESCRIPTION }],
+    _meta: {
+      "mcp/www_authenticate": [mcpWwwAuthenticate("invalid_token", CONNECT_PRIVATE_SYSTEM_DESCRIPTION)],
+    },
+  }));
   return server;
 }

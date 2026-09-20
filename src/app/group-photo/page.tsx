@@ -1,12 +1,24 @@
 "use client";
+import { ImageAllowanceNotice } from "@/app/image-allowance";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AppNavigation } from "@/app/app-navigation";
+import { PeopleToolsNav } from "@/app/people-tools-nav";
 import { type ArrangeAction, type GroupPhotoProject, type GroupPhotoRender } from "@/domain/group-photo";
+import type { ImageAllowance } from "@/domain/native-scene";
 
 type Person = { id: string; name: string; species?: string; visualDescription?: string; presentation?: string; profilePicture?: { id: string }; appearanceReferenceImageIds?: string[]; images?: { id: string; isProfilePicture?: boolean }[] };
 const demoHeaders = { "x-system-demo": "local" };
+
+function ArrowIcon({ direction }: { direction: "left" | "right" | "up" | "down" }) {
+  const turns = { left: 0, up: 90, right: 180, down: 270 } as const;
+  return <svg aria-hidden="true" viewBox="0 0 24 24" style={{ transform: `rotate(${turns[direction]}deg)` }}><path d="M14.5 5 7.5 12l7 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" /></svg>;
+}
+
+function LayersIcon({ direction }: { direction: "up" | "down" }) {
+  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m4 9 8-5 8 5-8 5-8-5Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" /><path d="m4 14 8 5 8-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" /><path d={direction === "up" ? "M12 15V7m-3 3 3-3 3 3" : "M12 9v8m-3-3 3 3 3-3"} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" /></svg>;
+}
 
 function message(data: unknown, fallback: string) {
   if (typeof data === "object" && data && "error" in data) {
@@ -32,6 +44,7 @@ export default function GroupPhotoPage() {
   const [recent, setRecent] = useState<{ id: string; createdAt: string }[]>([]);
   const [finisherAvailable, setFinisherAvailable] = useState<boolean | null>(null);
   const [photoError, setPhotoError] = useState(false);
+  const [imageAllowance, setImageAllowance] = useState<ImageAllowance | null>(null);
   const projectId = project?.id;
   const latestRender = project?.renders?.[0];
   const finishedPhoto = project?.renders?.find(r => r.state === "COMPLETE");
@@ -105,7 +118,8 @@ export default function GroupPhotoPage() {
       const render = payload.data as GroupPhotoRender;
       setProject(current => current ? { ...current, renders: [render, ...(current.renders ?? []).filter(r => r.id !== render.id)] } : current);
       finishRequest.current = null;
-      setNotice(render.state === "COMPLETE" ? "Finished photo saved privately." : "Finishing your photo. You can leave and reopen this scene.");
+      const economy = render.costMode === "ECONOMY" ? " Economy mode is active; check identity details and do not treat the result as canon automatically." : "";
+      setNotice((render.state === "COMPLETE" ? "Finished photo saved privately." : "Finishing your photo. You can leave and reopen this scene.") + economy);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not start photo finishing. Try again to check the same request."); }
     finally { saving.current = false; setBusy(false); }
   }
@@ -171,33 +185,21 @@ export default function GroupPhotoPage() {
   const selectedPlacement = project?.placements.find(p => p.alterId === selectedId);
   const placed = new Set(project?.placements.map((placement) => placement.alterId) ?? []);
   const imageUrl = project ? `/api/v1/group-photos/${project.id}/backplate` : previewUrl;
-  return <main className="shell group-photo-page">
-    <AppNavigation current="GROUP_PHOTO" />
-    <header className="site-header"><div><h1>Group Photo</h1><p>Choose a place for everybody.</p></div><Link className="button button-secondary" href="/gallery/generated">View photo gallery</Link></header>
-    <p className="notice" role="status">{notice}</p>
+  return <main className={`shell group-photo-page ${project ? "has-project" : ""}`}>
+    {!project && <><AppNavigation current="GROUP_PHOTO" /><PeopleToolsNav current="group-photo" /></>}
+    <header className="group-photo-appbar">
+      {project && <a className="group-photo-back" href="/home" aria-label="Back to Bunch home"><ArrowIcon direction="left" /><span>Bunch</span></a>}
+      <div className="group-photo-title"><h1>Group Photo</h1><p>{project ? "Place everyone, then finish the photo." : "Choose a place for everybody."}</p></div>
+      <div className="group-photo-appbar-actions">
+        <Link className="button button-secondary" href="/gallery/generated">Photo gallery</Link>
+        {project && <a className="group-photo-new-scene" href="/group-photo">Start or reopen another scene</a>}
+      </div>
+    </header>
     {!project && <section className="panel group-photo-intro"><h2>Start with the real photo</h2><p>Choose your scene, then place people where you want them together.</p><form className="upload-form" onSubmit={uploadBackplate}><label>Choose a JPEG, PNG, or WebP photo<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button" disabled={busy} type="submit">{busy ? "Opening scene…" : "Use this scene"}</button></form></section>}
     {!project && recent.length > 0 && <section className="panel"><h2>Recent scenes</h2><ul className="recent-scenes">{recent.map((scene, index) => <li key={scene.id}><a href={`/group-photo?project=${scene.id}`}>Open scene {index + 1} · {new Date(scene.createdAt).toLocaleDateString()}</a></li>)}</ul></section>}
-    {project && <section className="panel photo-finisher" aria-label="Finish group photo">
-      <h2>Finish your photo</h2>
-      <p>Your scene, token groups and layer order guide the finished photo. Each person needs a selected appearance reference in People.</p>
-      {finisherAvailable === false && <p>Photo finishing is not connected yet. You can keep arranging and saving this scene.</p>}
-      <button className="button" type="button" disabled={busy || rendering || !project.placements.length || finisherAvailable === false} onClick={() => void finishPhoto()}>{rendering ? "Finishing photo…" : latestRender?.state === "FAILED" ? "Try finishing again" : "Finish photo"}</button>
-      {rendering && <p role="status">Finishing your photo. This can take a few minutes. You can leave and reopen this scene.</p>}
-      {latestRender?.state === "FAILED" && <p role="alert">{latestRender.errorMessage}</p>}
-      {finishedPhoto && <figure className="finished-photo">
-        <figcaption><h3>Finished group photo</h3><p>Saved privately.{finishedPhoto.sourceVersion !== project.version ? " Your scene has changed since this photo was finished." : ""}</p></figcaption>
-        {/* Private images must load through the owner's session, never the public optimizer. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} alt="Finished group photo" onError={() => setPhotoError(true)} onLoad={() => setPhotoError(false)} />
-        {photoError && <p role="alert">The saved photo could not be displayed. Reopen this scene to try loading it again.</p>}
-        <a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a>
-      </figure>}
-      <p><a href="/group-photo">Start or reopen another scene</a></p>
-    </section>}
     {project && <section className="group-photo-workspace" aria-label="Group Photo staging workspace">
-      <div className="panel staging-panel"><div className="staging-heading"><div><h2>Place people on the photo</h2><p>Put tokens together to keep those people together. Their places guide the composition; poses and spacing can be natural.</p></div></div>
-        <p id="stage-help">Select a person, then tap the scene. Drag placed tokens to move them. Use arrow keys on a token, or the Move buttons.</p>
-        <div ref={stageRef} className="backplate-stage" aria-label="Photo staging area" aria-describedby="stage-help"
+      <div className="staging-panel"><div className="staging-heading"><div><h2>Place people</h2><p id="stage-help">Select a person, then tap the scene. Drag a placed name, use arrow keys, or use Move.</p></div><span className="group-photo-save-state" aria-hidden="true">{busy ? "Saving…" : "Saved"}</span></div>
+        <div className="backplate-frame"><div ref={stageRef} className="backplate-stage" aria-label="Photo staging area" aria-describedby="stage-help"
           onClick={event => { if (event.target instanceof Element && event.target.closest("button")) return; const p = point(event.clientX, event.clientY); if (selectedId && p) void savePlacement(selectedId, p.x, p.y); }}
           onDragOver={event => event.preventDefault()}
           onDrop={event => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); const p = point(event.clientX, event.clientY); if (people.some(person => person.id === id) && p) void savePlacement(id, p.x, p.y); }}>
@@ -215,23 +217,38 @@ export default function GroupPhotoPage() {
               onPointerUp={event => { const current = drag.current; drag.current = null; setDragPosition(null); if (current?.moved) { const p = point(event.clientX, event.clientY); if (p) void savePlacement(current.id, p.x, p.y); } }}
               onPointerCancel={() => { drag.current = null; setDragPosition(null); }}
               onKeyDown={event => { const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }; const d = directions[event.key]; if (d) { event.preventDefault(); const step = event.shiftKey ? 10 : 2; void savePlacement(placement.alterId, Math.max(5, Math.min(95, placement.tokenX + d[0] * step)), Math.max(5, Math.min(95, placement.tokenY + d[1] * step))); } }}>
-              {person?.name ?? "Private person"}
+              <span aria-hidden="true" className="placed-token-handle">⠿</span>{person?.name ?? "Private person"}
             </button>;
           })}
-        </div>
+        </div></div>
+        {finishedPhoto && <figure className="finished-photo">
+          <figcaption><div><h3>Finished group photo</h3><p>Saved privately.{finishedPhoto.sourceVersion !== project.version ? " Your scene has changed since this photo was finished." : ""}</p>{finishedPhoto.costMode === "ECONOMY" && <p><strong>Economy output:</strong> verify identity details before relying on this image. It is not automatically canon.</p>}</div><div className="finished-photo-actions"><a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a><a href={`/images?repairKind=group&repairId=${finishedPhoto.id}`}>Repair image</a></div></figcaption>
+          {/* Private images must load through the owner's session, never the public optimizer. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} alt="Finished group photo" onError={() => setPhotoError(true)} onLoad={() => setPhotoError(false)} />
+          {photoError && <p role="alert">The saved photo could not be displayed. Reopen this scene to try loading it again.</p>}
+        </figure>}
       </div>
-      <aside className="panel people-tray"><h2>People</h2><p>Select a person, then tap the scene to place them. Appearance references preserve their identity.</p>{people.length === 0 ? <p>No private people are available yet. Add them in People first.</p> : <ul>{people.map((person) => <li key={person.id}><button className={`person-token ${selectedId === person.id ? "selected" : ""}`} type="button" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", person.id)} onClick={() => setSelectedId(person.id)}><span aria-hidden="true">{person.profilePicture ? "●" : "○"}</span>{person.name}<small>{placed.has(person.id) ? "Placed" : person.appearanceReferenceImageIds?.length ? "Appearance reference selected" : "Needs selected appearance reference"}</small></button></li>)}</ul>}
+      <aside className="people-tray"><div className="people-tray-heading"><h2>People</h2><p>Select someone, then place them on the photo.</p></div>{people.length === 0 ? <p>No private people are available yet. Add them in People first.</p> : <ul>{people.map((person) => <li key={person.id}><button className={`person-token ${selectedId === person.id ? "selected" : ""}`} type="button" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", person.id)} onClick={() => setSelectedId(person.id)} aria-pressed={selectedId === person.id}><span aria-hidden="true" className="person-token-mark">{selectedId === person.id ? "✓" : person.profilePicture ? "●" : "○"}</span><span>{person.name}<small>{placed.has(person.id) ? "Placed" : person.appearanceReferenceImageIds?.length ? "Reference ready" : "Needs appearance reference"}</small></span></button></li>)}</ul>}
         {selected && <section className="placement-controls" aria-labelledby="placement-controls-heading">
           <h3 id="placement-controls-heading">Move {selected.name}</h3>
           <p>{selectedPlacement ? `${selectedPlacement.tokenX}% from left · ${selectedPlacement.tokenY}% from top` : "Tap the scene or add at center, then move."}</p>
           {!selectedPlacement && <button type="button" disabled={busy || rendering} onClick={() => void savePlacement(selected.id, 50, 50)}>Add at center</button>}
-          <div className="placement-grid">{([["Move left", -5, 0], ["Move right", 5, 0], ["Move up", 0, -5], ["Move down", 0, 5]] as const).map(([label, dx, dy]) => <button key={label} type="button" disabled={busy || rendering || !selectedPlacement} onClick={() => move(dx, dy)}>{label}</button>)}</div>
+          <div className="placement-grid move-grid">{([["Move left", "left", -5, 0], ["Move up", "up", 0, -5], ["Move down", "down", 0, 5], ["Move right", "right", 5, 0]] as const).map(([label, direction, dx, dy]) => <button key={label} aria-label={label} title={label} type="button" disabled={busy || rendering || !selectedPlacement} onClick={() => move(dx, dy)}><ArrowIcon direction={direction} /></button>)}</div>
           <h3>Arrange</h3><p>Layer order, from behind to in front.</p>
-          <div className="placement-grid">{([["Bring Forward", "forward"], ["Send Backward", "backward"], ["Bring to Front", "front"], ["Send to Back", "back"]] as const).map(([label, action]) => <button key={action} type="button" disabled={busy || rendering || !selectedPlacement} onClick={() => void arrange(action)}>{label}</button>)}</div>
-          <ol aria-label="Layer order, back to front">{[...project.placements].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id)).map(p => <li key={p.id}>{people.find(person => person.id === p.alterId)?.name ?? "Private person"}</li>)}</ol>
+          <div className="placement-grid arrange-grid">{([["Bring Forward", "forward", "up"], ["Send Backward", "backward", "down"], ["Bring to Front", "front", "up"], ["Send to Back", "back", "down"]] as const).map(([label, action, direction]) => <button key={action} type="button" disabled={busy || rendering || !selectedPlacement} onClick={() => void arrange(action)}><LayersIcon direction={direction} />{label}</button>)}</div>
+          <div className="layer-order"><h4>Layer order</h4><ol aria-label="Layer order, back to front">{[...project.placements].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id)).map(p => <li key={p.id}>{people.find(person => person.id === p.alterId)?.name ?? "Private person"}</li>)}</ol></div>
         </section>}
-
       </aside>
     </section>}
+    {project && <section className="photo-finisher" aria-label="Finish group photo">
+      <div className="photo-finisher-status"><p className="group-photo-notice" role="status">{notice}</p>{latestRender?.state === "FAILED" && <p role="alert">{latestRender.errorMessage}</p>}</div>
+      <div className="photo-finisher-actions"><ImageAllowanceNotice compact refreshKey={`${latestRender?.id}:${latestRender?.state}`} onChange={setImageAllowance} />
+        <button className="button" type="button" disabled={busy || rendering || !project.placements.length || finisherAvailable === false || imageAllowance?.mode === "PAUSED"} onClick={() => void finishPhoto()}>{rendering ? "Finishing photo…" : latestRender?.state === "FAILED" ? "Try finishing again" : "Finish photo"}</button>
+      </div>
+      {imageAllowance?.mode === "PAUSED" && <p className="photo-finisher-unavailable">Paid images are paused until the displayed daily reset. Your saved scene remains available.</p>}
+      {finisherAvailable === false && <p className="photo-finisher-unavailable">Photo finishing is not connected yet. You can keep arranging and saving this scene.</p>}
+    </section>}
+    {!project && <p className="notice" role="status">{notice}</p>}
   </main>;
 }

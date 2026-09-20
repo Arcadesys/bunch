@@ -1,5 +1,6 @@
 import { getPilotService, type PilotIdentity } from "./pilot-service";
 import { getAuth0Client, isAuth0Configured } from "@/lib/auth0";
+import { SystemError } from "./system-error";
 
 export function ownerIdFromAuth0Subject(subject: string) {
   const normalized = subject.trim();
@@ -38,7 +39,10 @@ export async function requireOwnerId(request?: Request): Promise<string> {
   if (process.env.SYSTEM_DEMO_MODE === "true" && request?.headers.get("x-system-demo") === "local") {
     return "demo:local-user";
   }
-  throw new Error("Sign in with Google to access private System records.");
+  if (!isAuth0Configured()) {
+    throw new SystemError("AUTH_UNAVAILABLE", "Bunch sign-in is temporarily unavailable.");
+  }
+  throw new SystemError("UNAUTHORIZED", "Sign in with Google to access private System records.");
 }
 
 
@@ -48,7 +52,8 @@ export async function requirePilotIdentity(request?: Request): Promise<PilotIden
   // both the explicit test-server flag and a per-request synthetic subject.
   const e2e = e2ePilotIdentity(request);
   if (e2e) return e2e;
+  if (!isAuth0Configured()) throw new SystemError("AUTH_UNAVAILABLE", "Bunch sign-in is temporarily unavailable.");
   const session = await getAuth0Client().getSession();
-  if (!session?.user.sub) throw new Error("Sign in with Google to manage your Bunch account.");
+  if (!session?.user.sub) throw new SystemError("UNAUTHORIZED", "Sign in with Google to manage your Bunch account.");
   return { ownerId: ownerIdFromAuth0Subject(session.user.sub), email: typeof session.user.email === "string" ? session.user.email : "", emailVerified: session.user.email_verified === true };
 }

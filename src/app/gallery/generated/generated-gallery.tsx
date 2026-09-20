@@ -23,7 +23,7 @@ function PhotoCard({ photo }: { photo: GeneratedPhoto }) {
       <h2>{caption}</h2>
       {caption !== photo.description && <details><summary>Read full prompt</summary><p>{photo.description}</p></details>}
       <p><time dateTime={photo.createdAt}>{new Date(photo.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></p>
-      <div className="actions"><a className="button button-secondary" href={photo.imageUrl}>View full image</a><a className="button button-secondary" href={photo.sourceUrl}>Reopen scene</a><a className="button button-secondary" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a></div>
+      <div className="actions"><a className="button button-secondary" href={photo.imageUrl}>View full image</a><a className="button button-secondary" href={photo.sourceUrl}>Reopen scene</a><a className="button button-secondary" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a><a className="button button-secondary" href={`/images?repairKind=${photo.kind === "scene" ? "native" : "group"}&repairId=${photo.id}`}>Repair this image</a></div>
     </div>
   </li>;
 }

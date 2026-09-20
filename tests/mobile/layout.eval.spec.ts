@@ -2,11 +2,11 @@ import { test, expect } from "./fixtures";
 
 test("@eval compact phone header keeps navigation and recipient in the first screen", async ({ page }) => {
   await page.goto("/home");
-  await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What would help right now?" })).toBeVisible();
 
   const appearance = page.getByRole("link", { name: "Options", exact: true });
   const nav = page.getByRole("navigation", { name: "Bunch navigation" });
-  const heading = page.getByRole("heading", { name: "Catch-up for Test Robin", exact: true });
+  const heading = page.getByRole("heading", { name: "What would help right now?", exact: true });
   await expect(appearance).toBeVisible();
   await expect(nav.getByRole("link", { name: "Home", exact: true })).toBeVisible();
   await expect(heading).toBeVisible();
@@ -23,9 +23,9 @@ test("@eval compact phone header keeps navigation and recipient in the first scr
 test("@eval compact header controls reflow without horizontal overflow", async ({ page }) => {
   await page.goto("/home");
   await page.getByRole("link", { name: "Options", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Appearance" })).toBeVisible();
   const headerOverflow = await page.locator(".command-topbar").evaluate((header) => ({ client: header.clientWidth, scroll: header.scrollWidth }));
   expect(headerOverflow.scroll, JSON.stringify(headerOverflow)).toBeLessThanOrEqual(headerOverflow.client + 1);
-  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("system");
-  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toHaveValue("system");
+  await page.getByRole("button", { name: "Midnight", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "midnight");
 });

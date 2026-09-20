@@ -45,10 +45,15 @@ requests one fresh capability before pointing to that link.
 
 ## Configuration and release
 
-- Apply `drizzle/0018_native_scene_render.sql` before deploying the new application.
+- Apply all migrations through `drizzle/0023_ai_spend_ledger.sql` before deploying. This preserves the attempt backfill and adds versioned cost metadata without storing prompts or private-media identifiers.
 - Reuse the existing server-only `OPENAI_API_KEY` and private Blob configuration.
-- `NATIVE_SCENE_MODEL` optionally selects the image model. The provider supports prompt-only generation and reference-conditioned edits, following the [official Image API guide](https://developers.openai.com/api/docs/guides/image-generation).
-- `NATIVE_SCENE_DAILY_LIMIT` bounds native generation attempts per owner per day; the default is 20. Failed attempts also count because a provider call may have been billed. This is an attempt cap, not a guaranteed dollar budget.
+- `AI_COST_ROUTING_STAGE` controls rollout: `shadow` (default) records the current Sunburst/high path, `operator` enables routing and dollar gates only for the operator, `pilot` enables them for all pilot accounts, and `off` restores the configured legacy Sunburst/high route while retaining telemetry, the count allowance, and the hard daily spend pause. `NATIVE_SCENE_MODEL` and `GROUP_PHOTO_MODEL` remain legacy/off-route overrides.
+- Active routing uses GPT Image 2 medium for prompt-only scenes, Sunburst high for reference-sensitive generation/repair/photo finishing, and GPT Image 2 low after the $0.10 daily soft limit. At $0.25, paid images pause until Chicago midnight. The existing 10-use FRIEND limit remains independent.
+- Every active FRIEND account has **10 shared image uses per Chicago calendar day**. `NATIVE_SCENE_DAILY_LIMIT` now controls the OPERATOR/legacy default only (20). Account → Pilot image allowances lets the active operator override any account with 0–1000 uses or clear the override. Zero blocks new requests.
+- Native generation, repairs and Group Photo finishing share `image_usage`. Admission and job creation run under the owner row lock. Replays do not reserve again. The admission day stays fixed across midnight, regardless of worker start time.
+- Reservations reduce remaining uses immediately. Only failures before dispatch release them; provider failures, uncertain timeouts and storage failures after dispatch count. Deleting outputs never refunds dispatched uses. Expiry never retries a provider call.
+- `GET /api/v1/image-allowance` returns the count allowance, current dollar spend, routing stage/mode, limits, reset time, and next prompt-only/identity-sensitive routes. Native/group responses and MCP expose the same accounting. Resets are midnight America/Chicago, including daylight-saving changes; UI shows the local equivalent.
+- The ledger stores model, quality, size, action, route, reference count, versioned price basis, modality-specific token usage, and estimated/confirmed microdollar cost. It never stores prompts, reference IDs, provider messages, or private image bytes. Provider-confirmed usage replaces the conservative dispatch estimate when the response contains a complete modality breakdown.
 - Private scene outputs are independent artifacts. Generating does not change anyone's profile picture, appearance references, hosting or fronting.
 
 ## Execution and privacy
@@ -64,3 +69,13 @@ Account export includes owner-authorized downloads for generated images. Account
 Win condition: a prompt submitted through Bunch produces a real private image that decodes in the page and reopens with the same saved hash. A named two-person scene additionally preserves every selected reference.
 
 Verification records will distinguish schema/static checks, provider contract tests, PostgreSQL persistence/erasure/replay tests, browser interaction tests, and the real-provider rendered check. Mocked image fixtures are not evidence of real generation or identity fidelity.
+
+## Repairs
+
+Use **Repair this image** from image history, either gallery, or a finished Group Photo. The Images page also lists available private sources. A correction makes a separate native image job using `repairSource: { kind: "private" | "native" | "group", id }` and the existing `scene` field. Repair jobs reject additional named people, retain source orientation at supported provider sizes, and preserve the original. The MCP `repair_image` tool accepts `source`, `correction`, and a stable `requestId`; `get_image_allowance` reports the shared balance.
+
+Repair jobs snapshot all ancestor person dependencies and link to their immediate source with cascading foreign keys. Source ownership and existence, profile versions, and active account access are checked before dispatch and attachment. Person erasure includes repair descendants. Private-source deletion removes descendant bytes and jobs; account export/deletion includes repairs and usage. The existing `pilot:admin reconcile-uploads` command also removes orphaned generated outputs while preserving attached generations, group photos, and backgrounds.
+
+Storage is separate from daily uses. Before dispatch, the service requires the existing storage policy and at least 5 MB of remaining storage for a pilot account, matching the maximum normalized output. Concurrent uploads can still consume this headroom; upload reservation remains authoritative.
+
+For rollout, run the database and browser checks, apply migrations, deploy, then perform one authenticated real generation and one repair. Verify both images decode and their saved hashes survive reopening. A configured key, successful build, or synthetic fixture alone does not establish provider access or live image quality.

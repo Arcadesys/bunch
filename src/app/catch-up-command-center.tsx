@@ -56,13 +56,13 @@ async function requestCatchUp(periodId?: string) {
 
 type CatchUpLoadState = "loading" | "ready" | "unauthorized" | "error";
 
-export function CatchUpCommandCenter({ initialView = "CATCH_UP" }: { initialView?: CommandView }) {
+export function CatchUpCommandCenter({ initialView = "CATCH_UP", focused = false, quiet = false }: { initialView?: CommandView; focused?: boolean; quiet?: boolean }) {
   if (initialView === "BOARD" || initialView === "NOTES" || initialView === "THREADS") return <SavedRecords key={initialView} view={initialView} />;
-  return <CatchUpView initialView={initialView} />;
+  return <CatchUpView initialView={initialView} focused={focused} quiet={quiet} />;
 }
 
-function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
-  const [overwhelmed, setOverwhelmed] = useState(false);
+function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" | "HISTORY"; focused: boolean; quiet: boolean }) {
+  const [overwhelmed, setOverwhelmed] = useState(quiet);
   const nextStepHeading = useRef<HTMLHeadingElement>(null);
   const [frontRefresh,setFrontRefresh] = useState(0);
   const selectedPeriod = useRef<string | undefined>(undefined);
@@ -169,12 +169,13 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
   return <main className="command-shell task-home">
     <AppNavigation current={initialView} />
     <section className="command-main">
+      {focused ? <Link className="tool-home-link" href="/home">← Home</Link> : null}
       <section className="command-hero" aria-labelledby="welcome-heading">
 
         <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Help me resume my day.</p></div>
         {loadState === "unauthorized" ? <a className="command-button" href="/auth/login">Sign in with Google</a> : null}
       </section>
-      <nav className="home-tasks" aria-label="Things you can do">
+      {!focused ? <nav className="home-tasks" aria-label="Things you can do">
         <h2>Choose an action</h2>
         <div className="home-task-grid">
           <a href="#catch-up-records">Read my catch-up</a>
@@ -186,7 +187,7 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
           <Link href="/account#gallery-share-heading">Share photo gallery</Link>
           <Link href="/threads#create-record">Save a thread</Link>
         </div>
-      </nav>
+      </nav> : null}
       <section id="catch-up-records" tabIndex={-1} className="home-catch-up" aria-labelledby="catch-up-section-heading">
       <h2 id="catch-up-section-heading">Your catch-up</h2>
       <p>Read what was saved for this recorded period. Mark reviewed means you’ve read it; a todo stays open until you complete it in Todos.</p>
@@ -220,13 +221,18 @@ function CatchUpView({ initialView }: { initialView: "CATCH_UP" | "HISTORY" }) {
       </>}
       <a className="task-return" href="#welcome-heading">Back to Home actions</a>
       </section>
-      <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
+      {focused ? <section className="home-presence focused-presence" aria-labelledby="current-presence-heading">
+        <h2 id="current-presence-heading">Current presence record</h2>
+        <p>Review the last saved record here. Use Switch above to record an explicit change.</p>
+        <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
+      </section> : null}
+      {!focused ? <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
         <h2 id="hosting-actions-heading">Hosting and fronting controls</h2>
         <p>Choose a current fronter’s catch-up, or explicitly record a change. Hosting and fronting are separate records.</p>
         <FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} />
         <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
         <a className="task-return" href="#welcome-heading">Back to Home actions</a>
-      </section>
+      </section> : null}
     </section>
   </main>;
 }

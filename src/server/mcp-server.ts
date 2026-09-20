@@ -4,7 +4,7 @@
 
 import { compositionGuidance } from "@/domain/group-photo";
 import { connectPrivateSystemTool, registerDemoSystemTool } from "./demo-mcp-server";
-import { buildAlterImagePrompt, furrySceneInputSchema, imagePromptInputSchema, imagePromptResultSchema } from "@/domain/image-prompt";
+import { furrySceneInputSchema, imagePromptInputSchema, imagePromptResultSchema } from "@/domain/image-prompt";
 import { prepareAlterImagePrompt, prepareFurryScene } from "@/server/image-prompt";
 import { getGroupPhotoService } from "@/server/group-photo-service";
 import { ConversationSummaryService } from "./conversation-summary-service";
@@ -45,8 +45,8 @@ import {
   uuidSchema,
   versionMutationSchema,
 } from "@/domain/contracts";
-import { issueFurryResultUploadCapability, issueImageReadCapability, issueImageUploadCapability, issueSceneImageReadCapability } from "@/server/mcp-authorization";
-import { prepareFurryTransformSchema, setAlterAppearanceSchema } from "@/domain/contracts";
+import { issueImageReadCapability, issueImageUploadCapability, issueSceneImageReadCapability } from "@/server/mcp-authorization";
+import { setAlterAppearanceSchema } from "@/domain/contracts";
 import { repository, type SystemRepository } from "@/server/repository";
 import { draftSchema, noteSchema, preferenceSchema, resolveDraftSchema } from "@/server/schemas";
 import { registerSystemSkill } from "@/server/system-skill";
@@ -57,8 +57,12 @@ import { importantThreadCreateSchema, catchUpSessionSchema, setCatchUpItemStateS
 import { catchUpWidget } from "@/server/companion-widget";
 import { lineupWidget } from "@/server/lineup-widget";
 import { sceneWidget } from "@/server/scene-widget";
-import { nativeSceneInputSchema, nativeSceneRenderSchema, type NativeSceneRender } from "@/domain/native-scene";
+import { nativeSceneInputSchema, nativeSceneRenderSchema, imageAllowanceSchema, repairSourceSchema, type NativeSceneRender } from "@/domain/native-scene";
 import { getNativeSceneService, type NativeSceneService } from "@/server/native-scene-service";
+import { getMcpUsageService } from "@/server/mcp-usage-service";
+import { getPilotService } from "@/server/pilot-service";
+import { createHash } from "node:crypto";
+import { COMPANION_SCOPE } from "@/server/mcp-authorization";
 
 // The authority in these ui:// URIs is a frozen cache key, not an address. Live
 // ChatGPT conversations hold the tool-to-resource mapping and keep requesting the
@@ -84,6 +88,32 @@ const coverageOutputSchema = z.object({ draft: coverageSchema });
 const noteOutputSchema = z.object({ note: legacyNoteViewSchema });
 const preferenceOutputSchema = z.object({ preference: preferenceViewSchema });
 const privateGalleryOutputSchema = z.object({ url: z.string().url() });
+const usageStatsSchema = z.object({
+  windowDays: z.number().int(),
+  totalInvocations: z.number().int(),
+  totalErrors: z.number().int(),
+  byTool: z.array(z.object({ tool: z.string(), count: z.number().int(), errors: z.number().int() })),
+  byDay: z.array(z.object({ day: z.string(), count: z.number().int() })),
+  byOwner: z.array(z.object({ ownerId: z.string(), count: z.number().int() })),
+  aiSpend: z.object({
+    totalUsd: z.number(), meaningfulActions: z.number().int(), costPerActionUsd: z.number(), activeUserDays: z.number().int(), costPerActiveUserDayUsd: z.number(),
+    chargedFailures: z.number().int(), estimatedRows: z.number().int(), economyActions: z.number().int(),
+    byAction: z.array(z.object({ action: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byModelQuality: z.array(z.object({ model: z.string(), quality: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byAccount: z.array(z.object({ ownerId: z.string(), costUsd: z.number(), actions: z.number().int() })),
+    byDay: z.array(z.object({ day: z.string(), costUsd: z.number(), actions: z.number().int() })),
+  }),
+});
+const accountProfileSchema = z.object({
+  id: z.string().min(1).regex(/\S/).describe("Opaque profile identifier, unique within Bunch and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile."),
+  name: z.string().describe("Display name for the authenticated Bunch profile.").optional(),
+  email: z.string().email().describe("Email address for display; not used as the profile identity.").optional(),
+  nickname: z.string().describe("A useful label that helps distinguish connected Bunch profiles.").optional(),
+}).strict();
+
+export function accountProfileId(ownerId: string) {
+  return `bunch_${createHash("sha256").update("bunch-account-profile\0").update(ownerId).digest("base64url").slice(0, 24)}`;
+}
 
 const importantThreadSuggestionViewSchema = importantThreadCreateSchema.extend({
   id: uuidSchema,
@@ -177,16 +207,50 @@ function requiredPublicOrigin() {
   return origin;
 }
 
-export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository, summaryOverride?: ConversationSummaryService, scheduleNativeScene?: (ownerId: string, renderId: string) => void, nativeSceneServiceOverride?: Pick<NativeSceneService, "start" | "get" | "list">) {
+export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<typeof getSystemService>, catchUpOverride?: ReturnType<typeof getCatchUpService>, profileRepository: Pick<SystemRepository, "listProfiles"> = repository, summaryOverride?: ConversationSummaryService, scheduleNativeScene?: (ownerId: string, renderId: string) => void, nativeSceneServiceOverride?: Pick<NativeSceneService, "start" | "get" | "list"> & Partial<Pick<NativeSceneService, "allowance">>, loadAccount?: (ownerId: string) => Promise<{ display_name: string } | null>) {
   const server = new McpServer({ name: "Working Monkeys", version: "0.7.0" }, { instructions: "Use Working Monkeys only for owner-authorized private records. Use get_current_presence to distinguish hosting responsibility from overlapping fronting episodes. Record hosting with set_system_host and independently start/end fronting episodes only after explicit user statements. Never infer an end or absence. Use a selected periodId for saved-record catch-up. An explicit self-identification may offer conversation catch-up but never authorizes a front switch. After a confirmed arrival, automatically prepare conversation catch-up and summarize available messages in ChatGPT without another catch-up confirmation. Follow the mutation result instructions to select the exact arrival; do not repeat a summary on a replay. For a separate explicit catch-up request, resolve the named profile with list_alters, call prepare_conversation_catch_up, and use only host capabilities actually available to read messages in the requested window. Report topics, decisions, open matters, source links, and coverage gaps. System does not automatically receive ChatGPT history: if the host lacks access, say that Working Monkeys supplied dates but the host cannot retrieve other conversations, then offer selected conversations or a capable host. For a fronting episode, retrieve its catch-up session and every get_episode_records page, read get_episode_review for the current revision, then save_episode_review_v1. Distinguish Bunch records from available memory and conversation context, and label missing coverage or an unknown prior end. For legacy or separately selected windows, call save_conversation_catch_up with the exact dates, summary, and coverage gaps. Save it for 30 days using one requestId reused on retries. Never persist raw transcripts. Retrieve prior summaries with list_conversation_catch_ups/get_conversation_catch_up; do not treat a saved summary as new source evidence. For notes, preserve the approved body and record an actor only when named. For the profile lineup or selected profile pictures, use render_alter_lineup. The catch-up widget shows saved records only, and its review actions never complete underlying tasks. For saving an important thread, use suggest_important_thread only with the user-approved link, summary, key decision or action, flagger, and recipients. Then use confirm_important_thread only after the user explicitly approves that specific suggestion. Never save raw transcripts. For photos, use the authenticated private gallery or the existing private upload workflow so bytes transfer directly to private storage; never expose image bytes or storage keys to the model. To draw named alters, call generate_scene directly with their exact names. The prepare image tools only build packets for external image-studio adapters; a chat host's own image tool cannot receive their private references. Never draw a named alter from text or reference IDs alone, and never ask the user to upload a photo Bunch already holds. The scene widget follows the job and shows the finished private image in chat. If the host cannot render the companion widget, use open_private_photo_gallery to give the user the authenticated browser fallback instead." });
+  // Every tool call funnels through this wrapper, so invocation counts cover
+  // reads and writes alike (activity_event only ever logged mutations). The
+  // cast preserves registerTool's generic signature for every call site below.
+  type RegisterTool = typeof server.registerTool;
+  const usage = getMcpUsageService();
+  const rawRegisterTool: RegisterTool = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: unknown, cb: (...cbArgs: unknown[]) => unknown) => rawRegisterTool(name, config as never, (async (...cbArgs: unknown[]) => {
+    const startedAt = Date.now();
+    try {
+      const result = await cb(...cbArgs);
+      await usage.record(ownerId, name, Date.now() - startedAt, Boolean((result as { isError?: boolean } | undefined)?.isError));
+      return result;
+    } catch (error) {
+      await usage.record(ownerId, name, Date.now() - startedAt, true);
+      throw error;
+    }
+  }) as never)) as RegisterTool;
   registerSystemSkill(server);
   registerDemoSystemTool(server);
   server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({
     structuredContent: { mode: "private", authenticated: true },
     content: [{ type: "text", text: "Connected to your private Bunch system. Refresh tools/list, then use get_companion_state for your own records. Demo system remains available only when explicitly requested." }],
   }));
+  server.registerTool("get_account_profile", {
+    title: "Get connected Bunch account",
+    description: "Read the stable, non-sensitive profile for the Bunch account authorized by this connection. Use it to distinguish connected accounts; it never accepts an owner ID and never exposes the authentication subject.",
+    inputSchema: z.object({}).strict(),
+    outputSchema: accountProfileSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: {
+      "openai/profile": true,
+      securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }],
+    },
+  }, async () => {
+    const account = await (loadAccount ?? ((id: string) => getPilotService().account(id)))(ownerId);
+    const profile = account?.display_name.trim()
+      ? { id: accountProfileId(ownerId), name: account.display_name.trim() }
+      : { id: accountProfileId(ownerId) };
+    return { structuredContent: profile, content: [{ type: "text", text: JSON.stringify(profile) }] };
+  });
   const publicOrigin = requiredPublicOrigin();
-  const widgetMeta = { ui: { csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "Bunch catch-up with clear review actions and accessible record filters.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] } };
+  const widgetMeta = { ui: { domain: publicOrigin, csp: { connectDomains: [publicOrigin], resourceDomains: [publicOrigin] }, prefersBorder: true }, "openai/widgetDescription": "Bunch catch-up with clear review actions and accessible record filters.", "openai/widgetCSP": { connect_domains: [publicOrigin], resource_domains: [publicOrigin] }, "openai/widgetDomain": publicOrigin };
   server.registerResource("system-companion", WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: widgetMeta }, async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: catchUpWidget(publicOrigin), _meta: widgetMeta }] }));
   const lineupMeta = { ...widgetMeta, "openai/widgetDescription": "Bunch profile lineup with selected private profile pictures." };
   server.registerResource("system-alter-lineup", LINEUP_WIDGET_URI, { mimeType: "text/html;profile=mcp-app", _meta: lineupMeta }, async () => ({ contents: [{ uri: LINEUP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: lineupWidget(publicOrigin), _meta: lineupMeta }] }));
@@ -232,7 +296,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   server.registerTool("confirm_important_thread", { title: "Confirm important thread", description: "Confirm a specific thread suggestion after the user approves its title, summary, key decision or action, flagger, and recipients.", inputSchema: { threadId: uuidSchema, expectedVersion: z.number().int().positive(), requestId: uuidSchema }, outputSchema: { data: importantThreadConfirmationViewSchema, meta: responseMetaSchema }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ threadId, expectedVersion, requestId }) => { const result = await catchUp().confirmThread(ownerId, threadId, expectedVersion, requestId, "MCP"); return { structuredContent: { data: result.data, meta: { requestId, replayed: result.replayed } }, content: [{ type: "text", text: "Confirmed the important thread. It can appear in the next eligible catch-up." }] }; });
   const summaries = () => summaryOverride ?? new ConversationSummaryService();
   server.registerTool("save_episode_review_v1", {
-    title: "Save fronting return review", description: "Save a user-reviewed, host-composed review for an exact fronting catch-up session. Do not call this until the user has reviewed the brief and explicitly authorizes the write. Read get_episode_review first for expectedRevision. Use Overview, attention now, and significant changes; distinguish DIDdy references from available memory/context and describe missing coverage. No model API call occurs. Reuse requestId on retries. Content expires after 30 days; saving never changes presence or source records.",
+    title: "Save fronting return review", description: "Save a user-reviewed, host-composed review for an exact fronting catch-up session. Do not call this until the user has reviewed the brief and explicitly authorizes the write. Read get_episode_review first for expectedRevision. Use Overview, attention now, and significant changes; distinguish Bunch references from available memory/context and describe missing coverage. No model API call occurs. Reuse requestId on retries. Content expires after 30 days; saving never changes presence or source records.",
     inputSchema: saveEpisodeReviewSchema.shape, outputSchema: { id: uuidSchema, expiresAt: z.string().datetime(), revision: z.number().int(), catchUpSessionId: uuidSchema, alterId: uuidSchema, replayed: z.boolean() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async input => { const result = await summaries().saveEpisodeReview(ownerId,input); return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] }; });
@@ -361,52 +425,52 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
 
   const imagePrepareSchema = z.object({ ready: z.literal(true), filename: z.string(), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) });
   server.registerTool("prepare_private_image_upload", { title: "Prepare private image upload", description: "Use this only after the user selects an image in the System ChatGPT companion and identifies its profile. It creates a one-time short-lived private upload capability; it does not expose image contents to the model.", inputSchema: { alterId: z.string().uuid(), filename: z.string().min(1).max(255), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) }, outputSchema: imagePrepareSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async ({ alterId, filename, contentType }) => { const profiles = await repository.listProfiles(ownerId); if (!profiles.some((profile) => profile.id === alterId)) throw new Error("Profile not found."); const capability = issueImageUploadCapability(ownerId, alterId); return { structuredContent: { ready: true as const, filename, contentType }, content: [{ type: "text", text: "Prepared a private image transfer." }], _meta: { uploadEndpoint: `${requiredPublicOrigin()}/api/mcp-image-upload`, uploadCapability: capability } }; });
-  server.registerTool("prepare_furry_result_upload", { title: "Prepare generated keeper save", description: "Use only after the user explicitly chooses a generated Furry Image Studio result to save to one named alter's private gallery. It issues a short-lived capability bound to that alter and requestId. It does not promote a profile picture or change hosting/fronting.", inputSchema: { alterId: uuidSchema, requestId: uuidSchema, filename: z.string().min(1).max(255), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) }, outputSchema: imagePrepareSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ alterId, requestId, filename, contentType }) => { await service.getAlter(ownerId, alterId); const capability = issueFurryResultUploadCapability(ownerId, alterId, requestId); return { structuredContent: { ready: true as const, filename, contentType }, content: [{ type: "text", text: "Prepared the selected generated keeper for private gallery storage. Profile picture and presence are unchanged." }], _meta: { uploadEndpoint: `${requiredPublicOrigin()}/api/mcp-furry-result-upload`, uploadCapability: capability } }; });
-
   server.registerTool("prepare_alter_image_prompt", { title: "Prepare canonical image prompt", description: "Prepare a canonical prompt packet for an external image studio whose adapter attaches the private appearance references in metadata. It generates nothing, and a chat host's own image tool cannot receive those references. To draw named alters in chat, call generate_scene directly with their exact names instead. Use alters: 'all' for every non-archived profile. Resolve NEEDS_INFORMATION before generating; never omit someone.", inputSchema: imagePromptInputSchema.shape, outputSchema: imagePromptResultSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => withSceneRoute(await prepareAlterImagePrompt(service, ownerId, input, publicOrigin)));
   server.registerTool("prepare_furry_scene", { title: "Prepare Furry scene", description: "Prepare a multi-character Furry scene packet for an external image-studio adapter from exact active alter names or aliases. Every participant needs selected private appearance references. This only prepares canonical identity and private metadata; it does not generate or save an image, and a chat host's own image tool cannot receive the references. To draw these people in chat, call generate_scene directly instead.", inputSchema: furrySceneInputSchema.shape, outputSchema: imagePromptResultSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => withSceneRoute(await prepareFurryScene(service, ownerId, input, publicOrigin)));
   const nativeScenes = () => nativeSceneServiceOverride ?? getNativeSceneService();
+  const imageAllowance = async () => nativeScenes().allowance?.read(ownerId);
+  server.registerTool("get_image_allowance", { title: "Image allowance", description: "Read the shared daily generation, repair and photo-finishing allowance.", inputSchema: {}, outputSchema: imageAllowanceSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, async () => {
+    const allowance = await imageAllowance();
+    if (!allowance) throw new Error("Image allowance unavailable.");
+    return { structuredContent: allowance, content: [{ type: "text", text: `${allowance.remaining} of ${allowance.limit} image uses remaining. Resets ${allowance.resetsAt}.` }] };
+  });
   const sceneToolMeta = { ui: { resourceUri: SCENE_WIDGET_URI }, "openai/outputTemplate": SCENE_WIDGET_URI };
   // A finished image reaches the chat only through the scene widget. Its
   // render-scoped capability rides in _meta, which hosts give to the widget and
   // never to the model; text and structured content carry only the job.
-  const sceneResult = (render: NativeSceneRender, started: boolean) => {
+  const sceneResult = async (render: NativeSceneRender, started: boolean) => {
     const browserUrl = `${publicOrigin}/images?render=${encodeURIComponent(render.id)}`;
+    const economyNotice = render.costMode === "ECONOMY" ? " Economy mode used a lower-cost route; check identity details and do not treat the result as canon automatically." : "";
     const text = render.state === "COMPLETE"
-      ? `Private scene generated and saved. The Bunch scene widget shows it in this chat. Display is not confirmed; do not describe the image as visible without checking the rendered widget. If the host cannot render widgets, open its authenticated preview: ${browserUrl}`
+      ? `Private scene generated and saved.${economyNotice} The Bunch scene widget shows it in this chat. Display is not confirmed; do not describe the image as visible without checking the rendered widget. If the host cannot render widgets, open its authenticated preview: ${browserUrl}`
       : render.state === "FAILED"
         ? `Private scene generation failed. Do not retry automatically; offer a new explicit generation. Authenticated record: ${browserUrl}`
-        : `${started ? "Private scene generation started" : `Private scene generation is ${render.state.toLowerCase()}`}. The Bunch scene widget follows the job and shows the image in this chat when it completes; do not describe the image before then. If the host cannot render widgets, check get_scene_generation or open its authenticated preview: ${browserUrl}`;
+        : `${started ? "Private scene generation started" : `Private scene generation is ${render.state.toLowerCase()}`}.${economyNotice} The Bunch scene widget follows the job and shows the image in this chat when it completes; do not describe the image before then. If the host cannot render widgets, check get_scene_generation or open its authenticated preview: ${browserUrl}`;
     const sceneImage = render.state === "COMPLETE" ? { src: `${publicOrigin}/api/system/native-scenes/inline/${encodeURIComponent(render.id)}?cap=${encodeURIComponent(issueSceneImageReadCapability(ownerId, render.id))}` } : undefined;
-    return { structuredContent: render, content: [{ type: "text" as const, text }], _meta: sceneImage ? { browserUrl, sceneImage } : { browserUrl } };
+    const allowance = await imageAllowance();
+    return { structuredContent: { ...render, ...(allowance ? { allowance } : {}) }, content: [{ type: "text" as const, text }], _meta: sceneImage ? { browserUrl, sceneImage } : { browserUrl } };
   };
-  server.registerTool("generate_scene", { title: "Generate private scene", description: "Generate a new private Bunch image from a scene and optional exact active alter names. Bunch attaches every selected appearance reference server-side, so use this to draw named alters whenever the host's own image tool cannot receive private references; never ask the user to upload a photo Bunch already holds. This starts a job that the Bunch scene widget follows until it shows the finished image in chat. It never changes profile pictures, appearance references, hosting, fronting, or canon.", inputSchema: nativeSceneInputSchema.shape, outputSchema: nativeSceneRenderSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, _meta: { ...sceneToolMeta, "openai/toolInvocation/invoking": "Starting private scene…", "openai/toolInvocation/invoked": "Private scene job recorded." } }, async input => {
+  server.registerTool("repair_image", { title: "Repair private image", description: "Repair an owner-authorized private, native or group image by ID. Describe only the requested correction. Costs one shared image use; saves a new image and preserves the original.", inputSchema: { source: repairSourceSchema, correction: z.string().trim().min(1).max(5000), requestId: uuidSchema }, outputSchema: { ...nativeSceneRenderSchema.shape, allowance: imageAllowanceSchema.optional() }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, _meta: sceneToolMeta }, async ({ source, correction, requestId }) => {
+    if (!scheduleNativeScene) throw new Error("NATIVE_SCENE_DISPATCH_UNAVAILABLE");
+    const render = await nativeScenes().start(ownerId, { repairSource: source, scene: correction, requestId });
+    if (render.state === "QUEUED") scheduleNativeScene(ownerId, render.id);
+    return sceneResult(render, true);
+  });
+  server.registerTool("generate_scene", { title: "Generate private scene", description: "Generate a new private Bunch image from a scene and optional exact active alter names. Bunch attaches every selected appearance reference server-side, so use this to draw named alters whenever the host's own image tool cannot receive private references; never ask the user to upload a photo Bunch already holds. This starts a job that the Bunch scene widget follows until it shows the finished image in chat. It never changes profile pictures, appearance references, hosting, fronting, or canon.", inputSchema: nativeSceneInputSchema.shape, outputSchema: { ...nativeSceneRenderSchema.shape, allowance: imageAllowanceSchema.optional() }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, _meta: { ...sceneToolMeta, "openai/toolInvocation/invoking": "Starting private scene…", "openai/toolInvocation/invoked": "Private scene job recorded." } }, async input => {
     if (!scheduleNativeScene) throw new Error("NATIVE_SCENE_DISPATCH_UNAVAILABLE");
     const render = await nativeScenes().start(ownerId, input);
     if (render.state === "QUEUED") scheduleNativeScene(ownerId, render.id);
     return sceneResult(render, true);
   });
-  server.registerTool("get_scene_generation", { title: "Get private scene generation", description: "Read one private Bunch image-generation job. The Bunch scene widget shows a completed image in chat. A completed image remains private and does not promote canon.", inputSchema: { id: uuidSchema }, outputSchema: nativeSceneRenderSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: { ...sceneToolMeta, "openai/widgetAccessible": true } }, async ({ id }) => sceneResult(await nativeScenes().get(ownerId, id), false));
-  server.registerTool("list_scene_generations", { title: "List private scene generations", description: "List recent private Bunch image-generation jobs without exposing image bytes or storage details.", inputSchema: {}, outputSchema: { renders: z.array(nativeSceneRenderSchema) }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async () => {
+  server.registerTool("get_scene_generation", { title: "Get private scene generation", description: "Read one private Bunch image-generation job. The Bunch scene widget shows a completed image in chat. A completed image remains private and does not promote canon.", inputSchema: { id: uuidSchema }, outputSchema: { ...nativeSceneRenderSchema.shape, allowance: imageAllowanceSchema.optional() }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: { ...sceneToolMeta, "openai/widgetAccessible": true } }, async ({ id }) => sceneResult(await nativeScenes().get(ownerId, id), false));
+  server.registerTool("list_scene_generations", { title: "List private scene generations", description: "List recent private Bunch image-generation jobs without exposing image bytes or storage details.", inputSchema: {}, outputSchema: { renders: z.array(nativeSceneRenderSchema), allowance: imageAllowanceSchema.optional() }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async () => {
     const renders = await nativeScenes().list(ownerId);
-    return { structuredContent: { renders }, content: [{ type: "text", text: `Listed ${renders.length} private scene generation${renders.length === 1 ? "" : "s"}. Open the authenticated Images page to view completed images.` }], _meta: { browserUrl: `${publicOrigin}/images` } };
+    return { structuredContent: { renders, allowance: await imageAllowance() }, content: [{ type: "text", text: `Listed ${renders.length} private scene generation${renders.length === 1 ? "" : "s"}. Open the authenticated Images page to view completed images.` }], _meta: { browserUrl: `${publicOrigin}/images` } };
   });
 
-  const furryTransformOutputSchema = z.object({ alter: z.object({ id: uuidSchema, name: z.string(), appearanceNotes: z.string().optional() }), referenceCount: z.number().int().nonnegative(), snapshotRequired: z.literal(true), mediaHandoff: z.literal("HOST_ADAPTER_REQUIRED") });
   server.registerTool("set_alter_appearance", { title: "Set private appearance references", description: "Set the selected private appearance-reference photos and optional appearance notes for one alter. These are independent of the profile picture and never affect hosting or fronting.", inputSchema: { alterId: uuidSchema, ...setAlterAppearanceSchema.shape }, outputSchema: alterResponseSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ alterId, ...input }) => {
     const result = await service.setAlterAppearance(ownerId, alterId, input, "MCP");
     return { structuredContent: { data: result.data, meta: { requestId: input.requestId, replayed: result.replayed } }, content: [{ type: "text", text: "Saved the selected private appearance references. Profile picture and presence are unchanged." }] };
-  });
-  server.registerTool("prepare_furry_transform", { title: "Prepare Furry Image Studio transform", description: "Use only when the user explicitly names the alter they want to become and has attached their snapshot. Resolves the exact private alter, provides selected appearance notes and reference media through metadata only, and never changes hosting, fronting, or the profile picture. The host adapter must attach the metadata media to the installed Furry Image Studio transform workflow; do not claim a transform if the host cannot do that.", inputSchema: prepareFurryTransformSchema.shape, outputSchema: furryTransformOutputSchema.extend(imagePromptResultSchema.shape).shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async ({ alterName }) => {
-    const candidates = (await service.listAlters(ownerId, { search: alterName, limit: 100 })).data.filter(profile => profile.name.localeCompare(alterName, undefined, { sensitivity: "accent" }) === 0 || profile.aliases.some(alias => alias.localeCompare(alterName, undefined, { sensitivity: "accent" }) === 0));
-    if (candidates.length !== 1) throw new Error(candidates.length ? "More than one private alter matches that name; choose the exact profile." : "No active private alter matches that name.");
-    const alter = candidates[0];
-    if (!alter.appearanceReferenceImageIds.length) throw new Error("This alter has no selected appearance references yet.");
-    const stored = (await profileRepository.listProfiles(ownerId)).find(profile => profile.id === alter.id);
-    const referenceMedia = (stored?.images ?? []).filter(image => alter.appearanceReferenceImageIds.includes(image.id)).map(image => ({ role: "character_reference", alterId: alter.id, alterName: alter.name, imageId: image.id, src: `${publicOrigin}/api/system/images/inline/${image.id}?cap=${encodeURIComponent(issueImageReadCapability(ownerId, image.id))}`, contentType: image.contentType }));
-    if (referenceMedia.length !== alter.appearanceReferenceImageIds.length) throw new Error("One or more selected appearance references are unavailable.");
-    const prepared = buildAlterImagePrompt("Transform the selected person into this alter; preserve the snapshot pose, clothing, setting, and interactions.", [alter]);
-    return { structuredContent: { ...prepared, alter: { id: alter.id, name: alter.name, appearanceNotes: alter.appearanceNotes }, referenceCount: referenceMedia.length, snapshotRequired: true as const, mediaHandoff: "HOST_ADAPTER_REQUIRED" as const }, content: [{ type: "text", text: `${prepared.prompt}\n\nPrepared ${alter.name}'s private transformation context. Attach the user's snapshot and the secured reference media to Furry Image Studio; preserve the snapshot's pose, clothing, setting, and interactions.` }], _meta: { referenceMedia } };
   });
 
   const groupPhotoRenderOutputSchema = z.object({ projectId: uuidSchema, status: z.literal("READY"), placements: z.array(z.object({ alterId: uuidSchema, tokenX: z.number().int(), tokenY: z.number().int(), depth: z.number().int(), occupancyZoneId: z.string().nullable() })), prompt: z.string(), identities: imagePromptResultSchema.shape.identities });
@@ -420,5 +484,17 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
 
   const recordedCoverageSchema = z.object({ period: z.object({ startsOn: z.string().date(), endsOn: z.string().date() }), coverage: z.array(z.object({ id: uuidSchema, alterId: uuidSchema, alterName: z.string(), startsOn: z.string().date(), endsOn: z.string().date().optional() })), handoff: z.string() });
   server.registerTool("get_recorded_coverage", { title: "Get recorded coverage handoff", description: "Use this when the user asks who had recorded coverage during a stated period, including last week. Returns only confirmed records and a concise handoff prompt such as 'go talk to Name for this.'", inputSchema: { startsOn: z.string().date(), endsOn: z.string().date() }, outputSchema: recordedCoverageSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } }, async ({ startsOn, endsOn }) => { const coverage = await repository.confirmedDuring(ownerId, startsOn, endsOn); const handoff = coverage.length === 1 ? `The recorded coverage is ${coverage[0].alterName}. Go talk to ${coverage[0].alterName} for their context.` : coverage.length ? `There are ${coverage.length} confirmed records; ask which coverage period the user means.` : "No confirmed coverage is recorded for that period."; return { structuredContent: { period: { startsOn, endsOn }, coverage, handoff }, content: [{ type: "text", text: handoff }] }; });
+
+  server.registerTool("get_usage_stats", {
+    title: "Get Bunch usage stats (operator only)",
+    description: "Operator-only admin tool. Returns MCP tool invocation counts for the requested trailing window: totals, a per-tool breakdown with error counts, a per-day series, and a per-owner breakdown (at most 25 owners). Every non-operator account receives FORBIDDEN.",
+    inputSchema: { windowDays: z.number().int().min(1).max(90).default(30) },
+    outputSchema: usageStatsSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ windowDays }) => {
+    await getPilotService().assertOperator(ownerId);
+    const stats = await usage.summary(windowDays);
+    return { structuredContent: stats, content: [{ type: "text", text: `In the last ${stats.windowDays} day(s): ${stats.totalInvocations} tool invocation(s), ${stats.aiSpend.meaningfulActions} paid image action(s), and $${stats.aiSpend.totalUsd.toFixed(3)} estimated or confirmed AI spend.` }] };
+  });
   return server;
 }

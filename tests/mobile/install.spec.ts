@@ -23,7 +23,7 @@ test("phone installation guide is discoverable, readable, and links back to catc
 
 test("browser install prompt survives navigation and cancellation offers manual instructions", async ({ page }) => {
   await page.goto("/options");
-  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
+  await page.getByRole("button", { name: "Daylight", exact: true }).click();
   await page.evaluate(() => {
     const event = new Event("beforeinstallprompt", { cancelable: true });
     Object.assign(event, { prompt: async () => {}, userChoice: Promise.resolve({ outcome: "dismissed" }) });

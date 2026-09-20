@@ -4,7 +4,10 @@ const operator = { signedIn: true, emailVerified: true, state: "ACTIVE", role: "
 const recipient = { signedIn: true, emailVerified: true, state: "NOT_ENROLLED", usedBytes: 0, quotaBytes: 0 };
 
 test("@eval operator creates a copied one-use tenant link and a separate browser redeems it once", async ({ browser }, info) => {
-  const operatorContext = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+  const operatorContext = await browser.newContext({
+    permissions: ["clipboard-read", "clipboard-write"],
+    extraHTTPHeaders: { "x-system-e2e-subject": "operator-fixture" },
+  });
   const operatorPage = await operatorContext.newPage();
   const invitations: Array<{ id: string; status: string; expiresAt: string; createdAt: string }> = [];
   const token = "t".repeat(43);

@@ -82,7 +82,17 @@ export function LandingPage() {
           <a className={styles.primary} href={signInHref}>Sign in to Bunch <span aria-hidden="true">↗</span></a>
         </section>
       </main>
-      <footer className={styles.footer}><span>Bunch · Built by the Arcades</span><a href="#welcome">Back to the top ↑</a></footer>
+      <footer className={styles.footer} style={{ flexWrap: "wrap", gap: "1rem" }}>
+        <span>Bunch · Built by the Arcades</span>
+        <a
+          href="mailto:Austen@thearcades.me?subject=%5Bsystem.thearcades.me%5D%20inquiry%3A"
+          aria-label="Email an inquiry to Austen@thearcades.me"
+          style={{ display: "inline-flex", alignItems: "center", minHeight: "44px", maxWidth: "100%", textDecoration: "underline", textUnderlineOffset: ".2em", overflowWrap: "anywhere" }}
+        >
+          Austen@thearcades.me
+        </a>
+        <a href="#welcome">Back to the top ↑</a>
+      </footer>
     </div>
   );
 }

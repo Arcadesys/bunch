@@ -2,6 +2,7 @@ import { getPilotService } from "./pilot-service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
+import { SystemError } from "@/server/system-error";
 
 type ImageUploadClaims = { sub: string; alterId: string; scope: "image:write"; exp: number; requestId?: string; generatedResult?: true };
 type ImageReadClaims = { sub: string; imageId: string; scope: "image:read"; exp: number };
@@ -12,6 +13,7 @@ export const COMPANION_OAUTH_SCOPES = [COMPANION_SCOPE, "openid", "profile", "em
 export type McpAuthorizationConfig = {
   issuer: string;
   audience: string;
+  acceptedAudiences?: string[];
   jwksUri: URL;
 };
 
@@ -19,12 +21,19 @@ function normalizedIssuer(domain: string) {
   return `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`;
 }
 
+function normalizedResourceUrls(value: string | undefined) {
+  return [...new Set((value ?? "").split(",")
+    .map((url) => url.trim().replace(/\/+$/, ""))
+    .filter(Boolean))];
+}
+
 export function getMcpAuthorizationConfig(): McpAuthorizationConfig {
   const domain = process.env.AUTH0_DOMAIN;
   const audience = process.env.MCP_RESOURCE_URL ?? `${process.env.SYSTEM_PUBLIC_ORIGIN?.replace(/\/$/, "")}/mcp`;
   if (!domain || !audience || audience.startsWith("undefined")) throw new Error("MCP OAuth is not configured.");
   const issuer = normalizedIssuer(domain);
-  return { issuer, audience, jwksUri: new URL(".well-known/jwks.json", issuer) };
+  const acceptedAudiences = [...new Set([audience, ...normalizedResourceUrls(process.env.MCP_LEGACY_RESOURCE_URLS)])];
+  return { issuer, audience, acceptedAudiences, jwksUri: new URL(".well-known/jwks.json", issuer) };
 }
 
 export function getMcpResourceMetadataUrl() {
@@ -33,12 +42,13 @@ export function getMcpResourceMetadataUrl() {
   return `${origin}/.well-known/oauth-protected-resource`;
 }
 
-export function mcpWwwAuthenticate(error?: "invalid_token" | "insufficient_scope") {
+export function mcpWwwAuthenticate(error?: "invalid_token" | "insufficient_scope", errorDescription?: string) {
   const fields = [
     `resource_metadata="${getMcpResourceMetadataUrl()}"`,
     `scope="${COMPANION_SCOPE}"`,
   ];
   if (error) fields.push(`error="${error}"`);
+  if (errorDescription) fields.push(`error_description="${errorDescription.replace(/["\\\r\n]/g, " ")}"`);
   return `Bearer ${fields.join(", ")}`;
 }
 
@@ -81,7 +91,7 @@ export async function verifyCompanionAccessToken(
   const { payload } = await jwtVerify(token, getKey, {
     algorithms: ["RS256"],
     issuer: config.issuer,
-    audience: config.audience,
+    audience: config.acceptedAudiences ?? config.audience,
   });
   if (!payload.sub || !grantedScopes(payload).has(COMPANION_SCOPE)) {
     throw new Error("The System companion scope is required.");
@@ -93,8 +103,17 @@ export async function verifyCompanionAccessToken(
 // Website sessions and MCP requests derive ownership from the same immutable sub.
 export async function requireCompanionAccessToken(request: Request): Promise<string> {
   const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) throw new Error("A valid System authorization is required.");
-  const ownerId = await verifyCompanionAccessToken(authorization.slice(7));
+  if (!authorization?.startsWith("Bearer ")) {
+    throw new SystemError("UNAUTHORIZED", "Authentication required.");
+  }
+  const token = authorization.slice(7).trim();
+  if (!token || token.split(".").length !== 3) {
+    throw new SystemError("UNAUTHORIZED", "Authentication required.");
+  }
+  const config = getMcpAuthorizationConfig();
+  let ownerId: string;
+  try { ownerId = await verifyCompanionAccessToken(token, config); }
+  catch { throw new SystemError("UNAUTHORIZED", "Authentication required."); }
   await getPilotService().assertAccess(ownerId, "mcp");
   return ownerId;
 }

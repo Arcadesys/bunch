@@ -25,7 +25,7 @@ test("profiles show the lineup before editing and save the chosen profile", asyn
   await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Test Finch", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "People and pictures" }).getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
   await page.getByText("Manage Test Finch’s profile and pictures", { exact: true }).click();
   await page.getByRole("button", { name: "Edit Test Finch’s details" }).click();
   const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
@@ -100,7 +100,7 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
   await page.goto("/profiles");
   await expect(page).toHaveURL(/\/profiles$/);
   await expect(page).toHaveTitle(/Bunch/);
-  await expect(page.getByRole("heading", { name: "People", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "People & pictures", exact: true })).toBeVisible();
   await page.getByLabel("Search profiles").fill("moonlit");
   await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
   await page.getByText("Manage Test Robin’s profile and pictures", { exact: true }).click();

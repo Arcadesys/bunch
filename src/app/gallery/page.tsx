@@ -6,6 +6,7 @@ import { requireOwnerId } from "@/server/auth";
 import { isAuth0Configured } from "@/lib/auth0";
 import { repository } from "@/server/repository";
 import { AppNavigation } from "../app-navigation";
+import { PeopleToolsNav } from "../people-tools-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function PrivateGalleryPage() {
     return (
       <main className="shell gallery-shell">
         <AppNavigation current="GALLERY" />
+        <PeopleToolsNav current="profile-gallery" />
         <h1>Private photo gallery</h1>
         <p className="notice" role="status">Sign-in is unavailable. Private photos cannot be loaded in this build.</p>
       </main>
@@ -39,6 +41,7 @@ export default async function PrivateGalleryPage() {
   return (
     <main className="shell gallery-shell">
       <AppNavigation current="GALLERY" />
+      <PeopleToolsNav current="profile-gallery" />
       <header className="site-header">
         <div>
           <p className="eyebrow">Bunch · private photos</p>
@@ -63,7 +66,7 @@ export default async function PrivateGalleryPage() {
             {profile.images.map((image, index) => (
               <figure className="gallery-card" key={image.id}>
                 <Image src={imageUrl(image.id)} alt={`Private picture ${index + 1} for ${profile.name}`} width={480} height={480} unoptimized />
-                <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption>
+                <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption><Link className="button button-secondary" href={`/images?repairKind=private&repairId=${image.id}`}>Repair this image</Link>
               </figure>
             ))}
           </div>
