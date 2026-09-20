@@ -35,6 +35,15 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const chatgptImageDescriptor = byName.get("prepare_chatgpt_alter_image");
+    assert.equal(chatgptImageDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(chatgptImageDescriptor?.annotations?.idempotentHint, true);
+    assert.deepEqual(chatgptImageDescriptor?._meta?.["openai/fileParams"], ["sceneImage"]);
+    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html");
+    const sceneImageInput = chatgptImageDescriptor?.inputSchema?.properties?.sceneImage as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: boolean } | undefined;
+    assert.deepEqual(Object.keys(sceneImageInput?.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
+    assert.deepEqual(sceneImageInput?.required?.sort(), ["download_url", "file_id"]);
+    assert.equal(sceneImageInput?.additionalProperties, false);
     const profileDescriptor = byName.get("get_account_profile");
     assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
     assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
@@ -84,6 +93,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.deepEqual(lineup._meta, { privateImages: [] });
     assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v3.html");
     const resources = await client.listResources();
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html"));
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v13.html");
     assert.ok(widget, "the v13 companion widget must be registered");
     for (const uri of ["ui://system-arcades-me.vercel.app/companion-v11.html", "ui://system-arcades-me.vercel.app/companion-v12.html", "ui://system-arcades-me.vercel.app/alter-lineup-v1.html"]) {
@@ -247,6 +257,11 @@ test("alter results name the generate_scene call instead of asking for an upload
     assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
     const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
     assert.ok(text(scene).startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), text(scene));
+    const chatgptHandoff = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy playing the uploaded piano", alterNames: ["Lucy"], sceneImage: { download_url: "https://files.example/piano.png", file_id: "file-piano", mime_type: "image/png", file_name: "piano.png" } } });
+    assert.deepEqual((chatgptHandoff.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
+    assert.equal((chatgptHandoff._meta?.sceneImage as { file_id?: string }).file_id, "file-piano");
+    assert.match(((chatgptHandoff._meta?.referenceMedia as Array<{ src: string }>)[0]).src, /cap=/);
+    assert.doesNotMatch(JSON.stringify({ content: chatgptHandoff.content, structuredContent: chatgptHandoff.structuredContent }), /cap=|files\.example|storageKey/);
     const unready = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Portrait", alters: [mouse.id] } });
     assert.doesNotMatch(JSON.stringify(unready.content), /generate_scene/, "generate_scene would reject a person without references");
   } finally {
