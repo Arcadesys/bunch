@@ -4,13 +4,19 @@ import { z } from "zod";
 // fixtures, account IDs, and production records. Never seed a real tenant.
 const personId = z.enum(["fenton", "benny", "dot"]);
 const recordId = z.string();
+const demoImageSchema = z.object({
+  id: z.string(),
+  contentType: z.literal("image/png"),
+  isProfilePicture: z.literal(true),
+  url: z.string().startsWith("/demo/people/"),
+});
 export const demoSystemSchema = z.object({
   label: z.literal("Demo system"),
   fictional: z.literal(true),
   readOnly: z.literal(true),
   asOf: z.string().datetime(),
   notice: z.string(),
-  people: z.array(z.object({ id: personId, name: z.string(), description: z.string(), strengths: z.array(z.string()), dislikes: z.array(z.string()) })),
+  people: z.array(z.object({ id: personId, name: z.string(), description: z.string(), strengths: z.array(z.string()), dislikes: z.array(z.string()), profilePicture: demoImageSchema })),
   relationships: z.array(z.object({ people: z.array(personId), description: z.string() })),
   presence: z.object({ hostingPersonId: personId, frontingPersonIds: z.array(personId) }),
   history: z.array(z.object({ id: recordId, personId, kind: z.enum(["HOSTING", "FRONTING"]), startedAt: z.string().datetime(), endedAt: z.string().datetime().nullable() })),
@@ -24,9 +30,9 @@ const sample: z.infer<typeof demoSystemSchema> = {
   label: "Demo system", fictional: true, readOnly: true, asOf: "2026-09-09T14:00:00Z",
   notice: "Fictional sample people and history, served by Bunch. Dates are a fixed story snapshot, not current presence. Nothing here belongs to a real user's system. Demo IDs cannot be used to edit private records.",
   people: [
-    { id: "fenton", name: "Fenton", description: "Fenton and Benny tease each other, but really love each other. Fenton handles household scheduling because Benny hates scheduling.", strengths: ["Household scheduling"], dislikes: ["Emotional writing"] },
-    { id: "benny", name: "Benny", description: "Benny and Fenton tease each other, but really love each other. Benny handles emotional writing because Fenton hates it.", strengths: ["Emotional writing"], dislikes: ["Scheduling"] },
-    { id: "dot", name: "Dot", description: "A kid in the Demo system. Dot is no relation to Fenton or Benny.", strengths: [], dislikes: [] },
+    { id: "fenton", name: "Fenton", description: "Fenton and Benny tease each other, but really love each other. Fenton handles household scheduling because Benny hates scheduling.", strengths: ["Household scheduling"], dislikes: ["Emotional writing"], profilePicture: { id: "demo-fenton", contentType: "image/png", isProfilePicture: true, url: "/demo/people/fenton.png" } },
+    { id: "benny", name: "Benny", description: "Benny and Fenton tease each other, but really love each other. Benny handles emotional writing because Fenton hates it.", strengths: ["Emotional writing"], dislikes: ["Scheduling"], profilePicture: { id: "demo-benny", contentType: "image/png", isProfilePicture: true, url: "/demo/people/benny.png" } },
+    { id: "dot", name: "Dot", description: "A kid in the Demo system. Dot is no relation to Fenton or Benny.", strengths: [], dislikes: [], profilePicture: { id: "demo-dot", contentType: "image/png", isProfilePicture: true, url: "/demo/people/dot.png" } },
   ],
   relationships: [
     { people: ["fenton", "benny"], description: "They tease each other and really love each other. They share responsibility while dividing work by their strengths." },
