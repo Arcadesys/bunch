@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { DEMO_TOOL_NAMES } from "../../src/server/demo-mcp-server";
 
 // Run against the same built server used by the browser gate. No private DB
 // credentials or authentication bypass are needed to demonstrate the API.
@@ -38,7 +39,11 @@ test("plugin HTTP transport discovers and explores related demo records", async 
   try {
     const listed = await client.listTools();
     expect(listed.tools.map(t => t.name)).toContain("list_demo_notes");
-    expect(listed.tools.every(t => t.annotations?.readOnlyHint)).toBe(true);
+    const demoTools = listed.tools.filter(tool => DEMO_TOOL_NAMES.has(tool.name));
+    expect(demoTools).toHaveLength(DEMO_TOOL_NAMES.size);
+    expect(demoTools.every(tool => tool.annotations?.readOnlyHint)).toBe(true);
+    const privateWrite = listed.tools.find(tool => tool.name === "create_todo");
+    expect(privateWrite?.annotations?.readOnlyHint).toBe(false);
     const read = async (name: string, args = {}) => {
       const response = await client.callTool({ name, arguments: args });
       expect(response.isError).not.toBe(true);
