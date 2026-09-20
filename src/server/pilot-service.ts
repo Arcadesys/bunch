@@ -195,7 +195,14 @@ export class PilotService {
       throw new SystemError("VALIDATION_ERROR", "Capacity and recovery evidence must be from the last seven days.");
     await this.transaction(async (c) => {
       await this.invitationAdministrator(ownerId, c);
-      await c.query("select id from pilot_policy where id for update");
+      const policy = (
+        await c.query("select max_friends from pilot_policy where id for update")
+      ).rows[0];
+      if (policy && input.slots < Number(policy.max_friends))
+        throw new SystemError(
+          "VALIDATION_ERROR",
+          "Pilot capacity cannot be reduced through the invitation controls.",
+        );
       await c.query("insert into pilot_account(owner_id,role,privacy_accepted_at) values($1,'OPERATOR',now()) on conflict(owner_id) do nothing", [ownerId]);
       const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
       if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
