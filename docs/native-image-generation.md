@@ -3,27 +3,35 @@
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
 For a one-shot named-character request such as “@Bunch draw Lucy in a cozy
-sweater,” the companion should resolve the exact active name `Lucy Arcade` (or
-a confirmed exact alias), then call `generate_scene` with that name in
-`alterNames`. Bunch supplies the selected appearance references privately to
-the native provider; the user does not need to upload a source photo. The
-result remains a private generated image and does not change Lucy's profile
-picture, appearance references, hosting, fronting, or canon.
+sweater,” resolve the exact active name `Lucy Arcade` (or a confirmed exact
+alias), then call `generate_scene` with that name in `alterNames`. Bunch supplies
+the selected appearance references privately to its native provider; the user
+does not need to upload a source photo.
+
+When the user explicitly asks ChatGPT to generate an image using an uploaded
+scene, object, or style image and names one or more alters, route to
+`prepare_chatgpt_alter_image`. Resolve every alter by exact active name or
+confirmed exact alias before preparing the handoff. The uploaded image is image
+1; the ordered private appearance-reference images follow it. The widget
+transfers reference bytes to transient ChatGPT files with `library: false`,
+then keeps the resulting capabilities in widget-only state and asks ChatGPT's
+image tool to generate. Reference bytes are necessary for identity fidelity;
+reference IDs, prose, URLs, and storage identifiers are not image content.
+
+If an alter is unknown, ambiguous, archived, or has no selected appearance
+reference, stop visibly and name the exact missing or conflicting identity.
+Never silently omit a participant, invent a likeness, or fall back to a prose
+description. If the ChatGPT file, upload, or generation handoff fails, stop
+without claiming an image was generated.
+
+The ChatGPT handoff is distinct from native Bunch generation. Its generated
+output remains a private generated image and does not change profile pictures,
+appearance references, hosting, fronting, presence, or canon. A generated
+output is never automatically a profile picture, selected reference, or canon.
 
 Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
-but carry no pixels, and reference media stays in private metadata that a chat
-host's own image tool never receives. `generate_scene` is therefore the direct
-route for drawing named people in chat, not a fallback after a prepare tool. The
-prepare tools build packets for external image-studio adapters only.
-
-ChatGPT once called `prepare_alter_image_prompt` for Lucy, read its prompt
-("Use the attached appearance reference…"), found no attachment, and asked the
-user to upload one. The tool descriptions, server instructions, and companion
-skill now send drawing requests straight to `generate_scene`. Because hosts act
-on results more reliably than descriptions, the result text of `get_alter` and
-`list_alters` names the exact `generate_scene` call, and the prepare results
-lead with it, ahead of the packet, whenever every named person is ready and has
-selected appearance references.
+but carry no pixels. Capabilities, URLs, bytes, and storage keys remain private
+metadata and never enter model-visible content.
 
 Tool descriptions and server instructions reach ChatGPT only after a deploy and
 a refresh of the connector's tool list; a stale connector keeps the old wording.
