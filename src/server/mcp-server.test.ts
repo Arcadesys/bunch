@@ -39,7 +39,8 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal(chatgptImageDescriptor?.annotations?.readOnlyHint, true);
     assert.equal(chatgptImageDescriptor?.annotations?.idempotentHint, true);
     assert.deepEqual(chatgptImageDescriptor?._meta?.["openai/fileParams"], ["sceneImage"]);
-    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html");
+    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v2.html");
+    assert.ok(!(chatgptImageDescriptor?.inputSchema?.required ?? []).includes("sceneImage"), "sceneImage must remain optional");
     const sceneImageInput = chatgptImageDescriptor?.inputSchema?.properties?.sceneImage as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: boolean } | undefined;
     assert.deepEqual(Object.keys(sceneImageInput?.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
     assert.deepEqual(sceneImageInput?.required?.sort(), ["download_url", "file_id"]);
@@ -93,7 +94,8 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.deepEqual(lineup._meta, { privateImages: [] });
     assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v3.html");
     const resources = await client.listResources();
-    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html"));
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v2.html"));
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html"), "cached v1 handoffs must remain readable");
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v13.html");
     assert.ok(widget, "the v13 companion widget must be registered");
     for (const uri of ["ui://system-arcades-me.vercel.app/companion-v11.html", "ui://system-arcades-me.vercel.app/companion-v12.html", "ui://system-arcades-me.vercel.app/alter-lineup-v1.html"]) {
@@ -219,7 +221,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   }
 });
 
-test("alter results name the generate_scene call instead of asking for an upload", async () => {
+test("alter results route ChatGPT to the reference handoff without Bunch generation", async () => {
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-routing-metadata-test-secret";
   const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [{ id: "55555555-5555-4555-8555-555555555555", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00.000Z" }], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
@@ -233,9 +235,9 @@ test("alter results name the generate_scene call instead of asking for an upload
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const loaded = text(await client.callTool({ name: "get_alter", arguments: { alterId: lucy.id } }));
-    assert.ok(loaded.includes('call generate_scene with alterNames ["Lucy Arcade"]'), loaded);
+    assert.ok(loaded.includes('call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), loaded);
     assert.match(loaded, /carry no pixels/);
-    assert.match(loaded, /Do not ask the user to upload a photo Bunch already holds/);
+    assert.match(loaded, /ask for a re-upload/);
     const listed = text(await client.callTool({ name: "list_alters", arguments: {} }));
     assert.ok(listed.includes('alterNames ["Lucy Arcade"]'), listed);
     assert.doesNotMatch(listed, /Mouse Arcade/);
@@ -246,24 +248,32 @@ test("alter results name the generate_scene call instead of asking for an upload
     const { tools } = await client.listTools();
     for (const name of ["prepare_alter_image_prompt", "prepare_furry_scene"]) {
       const description = tools.find((tool) => tool.name === name)?.description ?? "";
-      assert.match(description, /call generate_scene directly/, name);
+      assert.match(description, /prepare_chatgpt_alter_image/, name);
+      assert.match(description, /never call generate_scene/, name);
       assert.doesNotMatch(description, /before drawing|If this host cannot/, name);
     }
     const prepared = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Lucy in a big cozy sweater", alters: [lucy.id] } });
     const route = text(prepared);
-    assert.ok(route.startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), route);
-    assert.match(route, /do not ask the user to upload a photo Bunch already holds/);
+    assert.ok(route.startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), route);
+    assert.match(route, /ask the user to re-upload a reference Bunch already holds/);
     assert.match((prepared.content as Array<{ text: string }>)[1].text, /Use the attached appearance reference/, "the packet itself is unchanged for external adapters");
     assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
     const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
-    assert.ok(text(scene).startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), text(scene));
+    assert.ok(text(scene).startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), text(scene));
+    const referencesOnly = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
+    assert.deepEqual((referencesOnly.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
+    assert.equal((referencesOnly.structuredContent as { bunchGeneration: string }).bunchGeneration, "none");
+    assert.equal((referencesOnly.structuredContent as { providerCalled: boolean }).providerCalled, false);
+    assert.equal((referencesOnly.structuredContent as { allowanceCharged: boolean }).allowanceCharged, false);
+    assert.equal(referencesOnly._meta?.sceneImage, undefined);
+    assert.match(((referencesOnly._meta?.referenceMedia as Array<{ src: string }>)[0]).src, /cap=/);
     const chatgptHandoff = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy playing the uploaded piano", alterNames: ["Lucy"], sceneImage: { download_url: "https://files.example/piano.png", file_id: "file-piano", mime_type: "image/png", file_name: "piano.png" } } });
     assert.deepEqual((chatgptHandoff.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
     assert.equal((chatgptHandoff._meta?.sceneImage as { file_id?: string }).file_id, "file-piano");
     assert.match(((chatgptHandoff._meta?.referenceMedia as Array<{ src: string }>)[0]).src, /cap=/);
     assert.doesNotMatch(JSON.stringify({ content: chatgptHandoff.content, structuredContent: chatgptHandoff.structuredContent }), /cap=|files\.example|storageKey/);
     const unready = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Portrait", alters: [mouse.id] } });
-    assert.doesNotMatch(JSON.stringify(unready.content), /generate_scene/, "generate_scene would reject a person without references");
+    assert.doesNotMatch(JSON.stringify(unready.content), /prepare_chatgpt_alter_image/, "the handoff would reject a person without references");
   } finally {
     if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
     else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;

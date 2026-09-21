@@ -2,21 +2,20 @@
 
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
-For a one-shot named-character request such as “@Bunch draw Lucy in a cozy
+For every ChatGPT named-character request such as “@Bunch draw Lucy in a cozy
 sweater,” resolve the exact active name `Lucy Arcade` (or a confirmed exact
-alias), then call `generate_scene` with that name in `alterNames`. Bunch supplies
-the selected appearance references privately to its native provider; the user
-does not need to upload a source photo.
+alias), then call `prepare_chatgpt_alter_image`. The optional `sceneImage` is
+image 1 when supplied; otherwise the ordered private appearance references
+begin at image 1. The widget transfers those references to transient ChatGPT
+files with `library: false`, keeps Bunch capabilities widget-only, and asks
+ChatGPT's image tool to generate once. Reference bytes are necessary for
+identity fidelity; reference IDs, prose, URLs, and storage identifiers are not
+image content.
 
-When the user explicitly asks ChatGPT to generate an image using an uploaded
-scene, object, or style image and names one or more alters, route to
-`prepare_chatgpt_alter_image`. Resolve every alter by exact active name or
-confirmed exact alias before preparing the handoff. The uploaded image is image
-1; the ordered private appearance-reference images follow it. The widget
-transfers reference bytes to transient ChatGPT files with `library: false`,
-keeps the Bunch capabilities widget-only, and asks ChatGPT's image tool to
-generate with the resulting transient file IDs. Reference bytes are necessary for identity fidelity;
-reference IDs, prose, URLs, and storage identifiers are not image content.
+This handoff creates no Bunch scene job, calls no Bunch image provider, consumes
+no Bunch image allowance, and saves no Bunch output. `generate_scene` is the
+paid Bunch-native path and is reserved for a Bunch-owned surface or an explicit
+request for Bunch-native generation.
 
 If an alter is unknown, ambiguous, archived, or has no selected appearance
 reference, stop visibly and name the exact missing or conflicting identity.

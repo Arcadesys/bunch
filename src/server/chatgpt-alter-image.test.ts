@@ -71,7 +71,7 @@ test("optional scene/style image stays in private metadata alongside ordered ref
   assert.equal(result.structuredContent.referenceCount, 2);
   assert.equal(result.structuredContent.allowanceCharged, false);
   assert.equal(result.structuredContent.saved, false);
-  assert.equal(result._meta.sceneImage.file_id, "file-scene");
+  assert.equal(result._meta.sceneImage?.file_id, "file-scene");
   assert.equal(result._meta.referenceMedia.length, 2);
   assert.match(result._meta.referenceMedia[0].src, /cap=/);
   assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|https:\/\/bunch\.example|storageKey/);
