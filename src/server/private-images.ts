@@ -12,9 +12,11 @@ import { del, get, put } from "@vercel/blob";
 const uploadDirectory = join(process.cwd(), "private-uploads");
 const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxBytes = 5 * 1024 * 1024;
+const downloadTimeoutMs = 15_000;
 export const PRIVATE_MEDIA_MAX_AGE = 60 * 60 * 24 * 30;
 
 export type StoredPrivateImage = { storageKey: string; contentType: string };
+export type OpenAIFileInput = { download_url: string; file_id: string; mime_type?: string; file_name?: string };
 export type PrivateImageRead = {
   body: BodyInit;
   contentType: string;
@@ -26,6 +28,37 @@ export type PrivateImageRead = {
 function validateImage(file: File) {
   if (!allowedTypes.has(file.type)) throw new Error("Use a JPEG, PNG, or WebP image.");
   if (file.size > maxBytes) throw new Error("Images must be 5 MB or smaller.");
+}
+
+function contentTypeFromHeader(value: string | null) {
+  return value?.split(";", 1)[0]?.trim().toLowerCase() || undefined;
+}
+
+/** Read ChatGPT's temporary file URL server-side; never return its URL or bytes through MCP. */
+export async function downloadOpenAIImage(input: OpenAIFileInput): Promise<File> {
+  let url: URL;
+  try { url = new URL(input.download_url); } catch { throw new Error("The selected ChatGPT file has an invalid download URL."); }
+  if (url.protocol !== "https:") throw new Error("The selected ChatGPT file must use a secure download URL.");
+  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(downloadTimeoutMs) });
+  if (!response.ok || !response.body) throw new Error("The selected ChatGPT file could not be downloaded.");
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error("Images must be 5 MB or smaller.");
+  const reader = response.body.getReader();
+  const chunks: ArrayBuffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maxBytes) throw new Error("Images must be 5 MB or smaller.");
+      chunks.push(new Uint8Array(next.value).slice().buffer);
+    }
+  } finally { reader.releaseLock(); }
+  const headerType = contentTypeFromHeader(response.headers.get("content-type"));
+  const contentType = (headerType && allowedTypes.has(headerType) ? headerType : input.mime_type?.toLowerCase());
+  if (!contentType) throw new Error("The selected ChatGPT file has no image type.");
+  return new File(chunks, input.file_name || "chatgpt-image", { type: contentType });
 }
 
 export async function savePrivateImage(ownerId: string, file: File): Promise<StoredPrivateImage> {

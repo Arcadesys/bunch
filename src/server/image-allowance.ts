@@ -100,14 +100,19 @@ export class ImageAllowanceService {
       return undefined;
     }
   }
-  async failJob(owner: string, kind: ImageJobKind, job: string, message: string) {
+  async failJob(owner: string, kind: ImageJobKind, job: string, message: string, options?: { refundIfDispatched?: boolean }) {
     await this.transaction(async c => {
       await c.query("select id from app_user where id=$1 for update", [owner]);
       // Internal cleanup only: revocation must not prevent terminal status/refund.
       await c.query("select set_config('app.pilot_purge',$1,true)", [owner]);
       const changed = await c.query(`update ${tableFor(kind)} set state='FAILED',finished_at=now() where owner_id=$1 and id=$2 and state in ('QUEUED','RUNNING') returning id`, [owner, job]);
       if (!changed.rowCount) return;
-      await c.query("update image_usage set state='RELEASED' where owner_id=$1 and job_kind=$2 and job_id=$3 and state='RESERVED'", [owner, kind, job]);
+      // A dispatched job normally counts as a spent image use; an infra-side failure the provider never evaluated refunds it instead.
+      if (options?.refundIfDispatched) {
+        await c.query("update image_usage set state='RELEASED' where owner_id=$1 and job_kind=$2 and job_id=$3 and state in ('RESERVED','DISPATCHED')", [owner, kind, job]);
+      } else {
+        await c.query("update image_usage set state='RELEASED' where owner_id=$1 and job_kind=$2 and job_id=$3 and state='RESERVED'", [owner, kind, job]);
+      }
       const counted = (await c.query("select state from image_usage where owner_id=$1 and job_kind=$2 and job_id=$3", [owner, kind, job])).rows[0]?.state === "DISPATCHED";
       await c.query(`update ${tableFor(kind)} set error_message=$3 where owner_id=$1 and id=$2`, [owner, job, message + (counted ? " This attempt used 1 image use." : " No image use was spent.")]);
     });

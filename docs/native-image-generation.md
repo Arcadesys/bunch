@@ -65,7 +65,7 @@ requests one fresh capability before pointing to that link.
 
 ## Execution and privacy
 
-The web interface and MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage.
+The Bunch web interface and paid native MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage.
 
 For named people, the job freezes profile versions, the canonical prompt and ordered reference associations. Private reference bytes transfer directly from Bunch's server to the configured image provider. They do not enter model-facing tool text. Before attaching the normalized JPEG, the worker rechecks profile versions and erasure. Authenticated image routes serve output with private/no-store headers.
 

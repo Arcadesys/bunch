@@ -2003,6 +2003,7 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .photo-finisher-status { min-width: 0; }
 .group-photo-notice { margin: 0; overflow: hidden; color: var(--ink); font-size: .75rem; font-weight: 700; text-overflow: ellipsis; }
 .photo-finisher-status [role="alert"] { margin: .2rem 0 0; color: #ffb4b4; font-size: .7rem; }
+.photo-finisher-hint { margin: 0 0 .5rem; color: var(--muted, var(--ink)); font-size: .75rem; opacity: .85; }
 .photo-finisher-actions { display: flex; align-items: center; gap: .75rem; flex: 0 0 auto; }
 .photo-finisher-actions > .button { min-width: 9rem; min-height: 54px; border: 2px solid #22e6f2; border-radius: 9px; background: #22e6f2; color: #031113; font-size: .86rem; font-weight: 850; }
 .photo-finisher-actions > .button:disabled { border-color: #64748b; background: #334155; color: #e2e8f0; }

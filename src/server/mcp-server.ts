@@ -65,6 +65,8 @@ import { nativeSceneInputSchema, nativeSceneRenderSchema, imageAllowanceSchema, 
 import { getNativeSceneService, type NativeSceneService } from "@/server/native-scene-service";
 import { getMcpUsageService } from "@/server/mcp-usage-service";
 import { getPilotService } from "@/server/pilot-service";
+import { randomUUID } from "node:crypto";
+import { deletePrivateImages, downloadOpenAIImage, savePrivateImage } from "@/server/private-images";
 
 // The authority in these ui:// URIs is a frozen cache key, not an address. Live
 // ChatGPT conversations hold the tool-to-resource mapping and keep requesting the
@@ -433,6 +435,35 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
   server.registerTool("resolve_coverage_draft", { title: "Confirm, change, or reject coverage draft", description: "Use this only after the user has inspected a specific coverage draft and explicitly requests a confirm, change, or reject action. Only confirmation sends a record into later history.", inputSchema: resolveDraftSchema.shape, outputSchema: coverageOutputSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async (input) => { const resolution = resolveDraftSchema.parse(input); const draft = await repository.resolveDraft(ownerId, resolution.draftId, resolution.result, resolution.alterId); return { structuredContent: { draft }, content: [{ type: "text", text: resolution.result === "CONFIRMED" ? "Confirmed coverage is now recorded history." : "The draft was rejected and is excluded from history." }] }; });
 
   const imagePrepareSchema = z.object({ ready: z.literal(true), filename: z.string(), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) });
+  const openAIFileSchema = z.object({
+    download_url: z.string().url(),
+    file_id: z.string().min(1),
+    mime_type: z.string().optional(),
+    file_name: z.string().min(1).max(255).optional(),
+  }).strict();
+  const uploadedImageSchema = z.object({ stored: z.literal(true), imageId: uuidSchema, alterId: uuidSchema, contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) });
+  server.registerTool("upload_private_image", {
+    title: "Upload private image",
+    description: "Use this after the user attaches an image and identifies the Bunch profile it belongs to. Bunch downloads the temporary ChatGPT file server-side, stores it in the owner's private Blob gallery, and returns only its private image ID. It does not change the profile picture or appearance references.",
+    inputSchema: { alterId: z.string().uuid(), file: openAIFileSchema },
+    outputSchema: uploadedImageSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    _meta: { "openai/fileParams": ["file"], "openai/toolInvocation/invoking": "Saving private image…", "openai/toolInvocation/invoked": "Private image saved." },
+  }, async ({ alterId, file }) => {
+    const profiles = await repository.listProfiles(ownerId);
+    if (!profiles.some((profile) => profile.id === alterId)) throw new Error("Profile not found.");
+    await getPilotService().assertAccess(ownerId, "upload");
+    const downloaded = await downloadOpenAIImage(file);
+    const saved = await savePrivateImage(ownerId, downloaded);
+    const id = randomUUID();
+    try {
+      await repository.attachImage(ownerId, alterId, { id, ...saved, isProfilePicture: false, createdAt: new Date().toISOString() });
+    } catch (error) {
+      await deletePrivateImages([saved.storageKey]);
+      throw error;
+    }
+    return { structuredContent: { stored: true as const, imageId: id, alterId, contentType: saved.contentType }, content: [{ type: "text", text: "Saved the attached image to the private Bunch gallery. It is not a profile picture or appearance reference yet." }] };
+  });
   server.registerTool("prepare_private_image_upload", { title: "Prepare private image upload", description: "Use this only after the user selects an image in the System ChatGPT companion and identifies its profile. It creates a one-time short-lived private upload capability; it does not expose image contents to the model.", inputSchema: { alterId: z.string().uuid(), filename: z.string().min(1).max(255), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) }, outputSchema: imagePrepareSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async ({ alterId, filename, contentType }) => { const profiles = await repository.listProfiles(ownerId); if (!profiles.some((profile) => profile.id === alterId)) throw new Error("Profile not found."); const capability = issueImageUploadCapability(ownerId, alterId); return { structuredContent: { ready: true as const, filename, contentType }, content: [{ type: "text", text: "Prepared a private image transfer." }], _meta: { uploadEndpoint: `${requiredPublicOrigin()}/api/mcp-image-upload`, uploadCapability: capability } }; });
   server.registerTool("prepare_alter_image_prompt", { title: "Prepare canonical image prompt", description: "Prepare a canonical prompt packet for a trusted external image-studio adapter whose adapter consumes private reference metadata. It generates nothing. In ChatGPT, use prepare_chatgpt_alter_image instead so its widget transfers the actual selected references as transient files; never call generate_scene as a ChatGPT fallback.", inputSchema: imagePromptInputSchema.shape, outputSchema: imagePromptResultSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => withSceneRoute(await prepareAlterImagePrompt(service, ownerId, input, publicOrigin)));
   server.registerTool("prepare_furry_scene", { title: "Prepare external Furry scene", description: "Prepare a canonical multi-character packet for a trusted external image-studio adapter. It returns references in private metadata and generates nothing. In ChatGPT, use prepare_chatgpt_alter_image instead; never call generate_scene as a ChatGPT fallback.", inputSchema: furrySceneInputSchema.shape, outputSchema: imagePromptResultSchema.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async (input) => withSceneRoute(await prepareFurryScene(service, ownerId, input, publicOrigin)));

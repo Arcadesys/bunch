@@ -12,10 +12,17 @@ export const MAX_REFERENCE_IMAGES = 15; // One additional input is the scene.
 
 export function photoFinisherAvailable() { return Boolean(process.env.OPENAI_API_KEY?.trim()); }
 
+export class GroupPhotoProviderError extends Error {
+  constructor(message: string, readonly code: "RATE_LIMITED" | "CONTENT_POLICY" | "TIMEOUT" | "UPSTREAM_ERROR" | "BAD_OUTPUT") {
+    super(message);
+    this.name = "GroupPhotoProviderError";
+  }
+}
+
 /** No reference URLs, private storage keys or credentials enter logs or responses. */
 export const openAIGroupPhotoProvider: GroupPhotoProvider = async input => {
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error("Photo finishing is not configured yet.");
+  if (!key) throw new GroupPhotoProviderError("Photo finishing is not configured yet.", "UPSTREAM_ERROR");
   const form = new FormData();
   form.set("model", input.model);
   form.set("prompt", input.prompt);
@@ -23,15 +30,25 @@ export const openAIGroupPhotoProvider: GroupPhotoProvider = async input => {
   form.set("quality", input.quality);
   form.set("output_format", "jpeg");
   for (const image of input.images) form.append("image[]", new Blob([new Uint8Array(image.bytes)], { type: image.contentType }), image.name);
-  const response = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form,
-    signal: AbortSignal.timeout(210_000),
-  });
-  if (!response.ok) throw new Error("The image provider could not finish this photo. Your scene is saved. Try again later.");
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form,
+      signal: AbortSignal.timeout(210_000),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") throw new GroupPhotoProviderError("The image provider took too long to respond. Your scene is safe — try finishing again.", "TIMEOUT");
+    throw new GroupPhotoProviderError("The image provider could not be reached. Your scene is safe — try finishing again.", "UPSTREAM_ERROR");
+  }
+  if (!response.ok) {
+    if (response.status === 429) throw new GroupPhotoProviderError("The image provider is busy right now. Your scene is safe — try finishing again in a few minutes.", "RATE_LIMITED");
+    if (response.status === 400) throw new GroupPhotoProviderError("The image provider rejected this request, possibly due to its content policy. Your scene is safe — try adjusting the people or scene before finishing again.", "CONTENT_POLICY");
+    throw new GroupPhotoProviderError("The image provider could not finish this photo. Your scene is safe.", "UPSTREAM_ERROR");
+  }
   const payload = await response.json() as { data?: { b64_json?: string }[]; usage?: unknown };
   if (input.onUsage && payload.usage) await input.onUsage(sanitizeProviderUsage(payload.usage)).catch(() => { /* Usage telemetry must not lose a generated image. */ });
   const encoded = payload.data?.[0]?.b64_json;
-  if (!encoded || encoded.length > 28_000_000) throw new Error("The image provider did not return a usable photo.");
+  if (!encoded || encoded.length > 28_000_000) throw new GroupPhotoProviderError("The image provider did not return a usable photo.", "BAD_OUTPUT");
   return new Uint8Array(Buffer.from(encoded, "base64"));
 };
 

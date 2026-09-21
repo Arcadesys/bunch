@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { openAIGroupPhotoProvider, openAINativeSceneProvider, photoFinisherAvailable } from "./group-photo-provider";
+import { GroupPhotoProviderError, openAIGroupPhotoProvider, openAINativeSceneProvider, photoFinisherAvailable } from "./group-photo-provider";
 
 test("image edit transport includes only explicit image bytes and redacts provider failures", async () => {
   const originalFetch = globalThis.fetch;
@@ -45,5 +45,24 @@ test("native scenes use generations without references and edits with every refe
     assert.equal(calls[1].url, "https://api.openai.com/v1/images/edits");
     assert.equal((calls[1].options?.body as FormData).getAll("image[]").length, 2);
     assert.equal((calls[1].options?.body as FormData).get("quality"), "low");
+  } finally { globalThis.fetch = originalFetch; if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey; }
+});
+
+test("classifies provider failures instead of collapsing them into one generic message", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "synthetic-provider-contract-test";
+  const input = { prompt: "p", model: "m", quality: "high" as const, size: "1024x1024", images: [] };
+  try {
+    globalThis.fetch = async () => new Response("rate limited", { status: 429 });
+    await assert.rejects(openAIGroupPhotoProvider(input), (error: unknown) => error instanceof GroupPhotoProviderError && error.code === "RATE_LIMITED");
+    globalThis.fetch = async () => new Response("bad request", { status: 400 });
+    await assert.rejects(openAIGroupPhotoProvider(input), (error: unknown) => error instanceof GroupPhotoProviderError && error.code === "CONTENT_POLICY");
+    globalThis.fetch = async () => { throw Object.assign(new Error("timed out"), { name: "TimeoutError" }); };
+    await assert.rejects(openAIGroupPhotoProvider(input), (error: unknown) => error instanceof GroupPhotoProviderError && error.code === "TIMEOUT");
+    globalThis.fetch = async () => { throw new Error("network down"); };
+    await assert.rejects(openAIGroupPhotoProvider(input), (error: unknown) => error instanceof GroupPhotoProviderError && error.code === "UPSTREAM_ERROR");
+    globalThis.fetch = async () => Response.json({ data: [{ b64_json: "" }] });
+    await assert.rejects(openAIGroupPhotoProvider(input), (error: unknown) => error instanceof GroupPhotoProviderError && error.code === "BAD_OUTPUT");
   } finally { globalThis.fetch = originalFetch; if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey; }
 });

@@ -10,7 +10,7 @@ import { GroupPhotoService } from "./group-photo-service";
 import { SystemService } from "./system-service";
 import { SystemError } from "./system-error";
 import { deletePrivateImages, readPrivateImage, savePrivateImage } from "./private-images";
-import { DEFAULT_GROUP_PHOTO_MODEL, MAX_REFERENCE_IMAGES, normalizeFinishedPhoto, openAIGroupPhotoProvider, photoFinisherAvailable, type GroupPhotoProvider } from "./group-photo-provider";
+import { DEFAULT_GROUP_PHOTO_MODEL, GroupPhotoProviderError, MAX_REFERENCE_IMAGES, normalizeFinishedPhoto, openAIGroupPhotoProvider, photoFinisherAvailable, type GroupPhotoProvider } from "./group-photo-provider";
 
 type Recipe = { prompt: string; references: { imageId: string; alterId: string; name: string }[]; profiles: { id: string; version: number }[] };
 type Dependencies = {
@@ -143,8 +143,10 @@ export class GroupPhotoRenderService {
       }
       // Never return arbitrary provider/storage error strings, which can contain request data.
       const known = error instanceof Error && /^(A person's appearance changed|A selected appearance reference|Photo finishing was interrupted)/.test(error.message);
-      const message = known ? (error as Error).message : "The photo could not be finished and saved. Your scene is safe. Try again later.";
-      await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message);
+      const message = error instanceof GroupPhotoProviderError ? error.message : known ? (error as Error).message : "The photo could not be finished and saved. Your scene is safe.";
+      // Infra-side failures (timeout, rate limit, unreachable provider) refund the attempt; the provider never evaluated the request.
+      const refund = error instanceof GroupPhotoProviderError && error.code !== "CONTENT_POLICY" && error.code !== "BAD_OUTPUT";
+      await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message, { refundIfDispatched: refund });
     }
   }
   async image(ownerId: string, projectId: string, renderId: string, ifNoneMatch?: string) {

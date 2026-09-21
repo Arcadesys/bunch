@@ -35,6 +35,14 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const upload = byName.get("upload_private_image");
+    assert.deepEqual(upload?._meta?.["openai/fileParams"], ["file"]);
+    const fileSchema = upload?.inputSchema?.properties?.file as { required?: string[]; properties?: Record<string, { type?: string }> } | undefined;
+    assert.deepEqual(fileSchema?.required, ["download_url", "file_id"]);
+    assert.equal(fileSchema?.properties?.download_url?.type, "string");
+    assert.equal(fileSchema?.properties?.file_id?.type, "string");
+    assert.equal(upload?.annotations?.readOnlyHint, false);
+    assert.equal(upload?.annotations?.destructiveHint, false);
     const chatgptImageDescriptor = byName.get("prepare_chatgpt_alter_image");
     assert.equal(chatgptImageDescriptor?.annotations?.readOnlyHint, true);
     assert.equal(chatgptImageDescriptor?.annotations?.idempotentHint, true);
