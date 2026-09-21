@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
 import { requireOwnerId } from "@/server/auth";
 import { readPrivateImage } from "@/server/private-images";
+import { privateMediaError, privateMediaResponse } from "@/server/private-media-response";
 import { repository } from "@/server/repository";
 
 export const runtime = "nodejs";
@@ -10,10 +10,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
     const ownerId = await requireOwnerId(request);
     const { storageKey: storageKeyParts } = await params;
     const storageKey = storageKeyParts.join("/");
-    if (!(await repository.ownsImage(ownerId, storageKey))) return new NextResponse("Not found", { status: 404 });
-    const image = await readPrivateImage(storageKey);
-    return new NextResponse(image.body, { headers: { "Cache-Control": "private, no-cache", "Content-Type": image.contentType, "X-Content-Type-Options": "nosniff", ...(image.etag ? { ETag: image.etag } : {}) } });
+    if (!(await repository.ownsImage(ownerId, storageKey))) return privateMediaError("Not found", 404);
+    const image = await readPrivateImage(storageKey, { ifNoneMatch: request.headers.get("if-none-match") ?? undefined });
+    return privateMediaResponse(request, image);
   } catch {
-    return new NextResponse("Not found", { status: 404 });
+    return privateMediaError("Not found", 404);
   }
 }

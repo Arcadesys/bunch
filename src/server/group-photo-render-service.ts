@@ -147,10 +147,10 @@ export class GroupPhotoRenderService {
       await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message);
     }
   }
-  async image(ownerId: string, projectId: string, renderId: string) {
+  async image(ownerId: string, projectId: string, renderId: string, ifNoneMatch?: string) {
     const row = (await this.pool.query("select storage_key,content_type from group_photo_render where owner_id=$1 and project_id=$2::uuid and id=$3::uuid and state='COMPLETE'", [ownerId, projectId, renderId])).rows[0];
     if (!row) throw new SystemError("NOT_FOUND", "Finished photo not found.");
-    return { ...await this.readImage(row.storage_key), contentType: String(row.content_type) };
+    return { ...await this.readImage(row.storage_key, { ifNoneMatch }), contentType: String(row.content_type) };
   }
 }
 export function getGroupPhotoRenderService() { return new GroupPhotoRenderService(); }
