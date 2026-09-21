@@ -77,19 +77,40 @@ test("response decoration tolerates non-tool JSON, scalar JSON, and non-JSON bod
 
 test("anonymous routing selects only the demo server and a fresh transport", async () => {
   let authorizeCalls = 0;
+  let catalogServers = 0;
   let demoServers = 0;
   let privateServers = 0;
   let transports = 0;
   const lifecycle = serverLifecycle();
   const response = await handleMcpRequest(rpc("ping"), {
     authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize"); },
+    createCatalogServer: () => { catalogServers += 1; throw new Error("must not create catalog server"); },
     createDemoServer: () => { demoServers += 1; return lifecycle.server; },
     createPrivateServer: () => { privateServers += 1; throw new Error("must not create private server"); },
     createTransport: () => { transports += 1; return transportReturning(Response.json({ jsonrpc: "2.0", id: 1, result: {} })); },
   });
   assert.equal(response.status, 200);
-  assert.deepEqual({ authorizeCalls, demoServers, privateServers, transports, ...lifecycle.calls }, {
-    authorizeCalls: 0, demoServers: 1, privateServers: 0, transports: 1, connect: 1, close: 1,
+  assert.deepEqual({ authorizeCalls, catalogServers, demoServers, privateServers, transports, ...lifecycle.calls }, {
+    authorizeCalls: 0, catalogServers: 0, demoServers: 1, privateServers: 0, transports: 1, connect: 1, close: 1,
+  });
+});
+
+test("anonymous tools/list selects the stable catalog without authorizing or creating a private server", async () => {
+  let authorizeCalls = 0;
+  let catalogServers = 0;
+  let demoServers = 0;
+  let privateServers = 0;
+  const lifecycle = serverLifecycle();
+  const response = await handleMcpRequest(rpc("tools/list"), {
+    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize"); },
+    createCatalogServer: () => { catalogServers += 1; return lifecycle.server; },
+    createDemoServer: () => { demoServers += 1; throw new Error("must not create demo server"); },
+    createPrivateServer: () => { privateServers += 1; throw new Error("must not create private server"); },
+    createTransport: () => transportReturning(Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } })),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual({ authorizeCalls, catalogServers, demoServers, privateServers, ...lifecycle.calls }, {
+    authorizeCalls: 0, catalogServers: 1, demoServers: 0, privateServers: 0, connect: 1, close: 1,
   });
 });
 

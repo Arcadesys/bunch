@@ -18,6 +18,7 @@ async function liveDock(page: Page) {
 
 async function openDock(page: Page) {
   await (await liveDock(page)).click();
+  await expect(page.getByRole("dialog", { name: "Record a switch as" })).toBeVisible();
   await expect(panelHeading(page)).toBeFocused();
   await expect(page.getByRole("button", { name: /^Record as host: Test Finch\./ })).toBeEnabled();
 }
@@ -101,6 +102,32 @@ test("Escape closes the panel without writing, and S opens it from any page", as
   await page.keyboard.press("Escape");
   await expect(panelHeading(page)).toHaveCount(0);
   await expect(switchButton(page)).toBeFocused();
+  expect(harness.writes).toHaveLength(0);
+});
+
+test("the switch modal stays reachable in a short viewport and contains keyboard focus", async ({ page, harness }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  await page.setViewportSize({ width: 1440, height: 360 });
+  await page.goto("/board");
+  await openDock(page);
+  const modal = page.getByRole("dialog", { name: "Record a switch as" });
+  const bounds = await modal.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(360);
+
+  const lastProfile = page.getByRole("button", { name: /^Record as host: Test Finch\./ });
+  await lastProfile.scrollIntoViewIfNeeded();
+  await expect(lastProfile).toBeInViewport();
+  for (let step = 0; step < 8; step += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest("dialog")?.id)).toBe("switch-dock-panel");
+  }
+  await modal.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  await expect(switchButton(page)).toBeFocused();
+  expect(consoleErrors).toEqual([]);
   expect(harness.writes).toHaveLength(0);
 });
 

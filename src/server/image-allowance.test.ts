@@ -38,7 +38,7 @@ integration("image allowance shares atomic admission, accounts for failures, and
       saveImage: async (id: string, file: File) => { const key = randomUUID(); blobs.set(key, new Uint8Array(await file.arrayBuffer())); await pool.query("insert into pilot_upload(storage_key,owner_id,bytes,state) values($1,$2,$3,'STORED')", [key, id, file.size]); return { storageKey: key, contentType: file.type }; },
       removeImages: async (keys: string[]) => { for (const key of keys) blobs.delete(key); await pool.query("delete from pilot_upload where storage_key=any($1::text[])", [keys]); },
     };
-    const service = new NativeSceneService(pool, { ...deps, provider: async input => { calls++; if (failProvider) throw new Error("provider secret"); if (input.references.length) assert.equal(input.size, "1536x1024"); await input.onUsage?.({ input_tokens: 11, output_tokens: 22 }); await duringProvider?.(); return image; } });
+    const service = new NativeSceneService(pool, { ...deps, provider: async input => { calls++; if (failProvider) throw new Error("provider secret"); if (input.references.length) assert.equal(input.size, "1536x1024"); await input.onUsage?.({ input_tokens: 11, output_tokens: 22, input_text_tokens: 5, input_image_tokens: 6, output_image_tokens: 22 }); await duringProvider?.(); return image; } });
     const create = (scene = "Synthetic scene") => ({ scene, requestId: randomUUID() });
     await pool.query("update pilot_account set quota_bytes=1 where owner_id=$1", [owner]);
     await assert.rejects(service.start(owner, create()), /Private image storage is full/);
@@ -53,7 +53,10 @@ integration("image allowance shares atomic admission, accounts for failures, and
     await Promise.all([service.process(owner, admitted.value.id), service.process(owner, admitted.value.id)]);
     assert.equal(calls, 1);
     assert.equal((await allowance.read(owner)).used, 1);
-    assert.deepEqual((await pool.query("select provider_usage from image_usage where job_id=$1", [admitted.value.id])).rows[0].provider_usage, { input_tokens: 11, output_tokens: 22 });
+    const recordedUsage = (await pool.query("select provider_usage,cost_microusd,cost_status,route,model,quality from image_usage where job_id=$1", [admitted.value.id])).rows[0];
+    assert.deepEqual(recordedUsage.provider_usage, { input_tokens: 11, output_tokens: 22, input_text_tokens: 5, input_image_tokens: 6, output_image_tokens: 22 });
+    assert.equal(Number(recordedUsage.cost_microusd), 733);
+    assert.deepEqual({ status: recordedUsage.cost_status, route: recordedUsage.route, model: recordedUsage.model, quality: recordedUsage.quality }, { status: "PROVIDER_CONFIRMED", route: "LEGACY", model: "gpt-image-2.5-sunburst", quality: "high" });
     const system = new SystemService(pool, deps.removeImages);
     const person = (await system.createAlter(owner, { name: "Synthetic person", species: "fox", visualDescription: "Orange fox with a blue scarf", requestId: randomUUID() }, "WEB")).data;
     const reference = randomUUID();
@@ -131,6 +134,21 @@ integration("image allowance shares atomic admission, accounts for failures, and
     await pool.query("insert into image_usage(owner_id,job_kind,job_id,state,admitted_on) values($1,'native',$2,'DISPATCHED','2026-03-08')", [owner, randomUUID()]);
     assert.equal((await allowance.read(owner, pool, new Date("2026-03-09T04:59:59Z"))).used, 1);
     assert.equal((await allowance.read(owner, pool, new Date("2026-03-09T05:00:00Z"))).used, 0);
+    const priorStage = process.env.AI_COST_ROUTING_STAGE;
+    process.env.AI_COST_ROUTING_STAGE = "pilot";
+    try {
+      await pool.query("insert into image_usage(owner_id,job_kind,job_id,state,cost_microusd) values($1,'native',$2,'DISPATCHED',100000)", [other, randomUUID()]);
+      assert.equal((await allowance.plan(pool, other, { action: "repair", size: "1024x1024", referenceCount: 1 })).mode, "ECONOMY");
+      await pool.query("insert into image_usage(owner_id,job_kind,job_id,state,cost_microusd) values($1,'native',$2,'DISPATCHED',150000)", [other, randomUUID()]);
+      const paused = await allowance.plan(pool, other, { action: "generation", size: "1024x1024", referenceCount: 0 });
+      assert.equal(paused.mode, "PAUSED");
+      await assert.rejects(allowance.transaction(async client => {
+        await client.query("select id from app_user where id=$1 for update", [other]);
+        await allowance.reserve(client, other, "native", randomUUID(), paused);
+      }), /spend ceiling/);
+    } finally {
+      if (priorStage === undefined) delete process.env.AI_COST_ROUTING_STAGE; else process.env.AI_COST_ROUTING_STAGE = priorStage;
+    }
   } finally { await pool.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end(); }
 });
 
@@ -141,11 +159,12 @@ integration("migration backfills recent attempts and queues without recounting o
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL, options: `-c search_path=${schema},public` });
   try {
     await pool.query(await readFile("db/baseline.sql", "utf8"));
-    for (const f of (await readdir("drizzle")).filter(f => f.endsWith(".sql") && !f.startsWith("0022")).sort()) await pool.query(await readFile(`drizzle/${f}`, "utf8"));
+    for (const f of (await readdir("drizzle")).filter(f => f.endsWith(".sql") && !f.startsWith("0022") && !f.startsWith("0023")).sort()) await pool.query(await readFile(`drizzle/${f}`, "utf8"));
     const owner = `backfill:${randomUUID()}`;
     await pool.query("insert into app_user(id,google_subject) values($1,$1)", [owner]);
     for (const [state, age] of [["FAILED", "0 hours"], ["COMPLETE", "0 hours"], ["QUEUED", "1 day"], ["FAILED", "2 days"]]) await pool.query("insert into native_scene_render(owner_id,request_id,model,recipe,state,created_at,storage_key,content_type,content_hash,width,height) values($1,$2::uuid,'synthetic','{}',$3,now()-$4::interval,$2::uuid::text,'image/jpeg','synthetic',512,512)", [owner, randomUUID(), state, age]);
     await pool.query(await readFile("drizzle/0022_image_allowance_repairs.sql", "utf8"));
+    await pool.query(await readFile("drizzle/0023_ai_spend_ledger.sql", "utf8"));
     const rows = (await pool.query("select state,count(*)::int as n from image_usage group by state order by state")).rows;
     assert.deepEqual(rows, [{ state: "DISPATCHED", n: 2 }, { state: "RESERVED", n: 1 }]);
     const allowance = new ImageAllowanceService(pool);

@@ -126,12 +126,14 @@ export function SwitchDock() {
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const trigger = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const loggedHeading = useRef<HTMLParagraphElement>(null);
   const attempt = useRef<Attempt | null>(null);
   const followUp = useRef<{ key: string; requestId: string } | null>(null);
   const submitting = useRef(false);
   const rosterRequested = useRef(false);
+  const restoreTriggerFocus = useRef(false);
 
   // A failed read never raises an alert in the dock; signed-out pages mount it
   // too, and Switch still opens.
@@ -177,10 +179,21 @@ export function SwitchDock() {
     void readRoster();
   }
   function closePanel(restoreFocus = true) {
+    restoreTriggerFocus.current = restoreFocus;
     setOpen(false);
-    if (restoreFocus) trigger.current?.focus();
   }
-  useEffect(() => { if (open) panelHeading.current?.focus(); }, [open]);
+  useEffect(() => {
+    const modal = dialog.current;
+    if (open && modal) {
+      if (!modal.open) modal.showModal();
+      panelHeading.current?.focus();
+      return () => { if (modal.open) modal.close(); };
+    }
+    if (restoreTriggerFocus.current) {
+      restoreTriggerFocus.current = false;
+      trigger.current?.focus();
+    }
+  }, [open]);
   const loggedId = logged?.changeRequestId;
   useEffect(() => { if (loggedId) loggedHeading.current?.focus(); }, [loggedId]);
 
@@ -329,45 +342,65 @@ export function SwitchDock() {
     : read.status === "ERROR" || roster.status === "ERROR" ? "ERROR" : null;
 
   return <section className="switch-dock" aria-label="Switch dock">
-    {open ? <div id="switch-dock-panel" className="switch-dock-panel" role="region" aria-labelledby="switch-dock-heading">
-      <div className="switch-dock-picker">
-        <div className="switch-dock-modes">
-          <h2 id="switch-dock-heading" className="switch-dock-kicker" ref={panelHeading} tabIndex={-1}>Record a switch as</h2>
-          <button type="button" className="switch-dock-mode host" aria-pressed={mode === "HOST"} disabled={busy || uncertain} onClick={() => setMode("HOST")}>
-            <span className="switch-dock-dot" aria-hidden="true" />Host
-          </button>
-          <button type="button" className="switch-dock-mode" aria-pressed={mode === "ALSO"} disabled={busy || uncertain} onClick={() => setMode("ALSO")}>
-            <span className="switch-dock-dot" aria-hidden="true" />Also here
-          </button>
-          <p className="switch-dock-hint">{mode === "HOST" ? "Replaces the open hosting period" : "Opens an overlapping episode; host unchanged"}</p>
-        </div>
-        {uncertain ? <button type="button" className="switch-dock-secondary" disabled={busy} onClick={() => { if (attempt.current) void send(attempt.current); }}>Retry switch</button> : null}
-        {presence && roster.status === "READY"
-          ? roster.profiles.length
-            ? <div className="switch-dock-faces">
-              {roster.profiles.map(profile => <FaceTile key={profile.id} profile={profile} presence={presence} mode={mode} now={now} disabled={!canTap} onTap={() => tap(profile)} />)}
-            </div>
-            : <p className="switch-dock-empty">No profiles are saved yet. <Link href="/profiles">Add people</Link> to record switches.</p>
-          : rosterProblem === "SIGNED_OUT"
-            ? <p className="switch-dock-empty">Sign in to record switches.</p>
-            : rosterProblem === "ERROR"
-              ? <p className="switch-dock-empty">Profiles or current records could not be read.{" "}
-                <button type="button" className="switch-dock-secondary" onClick={() => { setRoster({ status: "LOADING" }); void readPresence(); void readRoster(); }}>Read again</button></p>
-              : <p className="switch-dock-empty">Reading profiles…</p>}
+    {open ? <dialog ref={dialog} id="switch-dock-panel" className="switch-dock-modal" aria-labelledby="switch-dock-heading"
+      onCancel={event => { event.preventDefault(); closePanel(); }}
+      onClick={event => { if (event.target === event.currentTarget) closePanel(); }}
+      onKeyDown={event => {
+        if (event.key !== "Tab") return;
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), [tabindex]:not([tabindex='-1'])"));
+        const first = controls[0];
+        const last = controls.at(-1);
+        if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !event.currentTarget.contains(document.activeElement))) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }}>
+      <div className="switch-dock-modal-header">
+        <h2 id="switch-dock-heading" ref={panelHeading} tabIndex={-1}>Record a switch as</h2>
+        <button type="button" className="switch-dock-close" onClick={() => closePanel()}>Close</button>
       </div>
-      <section className="switch-dock-recent" aria-labelledby="switch-dock-recent-heading">
-        <h3 id="switch-dock-recent-heading" className="switch-dock-kicker">Recent switches</h3>
-        {roster.status === "READY" && roster.events?.length
-          ? <ol>{roster.events.map(event => <li key={event.key}>
-            <span className="switch-dock-avatar small" aria-hidden="true">{initials(event.alterName)}</span>
-            <span className="switch-dock-event-line">{switchEventLine(event)}</span>
-            <time dateTime={event.at}>{elapsed(event.at, now)}</time>
-            {event.detail ? <span className="switch-dock-event-detail">{event.detail}</span> : null}
-          </li>)}</ol>
-          : <p>{roster.status !== "READY" ? "Reading recent switches…" : roster.events ? "No switches recorded yet." : "Recent switches could not be read."}</p>}
-        <p className="switch-dock-footnote">Saved reports, not a fresh check. Episodes stay open until an end is recorded.</p>
-      </section>
-    </div> : null}
+      <div className="switch-dock-panel">
+        <div className="switch-dock-picker">
+          <div className="switch-dock-modes">
+            <button type="button" className="switch-dock-mode host" aria-pressed={mode === "HOST"} disabled={busy || uncertain} onClick={() => setMode("HOST")}>
+              <span className="switch-dock-dot" aria-hidden="true" />Host
+            </button>
+            <button type="button" className="switch-dock-mode" aria-pressed={mode === "ALSO"} disabled={busy || uncertain} onClick={() => setMode("ALSO")}>
+              <span className="switch-dock-dot" aria-hidden="true" />Also here
+            </button>
+            <p className="switch-dock-hint">{mode === "HOST" ? "Replaces the open hosting period" : "Opens an overlapping episode; host unchanged"}</p>
+          </div>
+          {uncertain ? <button type="button" className="switch-dock-secondary" disabled={busy} onClick={() => { if (attempt.current) void send(attempt.current); }}>Retry switch</button> : null}
+          {presence && roster.status === "READY"
+            ? roster.profiles.length
+              ? <div className="switch-dock-faces">
+                {roster.profiles.map(profile => <FaceTile key={profile.id} profile={profile} presence={presence} mode={mode} now={now} disabled={!canTap} onTap={() => tap(profile)} />)}
+              </div>
+              : <p className="switch-dock-empty">No profiles are saved yet. <Link href="/profiles">Add people</Link> to record switches.</p>
+            : rosterProblem === "SIGNED_OUT"
+              ? <p className="switch-dock-empty">Sign in to record switches.</p>
+              : rosterProblem === "ERROR"
+                ? <p className="switch-dock-empty">Profiles or current records could not be read.{" "}
+                  <button type="button" className="switch-dock-secondary" onClick={() => { setRoster({ status: "LOADING" }); void readPresence(); void readRoster(); }}>Read again</button></p>
+                : <p className="switch-dock-empty">Reading profiles…</p>}
+        </div>
+        <section className="switch-dock-recent" aria-labelledby="switch-dock-recent-heading">
+          <h3 id="switch-dock-recent-heading" className="switch-dock-kicker">Recent switches</h3>
+          {roster.status === "READY" && roster.events?.length
+            ? <ol>{roster.events.map(event => <li key={event.key}>
+              <span className="switch-dock-avatar small" aria-hidden="true">{initials(event.alterName)}</span>
+              <span className="switch-dock-event-line">{switchEventLine(event)}</span>
+              <time dateTime={event.at}>{elapsed(event.at, now)}</time>
+              {event.detail ? <span className="switch-dock-event-detail">{event.detail}</span> : null}
+            </li>)}</ol>
+            : <p>{roster.status !== "READY" ? "Reading recent switches…" : roster.events ? "No switches recorded yet." : "Recent switches could not be read."}</p>}
+          <p className="switch-dock-footnote">Saved reports, not a fresh check. Episodes stay open until an end is recorded.</p>
+        </section>
+      </div>
+    </dialog> : null}
 
     {logged ? <div className="switch-dock-logged" role="group" aria-labelledby="switch-dock-logged-heading">
       <p id="switch-dock-logged-heading" ref={loggedHeading} tabIndex={-1}><strong>{loggedHeadline(logged.action, logged.alterName, clock(logged.at))}</strong></p>

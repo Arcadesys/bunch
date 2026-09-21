@@ -74,6 +74,9 @@ export function nativeSceneView(
     width: row.width ? Number(row.width) : null,
     height: row.height ? Number(row.height) : null,
     contentHash: row.content_hash ? String(row.content_hash) : null,
+    model: String(row.model),
+    quality: String(row.quality ?? "high"),
+    costMode: String(row.cost_mode ?? "STANDARD"),
   });
 }
 
@@ -292,20 +295,23 @@ export class NativeSceneService {
           "CONFLICT",
           "An image is already generating. Wait for it before starting another.",
         );
-      const model =
-        process.env.NATIVE_SCENE_MODEL ||
-        process.env.GROUP_PHOTO_MODEL ||
-        DEFAULT_GROUP_PHOTO_MODEL;
+      const size = nativeSceneSizes[recipe.format];
+      const plan = await this.allowance.plan(client, ownerId, {
+        action: input.repairSource ? "repair" : "generation",
+        size,
+        referenceCount: references.length + (input.repairSource ? 1 : 0),
+        legacyModel: process.env.NATIVE_SCENE_MODEL || process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL,
+      });
       const inserted = await client.query(
-        "insert into native_scene_render(owner_id,request_id,state,model,recipe) values($1,$2::uuid,'QUEUED',$3,$4::jsonb) returning *",
-        [ownerId, input.requestId, model, JSON.stringify(recipe)],
+        "insert into native_scene_render(owner_id,request_id,state,model,quality,cost_mode,recipe) values($1,$2::uuid,'QUEUED',$3,$4,$5,$6::jsonb) returning *",
+        [ownerId, input.requestId, plan.model, plan.quality, plan.mode, JSON.stringify(recipe)],
       );
       if (input.repairSource) {
         await this.repairs.validate(client, ownerId, recipe);
         const column = { private: "source_private_id", native: "source_native_id", group: "source_group_id" }[input.repairSource.kind];
         await client.query(`update native_scene_render set ${column}=$1 where owner_id=$2 and id=$3`, [input.repairSource.id, ownerId, inserted.rows[0].id]);
       }
-      await this.allowance.reserve(client, ownerId, "native", inserted.rows[0].id);
+      await this.allowance.reserve(client, ownerId, "native", inserted.rows[0].id, plan);
       return nativeSceneView(inserted.rows[0]);
     });
   }
@@ -373,6 +379,7 @@ export class NativeSceneService {
       const output = await this.provider({
         prompt: recipe.prompt,
         model: job.model,
+        quality: job.quality,
         references: images,
         size: nativeSceneSizes[recipe.format],
         onUsage: usage => this.allowance.recordUsage(ownerId, "native", id, usage),

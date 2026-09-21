@@ -174,6 +174,22 @@ integration(
         await assert.rejects(pilot.accept({ ownerId: `auth0:friend:${randomUUID()}`, email: "e@example.test", emailVerified: true }, revoked, "E", true));
         await assert.rejects(pilot.createTenantInvitation(a), /operator/);
       });
+      await t.test("operator can expand but not reduce recorded capacity", async () => {
+        const evidence = {
+          checkedAt: new Date().toISOString(),
+          slots: 7,
+          capacityConfirmed: true as const,
+          recoveryConfirmed: true as const,
+          capacityEvidence: "Seven isolated systems fit within the checked service allowances.",
+          recoveryEvidence: "Encrypted backup restored successfully in the checked recovery test.",
+        };
+        await pilot.openTenantInvitations(owner, evidence);
+        assert.equal((await pilot.invitationActivation(owner)).maxFriends, 7);
+        await assert.rejects(
+          pilot.openTenantInvitations(owner, { ...evidence, slots: 6 }),
+          /cannot be reduced/,
+        );
+      });
       await t.test(
         "parallel uploads atomically enforce 50 MB including reservations",
         async () => {

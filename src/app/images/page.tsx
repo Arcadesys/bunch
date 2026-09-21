@@ -11,7 +11,7 @@ import { PeopleToolsNav } from "@/app/people-tools-nav";
 
 type PersonImage = { id: string; isProfilePicture?: boolean; contentType?: string };
 type Person = { id: string; name: string; appearanceReferenceImageIds?: string[]; images?: PersonImage[] };
-type Render = { id: string; scene: string; alterNames: string[]; state: "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED"; createdAt: string; finishedAt: string | null; errorMessage: string | null; width: number | null; height: number | null };
+type Render = { id: string; scene: string; alterNames: string[]; state: "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED"; createdAt: string; finishedAt: string | null; errorMessage: string | null; width: number | null; height: number | null; model: string; quality: "low" | "medium" | "high"; costMode: "STANDARD" | "ECONOMY" | "PAUSED" };
 const demoHeaders = { "x-system-demo": "local" };
 
 function errorMessage(payload: unknown, fallback: string) {
@@ -81,7 +81,8 @@ export default function ImagesPage() {
       if (payload.meta?.allowance) setAllowance(payload.meta.allowance);
       const render = payload.data as Render;
       setRenders(current => [render, ...current.filter(item => item.id !== render.id)]);
-      setNotice(render.state === "COMPLETE" ? "Private image saved. Open its preview below." : "Generating your private image. You can leave and reopen this page.");
+      const economy = render.costMode === "ECONOMY" ? " Economy mode uses lower-cost output; treat identity details as provisional." : "";
+      setNotice((render.state === "COMPLETE" ? "Private image saved. Open its preview below." : "Generating your private image. You can leave and reopen this page.") + economy);
       ids.current.delete(fingerprint);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not start the private image."); }
     finally { setBusy(false); }
@@ -108,9 +109,9 @@ export default function ImagesPage() {
           </div>;
         })}</fieldset>
         <label>Format<select value={format} onChange={event => setFormat(event.target.value as typeof format)}><option value="square">Square</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
-        <ImageAllowanceNotice value={allowance} /><button className="button" type="submit" disabled={busy || pending || available === false || allowance?.remaining === 0}>{busy ? "Starting image…" : pending ? "Image in progress…" : "Generate private image"}</button></form>
+        <ImageAllowanceNotice value={allowance} /><button className="button" type="submit" disabled={busy || pending || available === false || allowance?.remaining === 0 || allowance?.mode === "PAUSED"}>{busy ? "Starting image…" : pending ? "Image in progress…" : allowance?.mode === "PAUSED" ? "Paid images paused" : "Generate private image"}</button></form>
     </section>
-    <RepairForm selected={repairSource} onSelect={setRepairSource} onSaved={load} blocked={pending || available === false || allowance?.remaining === 0} />
-    <section className="panel" aria-labelledby="history-heading"><h2 id="history-heading">Private image history</h2>{renders.length === 0 ? <p>No private images generated here yet.</p> : <ul className="recent-scenes">{renders.map(render => <li key={render.id}><article><h3>{render.state === "COMPLETE" ? "Private image ready" : render.state === "FAILED" ? "Private image failed" : "Private image in progress"}</h3><p>{render.scene}</p><p role={render.state === "FAILED" ? "alert" : "status"}>{render.state === "FAILED" ? render.errorMessage ?? "Generation failed. You can try again." : render.state === "COMPLETE" ? "Saved privately." : "Generating. You can reopen this entry later."}</p>{render.state === "COMPLETE" && <><img style={{ maxWidth: "100%", height: "auto" }} src={`/api/v1/native-scenes/renders/${encodeURIComponent(render.id)}/image`} alt="Generated private image" /><p><a href={`/images?render=${encodeURIComponent(render.id)}`}>Reopen this image</a> · <a href={`/api/v1/native-scenes/renders/${encodeURIComponent(render.id)}/image`} download="private-scene.jpg">Download private image</a></p><button className="button" onClick={() => { setRepairSource({ kind: "native", id: render.id }); document.getElementById("repair-heading")?.scrollIntoView({ block: "start" }); }}>Repair this image</button></>}</article></li>)}</ul>}</section>
+    <RepairForm selected={repairSource} onSelect={setRepairSource} onSaved={load} blocked={pending || available === false || allowance?.remaining === 0 || allowance?.mode === "PAUSED"} />
+    <section className="panel" aria-labelledby="history-heading"><h2 id="history-heading">Private image history</h2>{renders.length === 0 ? <p>No private images generated here yet.</p> : <ul className="recent-scenes">{renders.map(render => <li key={render.id}><article><h3>{render.state === "COMPLETE" ? "Private image ready" : render.state === "FAILED" ? "Private image failed" : "Private image in progress"}</h3><p>{render.scene}</p>{render.costMode === "ECONOMY" && <p><strong>Economy output:</strong> lower-cost generation was used. Check identity details before relying on this image; it is not automatically canon.</p>}<p role={render.state === "FAILED" ? "alert" : "status"}>{render.state === "FAILED" ? render.errorMessage ?? "Generation failed. You can try again." : render.state === "COMPLETE" ? "Saved privately." : "Generating. You can reopen this entry later."}</p>{render.state === "COMPLETE" && <><img style={{ maxWidth: "100%", height: "auto" }} src={`/api/v1/native-scenes/renders/${encodeURIComponent(render.id)}/image`} alt="Generated private image" /><p><a href={`/images?render=${encodeURIComponent(render.id)}`}>Reopen this image</a> · <a href={`/api/v1/native-scenes/renders/${encodeURIComponent(render.id)}/image`} download="private-scene.jpg">Download private image</a></p><button className="button" onClick={() => { setRepairSource({ kind: "native", id: render.id }); document.getElementById("repair-heading")?.scrollIntoView({ block: "start" }); }}>Repair this image</button></>}</article></li>)}</ul>}</section>
   </main>;
 }

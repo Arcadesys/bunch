@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AppNavigation } from "@/app/app-navigation";
 import { PeopleToolsNav } from "@/app/people-tools-nav";
 import { type ArrangeAction, type GroupPhotoProject, type GroupPhotoRender } from "@/domain/group-photo";
+import type { ImageAllowance } from "@/domain/native-scene";
 
 type Person = { id: string; name: string; species?: string; visualDescription?: string; presentation?: string; profilePicture?: { id: string }; appearanceReferenceImageIds?: string[]; images?: { id: string; isProfilePicture?: boolean }[] };
 const demoHeaders = { "x-system-demo": "local" };
@@ -43,6 +44,7 @@ export default function GroupPhotoPage() {
   const [recent, setRecent] = useState<{ id: string; createdAt: string }[]>([]);
   const [finisherAvailable, setFinisherAvailable] = useState<boolean | null>(null);
   const [photoError, setPhotoError] = useState(false);
+  const [imageAllowance, setImageAllowance] = useState<ImageAllowance | null>(null);
   const projectId = project?.id;
   const latestRender = project?.renders?.[0];
   const finishedPhoto = project?.renders?.find(r => r.state === "COMPLETE");
@@ -94,7 +96,7 @@ export default function GroupPhotoPage() {
         setProject(payload.data);
         const latest = payload.data.renders?.[0] as GroupPhotoRender | undefined;
         if (latest?.state === "COMPLETE") setNotice("Finished photo saved privately.");
-        else if (latest?.state === "FAILED") setNotice(latest.errorMessage ?? "Photo finishing failed. Your scene is saved.");
+        else if (latest?.state === "FAILED") setNotice("Photo finishing failed. Your scene is safe.");
       } catch (error) { if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : "Could not refresh photo progress."); }
       finally { inFlight = false; }
     };
@@ -116,7 +118,8 @@ export default function GroupPhotoPage() {
       const render = payload.data as GroupPhotoRender;
       setProject(current => current ? { ...current, renders: [render, ...(current.renders ?? []).filter(r => r.id !== render.id)] } : current);
       finishRequest.current = null;
-      setNotice(render.state === "COMPLETE" ? "Finished photo saved privately." : "Finishing your photo. You can leave and reopen this scene.");
+      const economy = render.costMode === "ECONOMY" ? " Economy mode is active; check identity details and do not treat the result as canon automatically." : "";
+      setNotice((render.state === "COMPLETE" ? "Finished photo saved privately." : "Finishing your photo. You can leave and reopen this scene.") + economy);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not start photo finishing. Try again to check the same request."); }
     finally { saving.current = false; setBusy(false); }
   }
@@ -195,7 +198,7 @@ export default function GroupPhotoPage() {
     {!project && <section className="panel group-photo-intro"><h2>Start with the real photo</h2><p>Choose your scene, then place people where you want them together.</p><form className="upload-form" onSubmit={uploadBackplate}><label>Choose a JPEG, PNG, or WebP photo<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button" disabled={busy} type="submit">{busy ? "Opening scene…" : "Use this scene"}</button></form></section>}
     {!project && recent.length > 0 && <section className="panel"><h2>Recent scenes</h2><ul className="recent-scenes">{recent.map((scene, index) => <li key={scene.id}><a href={`/group-photo?project=${scene.id}`}>Open scene {index + 1} · {new Date(scene.createdAt).toLocaleDateString()}</a></li>)}</ul></section>}
     {project && <section className="group-photo-workspace" aria-label="Group Photo staging workspace">
-      <div className="staging-panel"><div className="staging-heading"><div><h2>Place people</h2><p id="stage-help">Select a person, then tap the scene. Drag a placed name, use arrow keys, or use Move.</p></div><span className="group-photo-save-state" aria-hidden="true">{busy ? "Saving…" : "Saved"}</span></div>
+      <div className="staging-panel"><div className="staging-heading"><div><h2>Place people</h2><p id="stage-help">Select a person, then tap the scene. Drag a placed name, use arrow keys, or use Move.</p></div><span className="group-photo-save-state" aria-hidden="true">{busy ? "Saving layout…" : "Layout saved"}</span></div>
         <div className="backplate-frame"><div ref={stageRef} className="backplate-stage" aria-label="Photo staging area" aria-describedby="stage-help"
           onClick={event => { if (event.target instanceof Element && event.target.closest("button")) return; const p = point(event.clientX, event.clientY); if (selectedId && p) void savePlacement(selectedId, p.x, p.y); }}
           onDragOver={event => event.preventDefault()}
@@ -219,7 +222,7 @@ export default function GroupPhotoPage() {
           })}
         </div></div>
         {finishedPhoto && <figure className="finished-photo">
-          <figcaption><div><h3>Finished group photo</h3><p>Saved privately.{finishedPhoto.sourceVersion !== project.version ? " Your scene has changed since this photo was finished." : ""}</p></div><div className="finished-photo-actions"><a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a><a href={`/images?repairKind=group&repairId=${finishedPhoto.id}`}>Repair image</a></div></figcaption>
+          <figcaption><div><h3>Finished group photo</h3><p>Saved privately.{finishedPhoto.sourceVersion !== project.version ? " Your scene has changed since this photo was finished." : ""}</p>{finishedPhoto.costMode === "ECONOMY" && <p><strong>Economy output:</strong> verify identity details before relying on this image. It is not automatically canon.</p>}</div><div className="finished-photo-actions"><a href={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} download="group-photo.jpg">Download finished photo</a><a href={`/images?repairKind=group&repairId=${finishedPhoto.id}`}>Repair image</a></div></figcaption>
           {/* Private images must load through the owner's session, never the public optimizer. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`/api/v1/group-photos/${project.id}/renders/${finishedPhoto.id}/image`} alt="Finished group photo" onError={() => setPhotoError(true)} onLoad={() => setPhotoError(false)} />
@@ -239,10 +242,12 @@ export default function GroupPhotoPage() {
       </aside>
     </section>}
     {project && <section className="photo-finisher" aria-label="Finish group photo">
+      <p className="photo-finisher-hint">You can finish with just the people you&rsquo;ve placed so far — anyone left in the People list stays out of this photo.</p>
       <div className="photo-finisher-status"><p className="group-photo-notice" role="status">{notice}</p>{latestRender?.state === "FAILED" && <p role="alert">{latestRender.errorMessage}</p>}</div>
-      <div className="photo-finisher-actions"><ImageAllowanceNotice compact refreshKey={`${latestRender?.id}:${latestRender?.state}`} />
-        <button className="button" type="button" disabled={busy || rendering || !project.placements.length || finisherAvailable === false} onClick={() => void finishPhoto()}>{rendering ? "Finishing photo…" : latestRender?.state === "FAILED" ? "Try finishing again" : "Finish photo"}</button>
+      <div className="photo-finisher-actions"><ImageAllowanceNotice compact refreshKey={`${latestRender?.id}:${latestRender?.state}`} onChange={setImageAllowance} />
+        <button className="button" type="button" disabled={busy || rendering || !project.placements.length || finisherAvailable === false || imageAllowance?.mode === "PAUSED"} onClick={() => void finishPhoto()}>{rendering ? "Finishing photo…" : latestRender?.state === "FAILED" ? "Try finishing again" : "Finish photo"}</button>
       </div>
+      {imageAllowance?.mode === "PAUSED" && <p className="photo-finisher-unavailable">Paid images are paused until the displayed daily reset. Your saved scene remains available.</p>}
       {finisherAvailable === false && <p className="photo-finisher-unavailable">Photo finishing is not connected yet. You can keep arranging and saving this scene.</p>}
     </section>}
     {!project && <p className="notice" role="status">{notice}</p>}

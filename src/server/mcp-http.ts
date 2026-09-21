@@ -1,7 +1,7 @@
 import { createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
 import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createMcpServer } from "@/server/mcp-server";
+import { createMcpCatalogServer, createMcpServer } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
 const PUBLIC_RPC_METHODS = new Set([
@@ -21,6 +21,7 @@ type McpTransport = WebStandardStreamableHTTPServerTransport;
 
 export type McpHttpOptions = {
   authorize?: typeof requireCompanionAccessToken;
+  createCatalogServer?: () => Pick<McpServer, "connect" | "close">;
   createDemoServer?: () => Pick<McpServer, "connect" | "close">;
   createPrivateServer?: (ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) => Pick<McpServer, "connect" | "close">;
   createTransport?: () => McpTransport;
@@ -65,6 +66,13 @@ function defaultTransport() {
 
 function defaultPrivateServer(ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) {
   return createMcpServer(ownerId, undefined, undefined, undefined, undefined, scheduleNativeScene);
+}
+
+function defaultCatalogServer() {
+  // tools/list never invokes a callback, so this non-user identity is used only
+  // to build the stable descriptor catalog ChatGPT scans before OAuth. Private
+  // calls remain behind requireCompanionAccessToken below.
+  return createMcpCatalogServer();
 }
 
 function safeChallenge() {
@@ -118,6 +126,7 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   }
 
   const createTransport = options.createTransport ?? defaultTransport;
+  const createCatalogServer = options.createCatalogServer ?? defaultCatalogServer;
   const createDemoServer = options.createDemoServer ?? createDemoMcpServer;
   const createPrivateServer = options.createPrivateServer ?? defaultPrivateServer;
   let server: Pick<McpServer, "connect" | "close"> | undefined;
@@ -126,9 +135,11 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
 
   try {
     const transport = createTransport();
-    server = ownerId === null
-      ? createDemoServer()
-      : createPrivateServer(ownerId, options.scheduleNativeScene);
+    server = ownerId !== null
+      ? createPrivateServer(ownerId, options.scheduleNativeScene)
+      : classification.rpcMethod === "tools/list"
+        ? createCatalogServer()
+        : createDemoServer();
     await server.connect(transport);
     response = await transport.handleRequest(request);
     response = await addOAuthSecuritySchemes(response);

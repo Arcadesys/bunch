@@ -31,7 +31,8 @@ test("plugin HTTP transport discovers and explores related demo records", async 
   try {
     const listed = await client.listTools();
     expect(listed.tools.map(t => t.name)).toContain("list_demo_notes");
-    expect(listed.tools.every(t => t.annotations?.readOnlyHint)).toBe(true);
+    expect(listed.tools.map(t => t.name)).toEqual(expect.arrayContaining(["list_alters", "render_alter_lineup", "open_private_photo_gallery", "generate_scene"]));
+    expect(listed.tools.filter(t => t.name.startsWith("get_demo_") || t.name.startsWith("list_demo_")).every(t => t.annotations?.readOnlyHint)).toBe(true);
     const read = async (name: string, args = {}) => {
       const response = await client.callTool({ name, arguments: args });
       expect(response.isError).not.toBe(true);

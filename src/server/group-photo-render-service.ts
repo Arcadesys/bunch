@@ -10,7 +10,7 @@ import { GroupPhotoService } from "./group-photo-service";
 import { SystemService } from "./system-service";
 import { SystemError } from "./system-error";
 import { deletePrivateImages, readPrivateImage, savePrivateImage } from "./private-images";
-import { DEFAULT_GROUP_PHOTO_MODEL, MAX_REFERENCE_IMAGES, normalizeFinishedPhoto, openAIGroupPhotoProvider, photoFinisherAvailable, type GroupPhotoProvider } from "./group-photo-provider";
+import { DEFAULT_GROUP_PHOTO_MODEL, GroupPhotoProviderError, MAX_REFERENCE_IMAGES, normalizeFinishedPhoto, openAIGroupPhotoProvider, photoFinisherAvailable, type GroupPhotoProvider } from "./group-photo-provider";
 
 type Recipe = { prompt: string; references: { imageId: string; alterId: string; name: string }[]; profiles: { id: string; version: number }[] };
 type Dependencies = {
@@ -18,7 +18,7 @@ type Dependencies = {
   readImage?: typeof readPrivateImage; saveImage?: typeof savePrivateImage; removeImages?: typeof deletePrivateImages;
 };
 export function renderView(row: Record<string, unknown>): GroupPhotoRender {
-  return { id: String(row.id), sourceVersion: Number(row.source_version), state: row.state as GroupPhotoRender["state"], createdAt: new Date(String(row.created_at)).toISOString(), finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null, errorMessage: row.error_message ? String(row.error_message) : null, width: row.width ? Number(row.width) : null, height: row.height ? Number(row.height) : null, contentHash: row.content_hash ? String(row.content_hash) : null };
+  return { id: String(row.id), sourceVersion: Number(row.source_version), state: row.state as GroupPhotoRender["state"], createdAt: new Date(String(row.created_at)).toISOString(), finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null, errorMessage: row.error_message ? String(row.error_message) : null, width: row.width ? Number(row.width) : null, height: row.height ? Number(row.height) : null, contentHash: row.content_hash ? String(row.content_hash) : null, model: String(row.model), quality: (row.quality ?? "high") as GroupPhotoRender["quality"], costMode: (row.cost_mode ?? "STANDARD") as GroupPhotoRender["costMode"] };
 }
 export class GroupPhotoRenderService {
   readonly allowance: ImageAllowanceService;
@@ -85,8 +85,9 @@ export class GroupPhotoRenderService {
       if (Number(locked.rows[0].version) !== expectedVersion || project.version !== expectedVersion) throw new SystemError("CONFLICT", "Your scene changed. Reload it before finishing.");
       if ((await c.query("select 1 from group_photo_render where owner_id=$1 and state in ('QUEUED','RUNNING')", [ownerId])).rowCount) throw new SystemError("CONFLICT", "A photo is already finishing. Wait for it before starting another.");
       if ((await c.query("select 1 from native_scene_render where owner_id=$1 and state in ('QUEUED','RUNNING') and created_at >= now()-interval '6 minutes'", [ownerId])).rowCount) throw new SystemError("CONFLICT", "An image is already generating. Wait for it before finishing another photo.");
-      const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL, JSON.stringify(recipe)]);
-      await this.allowance.reserve(c, ownerId, "group", result.rows[0].id);
+      const plan = await this.allowance.plan(c, ownerId, { action: "photo_finish", size: "1024x1024", referenceCount: references.length + 1, legacyModel: process.env.GROUP_PHOTO_MODEL || DEFAULT_GROUP_PHOTO_MODEL });
+      const result = await c.query("insert into group_photo_render(owner_id,project_id,request_id,source_version,model,quality,cost_mode,recipe) values($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::jsonb) returning *", [ownerId, projectId, requestId, expectedVersion, plan.model, plan.quality, plan.mode, JSON.stringify(recipe)]);
+      await this.allowance.reserve(c, ownerId, "group", result.rows[0].id, plan);
       return renderView(result.rows[0]);
     });
   }
@@ -114,8 +115,8 @@ export class GroupPhotoRenderService {
       await this.allowance.dispatch(ownerId, "group", renderId, async c => {
         await new ImageRepairService(this.pool).validate(c, ownerId, recipe);
         if (!(await c.query("select 1 from group_photo_project where owner_id=$1 and id=$2 and version=$3", [ownerId, job.project_id, job.source_version])).rowCount) throw new Error("Photo finishing was interrupted. The scene changed.");
-      });
-      const output = await this.provider({ prompt: recipe.prompt, model: job.model, images, size, onUsage: usage => this.allowance.recordUsage(ownerId, "group", renderId, usage) });
+      }, size);
+      const output = await this.provider({ prompt: recipe.prompt, model: job.model, quality: job.quality, images, size, onUsage: usage => this.allowance.recordUsage(ownerId, "group", renderId, usage) });
       const photo = await normalizeFinishedPhoto(output);
       const hash = createHash("sha256").update(photo.bytes).digest("hex");
       const stored = await this.saveImage(ownerId, new File([new Uint8Array(photo.bytes)], "group-photo.jpg", { type: photo.contentType }));
@@ -142,8 +143,10 @@ export class GroupPhotoRenderService {
       }
       // Never return arbitrary provider/storage error strings, which can contain request data.
       const known = error instanceof Error && /^(A person's appearance changed|A selected appearance reference|Photo finishing was interrupted)/.test(error.message);
-      const message = known ? (error as Error).message : "The photo could not be finished and saved. Your scene is safe. Try again later.";
-      await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message);
+      const message = error instanceof GroupPhotoProviderError ? error.message : known ? (error as Error).message : "The photo could not be finished and saved. Your scene is safe.";
+      // Infra-side failures (timeout, rate limit, unreachable provider) refund the attempt; the provider never evaluated the request.
+      const refund = error instanceof GroupPhotoProviderError && error.code !== "CONTENT_POLICY" && error.code !== "BAD_OUTPUT";
+      await this.allowance.failJob(ownerId, "group", renderId, error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN"].includes(error.code) ? error.userMessage : message, { refundIfDispatched: refund });
     }
   }
   async image(ownerId: string, projectId: string, renderId: string) {

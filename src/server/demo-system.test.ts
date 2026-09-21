@@ -54,28 +54,37 @@ test("public REST endpoint returns only immutable fiction without a database", a
 });
 
 test("anonymous hosted MCP discovers and reads demo in production without private access", async () => {
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
   // There is intentionally no SYSTEM_DEMO_MODE or localhost condition.
-  const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
-  assert.equal(stream.status, 405);
-  assert.equal(stream.headers.has("www-authenticate"), false);
-  const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
-  assert.equal(init.status, 200);
-  assert.match((await init.json()).result.instructions, /Demo system/);
-  const listing = await handleMcpRequest(rpc("tools/list"), noPrivateAccess);
-  const tools = (await listing.json()).result.tools;
-  assert.deepEqual(tools.map((t: {name: string}) => t.name), [...DEMO_TOOL_NAMES, "connect_private_system"]);
-  assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
-  assert.deepEqual(tools.at(-1).securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
-  for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
-    const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
-    assert.equal(discovery.status, 200, method);
-    assert.equal(discovery.headers.get("cache-control"), "no-store");
-    assert.equal((await discovery.json()).error?.code, -32601, method);
+  try {
+    const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
+    assert.equal(stream.status, 405);
+    assert.equal(stream.headers.has("www-authenticate"), false);
+    const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
+    assert.equal(init.status, 200);
+    assert.match((await init.json()).result.instructions, /Demo system/);
+    const listing = await handleMcpRequest(rpc("tools/list"), noPrivateAccess);
+    const tools = (await listing.json()).result.tools as Array<{ name: string; securitySchemes: Array<{ type: string; scopes?: string[] }> }>;
+    const byName = new Map(tools.map(tool => [tool.name, tool]));
+    for (const name of DEMO_TOOL_NAMES) assert.deepEqual(byName.get(name)?.securitySchemes, [{ type: "noauth" }], name);
+    for (const name of ["connect_private_system", "get_account_profile", "list_alters", "render_alter_lineup", "open_private_photo_gallery", "generate_scene"]) {
+      assert.deepEqual(byName.get(name)?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }], name);
+    }
+    for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
+      const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
+      assert.equal(discovery.status, 200, method);
+      assert.equal(discovery.headers.get("cache-control"), "no-store");
+      assert.equal((await discovery.json()).error?.code, -32601, method);
+    }
+    const result = await handleMcpRequest(rpc("tools/call", { name: "get_demo_system", arguments: {} }), noPrivateAccess);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
+  } finally {
+    if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+    else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
   }
-  const result = await handleMcpRequest(rpc("tools/call", { name: "get_demo_system", arguments: {} }), noPrivateAccess);
-  assert.equal(result.status, 200);
-  assert.equal(result.headers.get("cache-control"), "no-store");
-  assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
 });
 
 test("private calls, resources, and every supplied invalid credential remain unauthorized", async () => {

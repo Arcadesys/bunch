@@ -34,6 +34,14 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
       assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const upload = byName.get("upload_private_image");
+    assert.deepEqual(upload?._meta?.["openai/fileParams"], ["file"]);
+    const fileSchema = upload?.inputSchema?.properties?.file as { required?: string[]; properties?: Record<string, { type?: string }> } | undefined;
+    assert.deepEqual(fileSchema?.required, ["download_url", "file_id"]);
+    assert.equal(fileSchema?.properties?.download_url?.type, "string");
+    assert.equal(fileSchema?.properties?.file_id?.type, "string");
+    assert.equal(upload?.annotations?.readOnlyHint, false);
+    assert.equal(upload?.annotations?.destructiveHint, false);
     const profileDescriptor = byName.get("get_account_profile");
     assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
     assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
@@ -138,7 +146,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
 
 test("native scene MCP generation schedules once and returns only the authenticated reopen route", async () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null };
+  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null, model: "gpt-image-2", quality: "medium" as const, costMode: "STANDARD" as const };
   const calls: string[] = [];
   const sceneService = {
     start: async (ownerId: string, input: unknown) => { calls.push(`start:${ownerId}:${(input as { scene: string }).scene}`); return render; },
@@ -171,7 +179,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-widget-metadata-test-secret";
   const id = "33333333-3333-4333-8333-333333333333";
   const widgetUri = "ui://system-arcades-me.vercel.app/native-scene-v1.html";
-  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64) };
+  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64), model: "gpt-image-2", quality: "low" as const, costMode: "ECONOMY" as const };
   const sceneService = { start: async () => complete, get: async () => complete, list: async () => [complete] } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
   const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -208,7 +216,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   }
 });
 
-test("alter results name the generate_scene call instead of asking for an upload", async () => {
+test("alter results route ChatGPT through reference handoff instead of paid generation or re-upload", async () => {
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-routing-metadata-test-secret";
   const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [{ id: "55555555-5555-4555-8555-555555555555", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00.000Z" }], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
@@ -222,32 +230,33 @@ test("alter results name the generate_scene call instead of asking for an upload
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const loaded = text(await client.callTool({ name: "get_alter", arguments: { alterId: lucy.id } }));
-    assert.ok(loaded.includes('call generate_scene with alterNames ["Lucy Arcade"]'), loaded);
+    assert.ok(loaded.includes('call prepare_chatgpt_scene with alterNames ["Lucy Arcade"]'), loaded);
     assert.match(loaded, /carry no pixels/);
-    assert.match(loaded, /Do not ask the user to upload a photo Bunch already holds/);
+    assert.match(loaded, /ask the user to re-upload a saved reference/);
     const listed = text(await client.callTool({ name: "list_alters", arguments: {} }));
     assert.ok(listed.includes('alterNames ["Lucy Arcade"]'), listed);
     assert.doesNotMatch(listed, /Mouse Arcade/);
     assert.equal(text(await client.callTool({ name: "get_alter", arguments: { alterId: mouse.id } })), "Loaded the alter record.");
 
-    // ChatGPT called the prepare tool for Lucy, read "Use the attached appearance
-    // reference", and asked the user to attach one. The route must come first.
+    // Metadata-only preparation cannot feed ChatGPT's native image harness. The
+    // inline-image handoff route must come first and paid generation must not.
     const { tools } = await client.listTools();
     for (const name of ["prepare_alter_image_prompt", "prepare_furry_scene"]) {
       const description = tools.find((tool) => tool.name === name)?.description ?? "";
-      assert.match(description, /call generate_scene directly/, name);
+      assert.match(description, /prepare_chatgpt_scene/, name);
+      assert.match(description, /never call generate_scene/, name);
       assert.doesNotMatch(description, /before drawing|If this host cannot/, name);
     }
     const prepared = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Lucy in a big cozy sweater", alters: [lucy.id] } });
     const route = text(prepared);
-    assert.ok(route.startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), route);
-    assert.match(route, /do not ask the user to upload a photo Bunch already holds/);
+    assert.ok(route.startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_scene with alterNames ["Lucy Arcade"]'), route);
+    assert.match(route, /ask the user to upload a photo Bunch already holds/);
     assert.match((prepared.content as Array<{ text: string }>)[1].text, /Use the attached appearance reference/, "the packet itself is unchanged for external adapters");
     assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
     const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
-    assert.ok(text(scene).startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), text(scene));
+    assert.ok(text(scene).startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_scene with alterNames ["Lucy Arcade"]'), text(scene));
     const unready = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Portrait", alters: [mouse.id] } });
-    assert.doesNotMatch(JSON.stringify(unready.content), /generate_scene/, "generate_scene would reject a person without references");
+    assert.doesNotMatch(JSON.stringify(unready.content), /prepare_chatgpt_scene/, "the handoff requires selected references");
   } finally {
     if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
     else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;

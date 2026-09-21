@@ -6,7 +6,7 @@ import { requireOwnerId } from "@/server/auth";
 import { deletePrivateImages, savePrivateImage } from "@/server/private-images";
 import { repository } from "@/server/repository";
 import { getSystemService } from "@/server/system-service";
-import { SystemError } from "@/server/system-error";
+import { SystemError, systemErrorStatus } from "@/server/system-error";
 
 export const runtime = "nodejs";
 
@@ -37,7 +37,10 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to upload image.";
-    const status = error instanceof SystemError ? (error.code === "CONFLICT" ? 409 : error.code === "NOT_FOUND" ? 404 : error.code === "FORBIDDEN" ? 403 : error.code === "RATE_LIMITED" ? 429 : error.code === "QUOTA_EXCEEDED" ? 413 : 400) : message.includes("Sign in") ? 401 : 400;
-    return NextResponse.json({ error: error instanceof SystemError ? error.userMessage : message, details: error instanceof SystemError ? error.details : undefined }, { status });
+    const status = error instanceof SystemError ? systemErrorStatus(error) : message.includes("Sign in") ? 401 : 400;
+    return NextResponse.json(
+      { error: error instanceof SystemError ? error.userMessage : message, details: error instanceof SystemError ? error.details : undefined },
+      { status, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 }
