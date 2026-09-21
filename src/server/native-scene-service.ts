@@ -453,7 +453,7 @@ export class NativeSceneService {
         error instanceof SystemError && ["QUOTA_EXCEEDED", "FORBIDDEN", "NOT_FOUND"].includes(error.code) ? error.userMessage : known ? (error as Error).message : "The scene could not be generated and saved. Try again later.");
     }
   }
-  async image(ownerId: string, id: string) {
+  async image(ownerId: string, id: string, ifNoneMatch?: string) {
     const row = (
       await this.pool.query(
         "select storage_key,content_type from native_scene_render where owner_id=$1 and id=$2::uuid and state='COMPLETE'",
@@ -463,7 +463,7 @@ export class NativeSceneService {
     if (!row)
       throw new SystemError("NOT_FOUND", "Native scene image not found.");
     return {
-      ...(await this.readImage(row.storage_key)),
+      ...(await this.readImage(row.storage_key, { ifNoneMatch })),
       contentType: String(row.content_type),
     };
   }

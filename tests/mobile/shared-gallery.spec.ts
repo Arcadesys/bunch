@@ -29,6 +29,76 @@ test("shared gallery gives visitors an intro, accessible person navigation, and 
   expect(reflow.scroll).toBeLessThanOrEqual(reflow.client + 1);
 });
 
+test("shared gallery renders a selected profile image once and loads the dialog image only after opening", async ({ page }) => {
+  const imageRequests: string[] = [];
+  await page.route("**/api/public/gallery/dedupe", async (route) => route.fulfill({ json: {
+    alters: [{ id: "robin", name: "Test Robin", images: [
+      { id: "robin-profile", contentType: "image/png", role: "profile", order: 0 },
+      { id: "robin-1", contentType: "image/png", role: "image", order: 1 },
+    ] }],
+    generalImages: [],
+  } }));
+  await page.route("**/api/public/gallery/dedupe/images/**", async (route) => {
+    imageRequests.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL2dQAAAABJRU5ErkJggg==", "base64") });
+  });
+  await page.goto("/gallery/share/dedupe");
+  await page.getByRole("button", { name: "Continue to the gallery" }).click();
+
+  await expect(page.getByRole("img", { name: "Profile picture for Test Robin" })).toHaveCount(1);
+  await expect(page.getByRole("img", { name: "Picture 1 for Test Robin" })).toHaveCount(1);
+  await expect.poll(() => imageRequests.filter((path) => path.endsWith("/robin-profile")).length).toBe(1);
+  await expect(page.locator("dialog img")).toHaveCount(0);
+
+  const profileTrigger = page.getByRole("button", { name: "Open larger view: Profile picture for Test Robin" });
+  await profileTrigger.click();
+  await expect(page.getByRole("dialog", { name: "Profile picture for Test Robin" })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("img", { name: "Profile picture for Test Robin" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(profileTrigger).toBeFocused();
+});
+
+test("shared gallery pauses hidden polling and coalesces refresh triggers", async ({ page }) => {
+  await page.clock.install();
+  let metadataRequests = 0;
+  let holdNext = false;
+  let releasePending: (() => void) | undefined;
+  await page.route("**/api/public/gallery/polling", async (route) => {
+    metadataRequests += 1;
+    if (holdNext) {
+      holdNext = false;
+      await new Promise<void>((resolve) => { releasePending = resolve; });
+    }
+    return route.fulfill({ json: gallery });
+  });
+  await page.goto("/gallery/share/polling");
+  await expect.poll(() => metadataRequests).toBeGreaterThan(0);
+  await page.waitForTimeout(50);
+  const initialRequests = metadataRequests;
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(60_000);
+  expect(metadataRequests).toBe(initialRequests);
+
+  holdNext = true;
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => metadataRequests).toBe(initialRequests + 1);
+  await page.getByRole("button", { name: "Refresh shared gallery" }).click();
+  await page.getByRole("button", { name: "Refresh shared gallery" }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.clock.fastForward(30_000);
+  expect(metadataRequests).toBe(initialRequests + 1);
+
+  releasePending?.();
+  await expect.poll(() => metadataRequests).toBe(initialRequests + 2);
+});
+
 test("unavailable shared gallery is generic and does not expose token details", async ({ page }) => {
   await page.route("**/api/public/gallery/not-valid", async (route) => route.fulfill({ status: 404, json: { error: { message: "specific internal reason" } } }));
   await page.goto("/gallery/share/not-valid");

@@ -5,10 +5,12 @@ import { requirePilotIdentity } from "@/server/auth";
 import { getPilotService } from "@/server/pilot-service";
 import { repository } from "@/server/repository";
 import { readPrivateImage } from "@/server/private-images";
+import { privateMediaError, privateMediaResponse } from "@/server/private-media-response";
 import { uuidSchema } from "@/domain/contracts";
+import { deleteSharedGalleryImageCache } from "@/server/shared-gallery-cache";
 export const runtime = "nodejs";
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ imageId: string }> },
 ) {
   try {
@@ -21,17 +23,10 @@ export async function GET(
     const imageId = uuidSchema.parse((await params).imageId);
     const image = await repository.getImage(ownerId, imageId);
     if (!image) return new Response("Not found", { status: 404 });
-    const stored = await readPrivateImage(image.storageKey);
-    return new Response(stored.body, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Type": stored.contentType,
-        "Content-Disposition": `attachment; filename="${imageId}"`,
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    const stored = await readPrivateImage(image.storageKey, { ifNoneMatch: request.headers.get("if-none-match") ?? undefined });
+    return privateMediaResponse(request, stored, { contentDisposition: `attachment; filename="${imageId}"` });
   } catch {
-    return new Response("Unavailable", { status: 403 });
+    return privateMediaError("Unavailable", 403);
   }
 }
 
@@ -81,6 +76,8 @@ export async function DELETE(
         [ownerId, image.alter_id],
       );
     });
+    const purge = await deleteSharedGalleryImageCache(imageId);
+    if (!purge.deleted) throw new Error("The image was deleted, but its shared-gallery edge cache still needs deletion.");
     return Response.json(
       { deleted: true },
       { headers: { "Cache-Control": "private, no-store" } },
