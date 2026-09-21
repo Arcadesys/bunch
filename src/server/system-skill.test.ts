@@ -31,7 +31,8 @@ test("MCP advertises and serves the System Companion skill snapshot", async () =
   assert.equal(repoSkill, SYSTEM_SKILL_TEXT);
   assert.equal(pluginSkill, repoSkill);
   assert.equal(pluginOpenAI, repoOpenAI);
-  assert.match(repoOpenAI, /generate_scene directly/);
+  assert.match(repoOpenAI, /prepare_chatgpt_alter_image/);
+  assert.match(repoSkill, /Never call `generate_scene` as a ChatGPT fallback/);
   assert.match(repoSkill, /exactly one active result has the exact requested name/);
   assert.match(repoSkill, /RECORDED_FRONTING_WINDOW/);
   assert.match(repoSkill, /explicitly authorize the write/);

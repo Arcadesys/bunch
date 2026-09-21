@@ -26,9 +26,9 @@ export function chatgptAlterImageWidget(publicOrigin: string) {
 <p class="request" id="request">Preparing your image generation…</p>
 <div class="file" id="scene-file" hidden><span class="file-icon" aria-hidden="true">▣</span><div class="file-copy"><p class="file-label">Scene image received</p><p class="file-detail" id="scene-detail"></p></div></div>
 <ol class="statuses" aria-label="Generation progress">
-<li class="status" id="scene-status" data-state="active"><span class="status-icon" aria-hidden="true">…</span><div class="status-copy"><p class="status-title">Piano image received</p><p class="status-detail" id="scene-status-detail">Waiting for the uploaded scene image.</p></div></li>
+<li class="status" id="scene-status" data-state="active"><span class="status-icon" aria-hidden="true">…</span><div class="status-copy"><p class="status-title">Scene image (optional)</p><p class="status-detail" id="scene-status-detail">Waiting for an optional uploaded scene image.</p></div></li>
 <li class="status" id="reference-status"><span class="status-icon" aria-hidden="true">2</span><div class="status-copy"><p class="status-title">Private appearance references ready</p><p class="status-detail" id="reference-status-detail">References stay private during this generation.</p></div></li>
-<li class="status" id="generation-status"><span class="status-icon" aria-hidden="true">3</span><div class="status-copy"><p class="status-title">Generating securely in ChatGPT</p><p class="status-detail" id="generation-status-detail">The image will use the scene first and private references only for this request.</p></div></li>
+<li class="status" id="generation-status"><span class="status-icon" aria-hidden="true">3</span><div class="status-copy"><p class="status-title">Generating securely in ChatGPT</p><p class="status-detail" id="generation-status-detail">The image will use the private references only for this request.</p></div></li>
 </ol>
 <p class="privacy">Reference images are shared only for this generation.</p>
 <section class="output" aria-live="polite" aria-label="Generated image preview"><div><p class="output-title" id="output-title">Your generated image will appear here.</p><p class="output-detail" id="output-detail">ChatGPT will show the result below when generation is complete.</p></div></section>
@@ -85,12 +85,17 @@ export function chatgptAlterImageWidget(publicOrigin: string) {
     const current = getState();
     if (alterNames.length) text('title', 'Preparing ' + alterNames.join(', ') + ' references');
     text('request', data.scene ? 'Generate an image of ' + data.scene + '.' : 'Preparing your image generation…');
-    if (!scene.file_id || !alterNames.length || !expectedReferenceNames.length || media.length !== expectedReferenceNames.length) { fail('Required scene or appearance references are unavailable.'); return; }
-    el('scene-file').hidden = false; text('scene-detail', 'Uploaded scene image'); phase('scene', 'The uploaded scene image is ready.');
+    if (!alterNames.length || !expectedReferenceNames.length || media.length !== expectedReferenceNames.length) { fail('Required appearance references are unavailable.'); return; }
+    const hasScene = Boolean(scene.file_id);
+    if (hasScene) {
+      el('scene-file').hidden = false; text('scene-detail', 'Uploaded scene image'); phase('scene', 'The uploaded scene image is ready.');
+    } else {
+      phase('scene', 'No scene image supplied; using private appearance references only.');
+    }
     if (current.phase === 'sent' || current.phase === 'complete') { phase('reference', 'Private references are already prepared for this request.'); phase('generation', 'ChatGPT is handling this generation.'); return; }
     try {
       if (!window.openai?.uploadFile || !window.openai?.setWidgetState) throw new Error('ChatGPT image handoff is unavailable in this host.');
-      const imageIds = [scene.file_id];
+      const imageIds = hasScene ? [scene.file_id] : [];
       const prepared = [];
       for (let index = 0; index < media.length; index += 1) {
         const item = media[index];
@@ -109,10 +114,11 @@ export function chatgptAlterImageWidget(publicOrigin: string) {
         imageIds.push(uploaded.fileId || uploaded.id); prepared.push(expectedReferenceNames[index]);
       }
       phase('reference', 'Private references are ready for ' + prepared.join(', ') + '.');
-      const modelContent = 'Use image 1 as the scene image. The following images are private appearance references, in order: ' + prepared.map((name, index) => 'image ' + (index + 2) + ' is for ' + name).join('; ') + '.';
+      const referenceStart = hasScene ? 2 : 1;
+      const modelContent = (hasScene ? 'Use image 1 as the scene image. ' : '') + 'The following images are private appearance references, in order: ' + prepared.map((name, index) => 'image ' + (index + referenceStart) + ' is for ' + name).join('; ') + '.';
       const state = {phase:'sent', imageIds, modelContent, privateContent:{phase:'sent'}};
       await setState(state);
-      await sendFollowUp('Use ChatGPT image generation now for this request: ' + data.scene + '. Image 1 is the scene; the remaining images are private appearance references in the order described in the handoff. Do not call Bunch again for this generation.');
+      await sendFollowUp('Use ChatGPT image generation now for this request: ' + (data.scene || 'the requested scene') + '. ' + (hasScene ? 'Image 1 is the scene; the remaining images are ' : 'The uploaded images are ') + 'private appearance references in the order described in the handoff. Do not call Bunch again for this generation.');
       phase('generation', 'Generating securely in ChatGPT now.');
       text('announce', 'References transferred securely. ChatGPT is generating the image.');
     } catch (error) { fail(error instanceof Error ? error.message : 'The secure image handoff could not start.'); }

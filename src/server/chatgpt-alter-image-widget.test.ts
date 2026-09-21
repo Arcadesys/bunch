@@ -49,9 +49,10 @@ function sendToolResult(h: ReturnType<typeof harness>, overrides: Record<string,
 test("widget includes the approved visible copy, accessibility hooks, and no private capability", () => {
   const html = chatgptAlterImageWidget("https://system.example");
   assert.match(html, /Preparing references/);
-  assert.match(html, /Piano image received/);
+  assert.match(html, /Scene image \(optional\)/);
   assert.match(html, /Private appearance references ready/);
   assert.match(html, /Generating securely in ChatGPT/);
+  assert.match(html, /use the private references only for this request/);
   assert.match(html, /Reference images are shared only for this generation/);
   assert.match(html, /Your generated image will appear here/);
   assert.match(html, /aria-live="polite"/);
@@ -61,10 +62,11 @@ test("widget includes the approved visible copy, accessibility hooks, and no pri
 
 test("widget uploads references after the scene, sets safe ordering, then follows up once", async () => {
   const uploaded: string[] = [];
+  const uploadOptions: unknown[] = [];
   const states: unknown[] = [];
   let followUps = 0;
   let followUpPrompt = "";
-  const h = harness({ uploadFile: async (file: any) => { uploaded.push(file.name); return { fileId: "reference-file" }; } });
+  const h = harness({ uploadFile: async (file: any, options: unknown) => { uploaded.push(file.name); uploadOptions.push(options); return { fileId: "reference-file" }; } });
   h.openai.setWidgetState = async (state: unknown) => { states.push(state); h.openai.widgetState = state; };
   h.openai.sendFollowUpMessage = async ({ prompt }: { prompt: string }) => { followUps += 1; followUpPrompt = prompt; };
   sendToolResult(h);
@@ -72,11 +74,31 @@ test("widget uploads references after the scene, sets safe ordering, then follow
   assert.deepEqual(uploaded, ["reference-1.png"]);
   assert.equal(followUps, 1);
   assert.deepEqual(Array.from((states[0] as any).imageIds), ["scene-file", "reference-file"]);
+  assert.equal(JSON.stringify(uploadOptions), JSON.stringify([{ library: false }]));
   assert.match((states[0] as any).modelContent, /image 1 as the scene/);
   assert.match(followUpPrompt, /Do not call Bunch again/);
   assert.equal((states[0] as any).privateContent.phase, "sent");
   assert.match(h.element("generation-status-detail").textContent, /Generating securely/);
   assert.equal(states.length, 1);
+});
+
+test("widget uploads references from image 1 when no scene image exists", async () => {
+  const states: any[] = [];
+  let followUps = 0;
+  let followUpPrompt = "";
+  const h = harness({ uploadFile: async () => ({ fileId: "reference-file" }) });
+  h.openai.setWidgetState = async (state: unknown) => { states.push(state); h.openai.widgetState = state; };
+  h.openai.sendFollowUpMessage = async ({ prompt }: { prompt: string }) => { followUps += 1; followUpPrompt = prompt; };
+  h.listeners.get("message")?.({ source: h.context.window.parent, data: { method: "ui/notifications/tool-result", params: {
+    structuredContent: { scene: "Colette in the garden", identities: [{ alterName: "Colette", referenceCount: 1 }] },
+    _meta: { referenceMedia: [{ alterName: "Colette", contentType: "image/png", src: "https://system.example/api/system/images/inline/reference?cap=secret" }] },
+  } } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(followUps, 1);
+  assert.deepEqual(Array.from(states[0].imageIds), ["reference-file"]);
+  assert.match(states[0].modelContent, /image 1 is for Colette/);
+  assert.doesNotMatch(states[0].modelContent, /scene image/);
+  assert.match(followUpPrompt, /uploaded images are private appearance references/);
 });
 
 test("widget preserves multiple ordered references for one alter", async () => {

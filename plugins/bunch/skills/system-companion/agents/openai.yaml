@@ -1,7 +1,7 @@
 interface:
   display_name: "System Companion"
   short_description: "Private notes, switches, photos, and alter scene generation"
-  default_prompt: "Use $system-companion to review my private System state. When I ask to draw named alters, call generate_scene directly."
+  default_prompt: "Use $system-companion to review my private System state. In ChatGPT, when I ask to draw named alters, call prepare_chatgpt_alter_image so ChatGPT generates from the private references without a paid Bunch image job."
 dependencies:
   tools:
     - type: "mcp"
