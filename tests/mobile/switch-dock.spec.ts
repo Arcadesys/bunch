@@ -112,6 +112,9 @@ test("the switch modal stays reachable in a short viewport and contains keyboard
   await page.goto("/board");
   await openDock(page);
   const modal = page.getByRole("dialog", { name: "Record a switch as" });
+  await page.keyboard.press("Shift+Tab");
+  expect(await page.evaluate(() => document.activeElement?.closest("dialog")?.id)).toBe("switch-dock-panel");
+  await panelHeading(page).focus();
   const bounds = await modal.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.y).toBeGreaterThanOrEqual(0);

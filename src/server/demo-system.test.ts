@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEMO_TOOL_NAMES } from "./demo-mcp-server";
+import { ACCOUNT_PROFILE_TOOL_NAME } from "./mcp-account-profile";
 import { getDemoSystem } from "./demo-system";
 import { GET } from "@/app/api/demo/system/route";
 import { handleMcpRequest } from "./mcp-http";
@@ -14,10 +15,14 @@ const noPrivateAccess = {
   authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
   createPrivateServer: () => { throw new Error("Private server must not be reached"); },
 };
+const noPrivateCredentials = {
+  authorize: async () => { throw new SystemError("UNAUTHORIZED", "Authentication required."); },
+};
 
 test("fictional sample preserves names, relationships, gift authorship, shared relevance, and review semantics", () => {
   const demo = getDemoSystem();
   assert.deepEqual(demo.people.map(p => p.name), ["Fenton", "Benny", "Dot"]);
+  assert.deepEqual(demo.people.map(p => p.profilePicture.url), ["/demo/people/fenton.png", "/demo/people/benny.png", "/demo/people/dot.png"]);
   assert.match(demo.people[2].description, /kid.*no relation/s);
   assert.match(demo.relationships[0].description, /tease.*love/);
   const task = demo.tasks.find(t => t.id === "thank-you-note")!;
@@ -53,34 +58,70 @@ test("public REST endpoint returns only immutable fiction without a database", a
   assert.deepEqual(await response.json(), getDemoSystem());
 });
 
+test("demo person reads include a rendered profile picture while remaining read-only", async () => {
+  const response = await handleMcpRequest(rpc("tools/call", { name: "get_demo_person", arguments: { personId: "benny" } }), noPrivateAccess);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.result.structuredContent.person.profilePicture.url, "/demo/people/benny.png");
+  assert.equal(result.result.content.some((item: { type: string }) => item.type === "image"), true);
+});
+
 test("anonymous hosted MCP discovers and reads demo in production without private access", async () => {
+  // There is intentionally no SYSTEM_DEMO_MODE or localhost condition.
+  const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
+  assert.equal(stream.status, 200);
+  assert.match(stream.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(stream.headers.get("cache-control"), "no-store");
+  assert.equal(stream.headers.has("www-authenticate"), false);
+  await stream.body?.cancel();
+  const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
+  assert.equal(init.status, 200);
+  assert.match((await init.json()).result.instructions, /Demo system/);
   const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
   process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
-  // There is intentionally no SYSTEM_DEMO_MODE or localhost condition.
+  const listing = await handleMcpRequest(rpc("tools/list"), noPrivateCredentials);
+  if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
+  else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
+  assert.equal(listing.status, 200);
+  const tools = (await listing.json()).result.tools;
+  const toolNames = tools.map((tool: { name: string }) => tool.name);
+  for (const name of [...DEMO_TOOL_NAMES, "connect_private_system", ACCOUNT_PROFILE_TOOL_NAME, "list_alters", "get_current_presence", "render_alter_lineup", "open_private_photo_gallery"]) {
+    assert.ok(toolNames.includes(name), name);
+  }
+  assert.deepEqual(tools[0].securitySchemes, [{ type: "noauth" }]);
+  const profile = tools.find((tool: { name: string }) => tool.name === ACCOUNT_PROFILE_TOOL_NAME);
+  assert.ok(profile);
+  assert.equal(profile._meta?.["openai/profile"], true);
+  assert.deepEqual(profile.outputSchema.required, ["id"]);
+  assert.equal(profile.outputSchema.additionalProperties, false);
+  assert.deepEqual(profile.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+  const privateTool = tools.find((tool: { name: string }) => tool.name === "list_alters");
+  assert.deepEqual(privateTool.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+  for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
+    const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
+    assert.equal(discovery.status, 200, method);
+    assert.equal(discovery.headers.get("cache-control"), "no-store");
+    assert.equal((await discovery.json()).error?.code, -32601, method);
+  }
+  const result = await handleMcpRequest(rpc("tools/call", { name: "get_demo_system", arguments: {} }), noPrivateAccess);
+  assert.equal(result.status, 200);
+  assert.equal(result.headers.get("cache-control"), "no-store");
+  assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
+});
+
+test("connect_private_system returns the tool-level OAuth challenge required by ChatGPT", async () => {
+  const originalPublicOrigin = process.env.SYSTEM_PUBLIC_ORIGIN;
+  process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
   try {
-    const stream = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), noPrivateAccess);
-    assert.equal(stream.status, 405);
-    assert.equal(stream.headers.has("www-authenticate"), false);
-    const init = await handleMcpRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } }), noPrivateAccess);
-    assert.equal(init.status, 200);
-    assert.match((await init.json()).result.instructions, /Demo system/);
-    const listing = await handleMcpRequest(rpc("tools/list"), noPrivateAccess);
-    const tools = (await listing.json()).result.tools as Array<{ name: string; securitySchemes: Array<{ type: string; scopes?: string[] }> }>;
-    const byName = new Map(tools.map(tool => [tool.name, tool]));
-    for (const name of DEMO_TOOL_NAMES) assert.deepEqual(byName.get(name)?.securitySchemes, [{ type: "noauth" }], name);
-    for (const name of ["connect_private_system", "get_account_profile", "list_alters", "render_alter_lineup", "open_private_photo_gallery", "generate_scene"]) {
-      assert.deepEqual(byName.get(name)?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }], name);
-    }
-    for (const method of ["server/discover", "resources/list", "resources/templates/list", "prompts/list"]) {
-      const discovery = await handleMcpRequest(rpc(method), noPrivateAccess);
-      assert.equal(discovery.status, 200, method);
-      assert.equal(discovery.headers.get("cache-control"), "no-store");
-      assert.equal((await discovery.json()).error?.code, -32601, method);
-    }
-    const result = await handleMcpRequest(rpc("tools/call", { name: "get_demo_system", arguments: {} }), noPrivateAccess);
-    assert.equal(result.status, 200);
-    assert.equal(result.headers.get("cache-control"), "no-store");
-    assert.deepEqual((await result.json()).result.structuredContent, getDemoSystem());
+    const response = await handleMcpRequest(rpc("tools/call", { name: "connect_private_system", arguments: {} }), noPrivateAccess);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const result = (await response.json()).result;
+    assert.equal(result.isError, true);
+    assert.deepEqual(result._meta?.["mcp/www_authenticate"], [
+      'Bearer resource_metadata="https://bunch.example/.well-known/oauth-protected-resource", scope="system:companion", error="invalid_token", error_description="Authentication is required to connect your private Bunch system."',
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /Fenton|Benny|Dot/);
   } finally {
     if (originalPublicOrigin === undefined) delete process.env.SYSTEM_PUBLIC_ORIGIN;
     else process.env.SYSTEM_PUBLIC_ORIGIN = originalPublicOrigin;
@@ -88,17 +129,19 @@ test("anonymous hosted MCP discovers and reads demo in production without privat
 });
 
 test("private calls, resources, and every supplied invalid credential remain unauthorized", async () => {
-  for (const name of ["connect_private_system", "get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
+  for (const name of ["get_companion_state", "list_alters", "create_todo", "set_system_host"]) {
     const response = await handleMcpRequest(rpc("tools/call", { name, arguments: {} }), noPrivateAccess);
     assert.equal(response.status, 401, name);
     assert.match(response.headers.get("www-authenticate")!, /Bearer/);
   }
   assert.equal((await handleMcpRequest(rpc("resources/read", { uri: "private" }), noPrivateAccess)).status, 401);
   for (const authorization of ["", "Basic abc", "Bearer expired", "Bearer revoked"]) {
-    for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
-      const result = await handleMcpRequest(rpc(method, { name: "get_demo_system", arguments: {} }, { authorization }), noPrivateAccess);
-      assert.equal(result.status, 401);
-      assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+    for (const name of ["get_demo_system", "connect_private_system"]) {
+      for (const method of ["server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list", "tools/call"]) {
+        const result = await handleMcpRequest(rpc(method, { name, arguments: {} }, { authorization }), noPrivateAccess);
+        assert.equal(result.status, 401);
+        assert.doesNotMatch(await result.text(), /Fenton|Benny|Dot/);
+      }
     }
   }
 });

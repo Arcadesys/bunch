@@ -77,41 +77,80 @@ test("response decoration tolerates non-tool JSON, scalar JSON, and non-JSON bod
 
 test("anonymous routing selects only the demo server and a fresh transport", async () => {
   let authorizeCalls = 0;
-  let catalogServers = 0;
   let demoServers = 0;
   let privateServers = 0;
   let transports = 0;
   const lifecycle = serverLifecycle();
   const response = await handleMcpRequest(rpc("ping"), {
     authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize"); },
-    createCatalogServer: () => { catalogServers += 1; throw new Error("must not create catalog server"); },
     createDemoServer: () => { demoServers += 1; return lifecycle.server; },
     createPrivateServer: () => { privateServers += 1; throw new Error("must not create private server"); },
     createTransport: () => { transports += 1; return transportReturning(Response.json({ jsonrpc: "2.0", id: 1, result: {} })); },
   });
   assert.equal(response.status, 200);
-  assert.deepEqual({ authorizeCalls, catalogServers, demoServers, privateServers, transports, ...lifecycle.calls }, {
-    authorizeCalls: 0, catalogServers: 0, demoServers: 1, privateServers: 0, transports: 1, connect: 1, close: 1,
+  assert.deepEqual({ authorizeCalls, demoServers, privateServers, transports, ...lifecycle.calls }, {
+    authorizeCalls: 0, demoServers: 1, privateServers: 0, transports: 1, connect: 1, close: 1,
   });
 });
 
-test("anonymous tools/list selects the stable catalog without authorizing or creating a private server", async () => {
+test("anonymous tool discovery merges demo and private descriptors without authorizing access", async () => {
   let authorizeCalls = 0;
-  let catalogServers = 0;
-  let demoServers = 0;
-  let privateServers = 0;
-  const lifecycle = serverLifecycle();
+  let transportCalls = 0;
+  let receivedOwner: string | undefined;
+  const demoLifecycle = serverLifecycle();
+  const privateLifecycle = serverLifecycle();
   const response = await handleMcpRequest(rpc("tools/list"), {
-    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize"); },
-    createCatalogServer: () => { catalogServers += 1; return lifecycle.server; },
-    createDemoServer: () => { demoServers += 1; throw new Error("must not create demo server"); },
-    createPrivateServer: () => { privateServers += 1; throw new Error("must not create private server"); },
-    createTransport: () => transportReturning(Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } })),
+    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize discovery"); },
+    createDemoServer: () => demoLifecycle.server,
+    createPrivateServer: (ownerId) => {
+      receivedOwner = ownerId;
+      return privateLifecycle.server;
+    },
+    createTransport: () => {
+      const response = transportCalls === 0
+        ? Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "get_demo_system" }, { name: "get_account_profile" }] } })
+        : Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "get_account_profile" }, { name: "list_alters" }] } });
+      transportCalls += 1;
+      return transportReturning(response);
+    },
   });
   assert.equal(response.status, 200);
-  assert.deepEqual({ authorizeCalls, catalogServers, demoServers, privateServers, ...lifecycle.calls }, {
-    authorizeCalls: 0, catalogServers: 1, demoServers: 0, privateServers: 0, connect: 1, close: 1,
+  assert.equal(authorizeCalls, 0);
+  assert.equal(receivedOwner, "discovery:anonymous");
+  assert.equal(transportCalls, 2);
+  assert.deepEqual(demoLifecycle.calls, { connect: 1, close: 1 });
+  assert.deepEqual(privateLifecycle.calls, { connect: 1, close: 1 });
+  assert.deepEqual((await response.json()).result.tools, [
+    { name: "get_demo_system", securitySchemes: [{ type: "noauth" }], _meta: { securitySchemes: [{ type: "noauth" }] } },
+    { name: "get_account_profile", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }], _meta: { securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] } },
+    { name: "list_alters", securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }], _meta: { securitySchemes: [{ type: "oauth2", scopes: [COMPANION_SCOPE] }] } },
+  ]);
+});
+
+test("anonymous discovery can read only an advertised public UI resource", async () => {
+  let authorizeCalls = 0;
+  let receivedOwner: string | undefined;
+  const privateLifecycle = serverLifecycle();
+  const response = await handleMcpRequest(rpc("resources/read", {
+    uri: "ui://system-arcades-me.vercel.app/companion-v13.html",
+  }), {
+    authorize: async () => { authorizeCalls += 1; throw new Error("must not authorize public UI discovery"); },
+    createDemoServer: () => { throw new Error("must not create Demo server for a private tool's public UI resource"); },
+    createPrivateServer: (ownerId) => {
+      receivedOwner = ownerId;
+      return privateLifecycle.server;
+    },
+    createTransport: () => transportReturning(Response.json({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { contents: [{ uri: "ui://system-arcades-me.vercel.app/companion-v13.html", text: "public widget shell" }] },
+    })),
   });
+
+  assert.equal(response.status, 200);
+  assert.equal(authorizeCalls, 0);
+  assert.equal(receivedOwner, "discovery:anonymous");
+  assert.deepEqual(privateLifecycle.calls, { connect: 1, close: 1 });
 });
 
 test("protected and malformed request shapes never fall back to the Demo system", async () => {
@@ -134,13 +173,35 @@ test("protected and malformed request shapes never fall back to the Demo system"
     assert.deepEqual(await response.json(), { error: "Authentication required." });
   }
 
+  let probeAuthorizeCalls = 0;
+  const probeLifecycle = serverLifecycle();
   const streamProbe = await handleMcpRequest(new Request("https://bunch.example/mcp", { headers: { accept: "text/event-stream" } }), {
-    authorize: async () => { throw new Error("must not authorize public stream probe"); },
+    authorize: async () => { probeAuthorizeCalls += 1; throw new Error("must not authorize public stream probe"); },
+    createDemoServer: () => probeLifecycle.server,
+    createPrivateServer: () => { throw new Error("must not create private server for public stream probe"); },
+    createTransport: () => transportReturning(new Response(": ready\n\n", {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream", "X-Adapter-Test": "stream-probe" },
+    })),
   });
-  assert.equal(streamProbe.status, 405);
-  assert.equal(streamProbe.headers.get("allow"), "POST");
+  assert.equal(streamProbe.status, 200);
+  assert.equal(streamProbe.headers.get("content-type"), "text/event-stream");
+  assert.equal(streamProbe.headers.get("x-adapter-test"), "stream-probe");
   assert.equal(streamProbe.headers.get("cache-control"), "no-store");
   assert.equal(streamProbe.headers.has("www-authenticate"), false);
+  assert.equal(probeAuthorizeCalls, 0);
+  assert.deepEqual(probeLifecycle.calls, { connect: 1, close: 1 });
+});
+
+test("the production transport accepts an anonymous SSE connection probe", async () => {
+  const response = await handleMcpRequest(new Request("https://bunch.example/mcp", {
+    headers: { accept: "text/event-stream" },
+  }));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.has("www-authenticate"), false);
+  await response.body?.cancel();
 });
 
 test("authorization failures have distinct safe status and challenge contracts", async () => {

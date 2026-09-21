@@ -25,7 +25,14 @@ const skillGetResultSchema = z.object({ skill: skillListResultSchema.shape.skill
 
 test("MCP advertises and serves the System Companion skill snapshot", async () => {
   const repoSkill = await readFile(new URL("../../skills/system-companion/SKILL.md", import.meta.url), "utf8");
+  const pluginSkill = await readFile(new URL("../../plugins/bunch/skills/system-companion/SKILL.md", import.meta.url), "utf8");
+  const repoOpenAI = await readFile(new URL("../../skills/system-companion/agents/openai.yaml", import.meta.url), "utf8");
+  const pluginOpenAI = await readFile(new URL("../../plugins/bunch/skills/system-companion/agents/openai.yaml", import.meta.url), "utf8");
   assert.equal(repoSkill, SYSTEM_SKILL_TEXT);
+  assert.equal(pluginSkill, repoSkill);
+  assert.equal(pluginOpenAI, repoOpenAI);
+  assert.match(repoOpenAI, /prepare_chatgpt_alter_image/);
+  assert.match(repoSkill, /Never call `generate_scene` as a ChatGPT fallback/);
   assert.match(repoSkill, /exactly one active result has the exact requested name/);
   assert.match(repoSkill, /RECORDED_FRONTING_WINDOW/);
   assert.match(repoSkill, /explicitly authorize the write/);

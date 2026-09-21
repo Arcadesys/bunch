@@ -60,7 +60,7 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 
 - Use `open_private_photo_gallery` or the website's Profiles & Media surface for viewing photos.
 - Use the private upload tools for gallery or profile-picture uploads. Bytes transfer directly to private System storage.
-- Do not place image bytes, temporary download URLs, or storage keys in model-visible content except through the explicit `prepare_chatgpt_scene` handoff after an authenticated named-image request. That tool intentionally gives selected reference pixels to ChatGPT's model-side image harness; it never exposes storage keys or URLs.
+- Do not place image bytes, temporary download URLs, or storage keys in model-visible content.
 - Do not claim an upload succeeded until the refreshed authenticated record shows it.
 
 ## Conversation catch-up
@@ -84,15 +84,16 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 
 ## Canonical image preparation
 
-- To draw named alters in ChatGPT, call `prepare_chatgpt_scene` with the requested scene and their exact names. Pass its canonical prompt and every returned image block to ChatGPT's own image generator in exactly one generation. This handoff performs no Bunch provider call, allowance charge, generated-image save, or profile change.
-- Never call `generate_scene` as a ChatGPT fallback. If the host cannot pass the returned MCP image blocks to its image generator, stop and report that limitation without generating or asking the user to re-upload references Bunch already holds.
+- For every explicit ChatGPT image request involving named alters, call `prepare_chatgpt_alter_image` with the exact names. `sceneImage` is optional. When present, it is image 1 and the ordered private appearance-reference images follow it; otherwise the references begin at image 1. The widget transfers reference bytes to transient ChatGPT files with `library: false`, keeps capabilities widget-only, and asks ChatGPT's image tool to generate once.
+- Never call `generate_scene` as a ChatGPT fallback. It starts a paid Bunch-native provider job and consumes Bunch image allowance. Use it only on a Bunch-owned surface or when the user explicitly requests Bunch-native generation.
+- Resolve every alter by exact active name or confirmed exact alias. Stop visibly on an unknown, ambiguous, archived, or missing-reference alter; never omit a participant or guess.
 - When an external image-studio adapter needs a multi-character Furry scene, call `prepare_furry_scene` with the requested scene and an ordered `alterNames` array. Names resolve only as exact active names or aliases; correct an unknown or ambiguous name instead of guessing.
 - Every participant needs one or more selected appearance references. `ready` means the packet was prepared only; no image was generated or saved. Keep the ordered per-person reference media in private metadata and never put capabilities, URLs, bytes, or storage keys in model-visible content.
 - When an external image-studio adapter needs a canonical prompt for individuals or a group, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
 - Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
 - Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.
 - `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
-- `_meta.referenceMedia` reaches only trusted external adapters; appearance reference IDs are not image content. `prepare_chatgpt_scene` is the explicit ChatGPT exception: it returns ordered model-visible image blocks with alter/image slot associations. Never draw a named alter from text alone, from reference IDs, or from an invented likeness.
+- Private reference bytes are necessary for identity fidelity. Capabilities, URLs, bytes, storage keys, and appearance reference IDs remain private metadata and never enter model-visible content. Never draw a named alter from text alone, from reference IDs, or from an invented likeness, and never ask the user to upload a photo Bunch already holds.
 
 ## Privacy boundary
 
@@ -102,8 +103,9 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 
 ## Native private images
 
-- Use `generate_scene` only on a Bunch-owned surface or when the user explicitly requests a paid Bunch-native generation. Do not use it for ordinary ChatGPT image requests; use `prepare_chatgpt_scene` and ChatGPT's own image generator. `generate_scene` consumes Bunch provider capacity and image allowance, and its result is a job rather than an image until its state is `COMPLETE`.
+- In ChatGPT, use `prepare_chatgpt_alter_image` for every named-alter image request, with or without an uploaded scene/object/style image. The widget uploads private references as transient files with `library: false`, keeps capabilities widget-only, and sends one image-generation handoff. If the fetch, upload, or handoff fails, stop without claiming generation. There is no prose-only likeness fallback and no paid Bunch-native fallback.
+- Use `generate_scene` only for explicit Bunch-native generation. It starts a Bunch provider job, consumes image allowance, and produces no image until its state is `COMPLETE`.
 - `generate_scene` and `get_scene_generation` render the Bunch scene widget, which follows the job and shows the finished private image in this chat. Do not describe the image as visible until the widget shows it. If the host cannot render widgets, check progress with `get_scene_generation` and give the returned authenticated browser URL. Use `list_scene_generations` to find earlier jobs.
-- A completed native image is private and separate from profile pictures, selected appearance references, hosting, fronting, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
+- A completed native or ChatGPT-handoff image is private and separate from profile pictures, selected appearance references, hosting, fronting, presence, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
 - When a result is labeled **Economy output**, repeat that label and ask the user to verify identity-sensitive details. Economy output is never automatically a profile picture, selected reference, or canon.
 - Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.

@@ -60,16 +60,21 @@ export default async function PrivateGalleryPage() {
         <section className="gallery-section" key={profile.id} aria-labelledby={`profile-${profile.id}`}>
           <h2 id={`profile-${profile.id}`}>{profile.name}</h2>
           <p className="small">{profile.images.length} private photo{profile.images.length === 1 ? "" : "s"}</p>
-          {profile.profilePicture ? <div className="gallery-profile-picture"><h3>Profile picture</h3><p className="selected-state">Selected as current profile picture</p><Image src={imageUrl(profile.profilePicture.id)} alt={`Profile picture for ${profile.name}`} width={540} height={540} unoptimized /></div> : <p className="empty-picture">No profile picture selected.</p>}
+          {profile.profilePicture ? <div className="gallery-profile-picture"><h3>Profile picture</h3><p className="selected-state">Selected as current profile picture</p><Image src={imageUrl(profile.profilePicture.id)} alt={`Profile picture for ${profile.name}`} width={540} height={540} sizes="(max-width: 600px) 100vw, 560px" loading="lazy" decoding="async" unoptimized /></div> : <p className="empty-picture">No profile picture selected.</p>}
           <h3>Private picture history</h3>
-          <div className="gallery-grid">
-            {profile.images.map((image, index) => (
+          {(() => {
+            const historyImages = profile.images
+              .map((image, index) => ({ image, index }))
+              .filter(({ image }) => image.id !== profile.profilePicture?.id);
+            return historyImages.length ? <div className="gallery-grid">
+            {historyImages.map(({ image, index }) => (
               <figure className="gallery-card" key={image.id}>
-                <Image src={imageUrl(image.id)} alt={`Private picture ${index + 1} for ${profile.name}`} width={480} height={480} unoptimized />
+                <Image src={imageUrl(image.id)} alt={`Private picture ${index + 1} for ${profile.name}`} width={480} height={480} sizes="(max-width: 600px) 100vw, (max-width: 1100px) 50vw, 480px" loading="lazy" decoding="async" unoptimized />
                 <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption><Link className="button button-secondary" href={`/images?repairKind=private&repairId=${image.id}`}>Repair this image</Link>
               </figure>
             ))}
-          </div>
+          </div> : <p className="empty-picture">No additional private pictures are stored.</p>;
+          })()}
         </section>
       ))}
     </main>

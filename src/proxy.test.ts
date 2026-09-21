@@ -11,7 +11,7 @@ test("public and protocol routes are classified narrowly", () => {
   for (const path of ["/", "/about", "/welcome", "/demo", "/install", "/connect", "/join", "/gallery/share/token", "/bunch-barrel-monkeys.png", "/manifest.webmanifest"]) {
     assert.equal(isPublicBrowserPath(path), true, path);
   }
-  for (const path of ["/home", "/board", "/profiles", "/gallery", "/gallery/generated", "/about/private"]) {
+  for (const path of ["/home", "/board", "/profiles", "/gallery", "/gallery/generated", "/about/private", "/private/data.json"]) {
     assert.equal(isPublicBrowserPath(path), false, path);
   }
   for (const path of ["/api/v1/alters", "/api/public/gallery/token", "/mcp", "/mcp/stream", "/.well-known/oauth-protected-resource"]) {

@@ -1,7 +1,7 @@
-import { createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
+import { CONNECT_PRIVATE_SYSTEM_TOOL_NAME, createDemoMcpServer, DEMO_TOOL_NAMES } from "./demo-mcp-server";
 import { SystemError } from "@/server/system-error";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createMcpCatalogServer, createMcpServer } from "@/server/mcp-server";
+import { createMcpServer, isPublicMcpUiResourceUri } from "@/server/mcp-server";
 import { COMPANION_SCOPE, mcpWwwAuthenticate, requireCompanionAccessToken } from "@/server/mcp-authorization";
 
 const PUBLIC_RPC_METHODS = new Set([
@@ -15,13 +15,14 @@ const PUBLIC_RPC_METHODS = new Set([
   "ping",
 ]);
 const LOGGABLE_RPC_METHOD = /^[a-z][a-z0-9._/-]{0,80}$/;
+const ANONYMOUS_TOOL_NAMES = new Set([...DEMO_TOOL_NAMES, CONNECT_PRIVATE_SYSTEM_TOOL_NAME]);
+const DISCOVERY_OWNER_ID = "discovery:anonymous";
 
 type McpServer = ReturnType<typeof createMcpServer>;
 type McpTransport = WebStandardStreamableHTTPServerTransport;
 
 export type McpHttpOptions = {
   authorize?: typeof requireCompanionAccessToken;
-  createCatalogServer?: () => Pick<McpServer, "connect" | "close">;
   createDemoServer?: () => Pick<McpServer, "connect" | "close">;
   createPrivateServer?: (ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) => Pick<McpServer, "connect" | "close">;
   createTransport?: () => McpTransport;
@@ -30,6 +31,7 @@ export type McpHttpOptions = {
 
 type RequestClassification = {
   anonymousDemo: boolean;
+  publicUiResource: boolean;
   rpcMethod: string | undefined;
 };
 
@@ -46,18 +48,24 @@ async function classifyRequest(request: Request): Promise<RequestClassification>
   const rpcMethod = suppliedMethod
     ? (LOGGABLE_RPC_METHOD.test(suppliedMethod) ? suppliedMethod : "other")
     : undefined;
-  if (request.headers.has("authorization")) return { anonymousDemo: false, rpcMethod };
+  if (request.headers.has("authorization")) return { anonymousDemo: false, publicUiResource: false, rpcMethod };
 
-  // Streamable HTTP clients probe GET for an SSE stream after initialize. This
-  // service is stateless, so the public probe is answered without prompting for
-  // OAuth. DELETE and malformed/unknown requests stay behind authorization.
-  if (request.method === "GET") return { anonymousDemo: true, rpcMethod };
-  if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, rpcMethod };
-  if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, rpcMethod };
-  const toolName = body.params && typeof body.params === "object" && !Array.isArray(body.params)
-    ? (body.params as { name?: unknown }).name
+  // Streamable HTTP clients probe GET for an SSE stream while establishing a
+  // connection. Keep that probe anonymous so mixed-auth clients can reach the
+  // transport without triggering OAuth; the transport still exposes no Demo or
+  // private records through the stream. DELETE and malformed/unknown requests
+  // stay behind authorization.
+  if (request.method === "GET") return { anonymousDemo: true, publicUiResource: false, rpcMethod };
+  if (request.method !== "POST" || body?.jsonrpc !== "2.0") return { anonymousDemo: false, publicUiResource: false, rpcMethod };
+  if (suppliedMethod && PUBLIC_RPC_METHODS.has(suppliedMethod)) return { anonymousDemo: true, publicUiResource: false, rpcMethod };
+  const params = body.params && typeof body.params === "object" && !Array.isArray(body.params)
+    ? body.params as { name?: unknown; uri?: unknown }
     : undefined;
-  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && DEMO_TOOL_NAMES.has(toolName), rpcMethod };
+  if (suppliedMethod === "resources/read" && isPublicMcpUiResourceUri(params?.uri)) {
+    return { anonymousDemo: true, publicUiResource: true, rpcMethod };
+  }
+  const toolName = params?.name;
+  return { anonymousDemo: suppliedMethod === "tools/call" && typeof toolName === "string" && ANONYMOUS_TOOL_NAMES.has(toolName), publicUiResource: false, rpcMethod };
 }
 
 function defaultTransport() {
@@ -66,13 +74,6 @@ function defaultTransport() {
 
 function defaultPrivateServer(ownerId: string, scheduleNativeScene?: (ownerId: string, renderId: string) => void) {
   return createMcpServer(ownerId, undefined, undefined, undefined, undefined, scheduleNativeScene);
-}
-
-function defaultCatalogServer() {
-  // tools/list never invokes a callback, so this non-user identity is used only
-  // to build the stable descriptor catalog ChatGPT scans before OAuth. Private
-  // calls remain behind requireCompanionAccessToken below.
-  return createMcpCatalogServer();
 }
 
 function safeChallenge() {
@@ -106,9 +107,6 @@ function failureResponse(error: unknown, phase: "authorization" | "request") {
 
 export async function handleMcpRequest(request: Request, options: McpHttpOptions = {}) {
   const classification = await classifyRequest(request);
-  if (classification.anonymousDemo && request.method === "GET") {
-    return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
-  }
 
   const authorize = options.authorize ?? requireCompanionAccessToken;
   let ownerId: string | null = null;
@@ -126,20 +124,20 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   }
 
   const createTransport = options.createTransport ?? defaultTransport;
-  const createCatalogServer = options.createCatalogServer ?? defaultCatalogServer;
   const createDemoServer = options.createDemoServer ?? createDemoMcpServer;
   const createPrivateServer = options.createPrivateServer ?? defaultPrivateServer;
+  if (ownerId === null && classification.rpcMethod === "tools/list") {
+    return handleAnonymousToolCatalog(request, createDemoServer, createPrivateServer, createTransport, options.scheduleNativeScene);
+  }
   let server: Pick<McpServer, "connect" | "close"> | undefined;
   let response: Response | undefined;
   let requestFailure: unknown;
 
   try {
     const transport = createTransport();
-    server = ownerId !== null
-      ? createPrivateServer(ownerId, options.scheduleNativeScene)
-      : classification.rpcMethod === "tools/list"
-        ? createCatalogServer()
-        : createDemoServer();
+    server = ownerId === null
+      ? (classification.publicUiResource ? createPrivateServer(DISCOVERY_OWNER_ID, options.scheduleNativeScene) : createDemoServer())
+      : createPrivateServer(ownerId, options.scheduleNativeScene);
     await server.connect(transport);
     response = await transport.handleRequest(request);
     response = await addOAuthSecuritySchemes(response);
@@ -157,6 +155,69 @@ export async function handleMcpRequest(request: Request, options: McpHttpOptions
   }
 
   return requestFailure || !response ? failureResponse(requestFailure, "request") : response;
+}
+
+async function handleAnonymousToolCatalog(
+  request: Request,
+  createDemoServer: NonNullable<McpHttpOptions["createDemoServer"]>,
+  createPrivateServer: NonNullable<McpHttpOptions["createPrivateServer"]>,
+  createTransport: NonNullable<McpHttpOptions["createTransport"]>,
+  scheduleNativeScene?: McpHttpOptions["scheduleNativeScene"],
+) {
+  const servers: Array<Pick<McpServer, "connect" | "close">> = [];
+  try {
+    const demoServer = createDemoServer();
+    const privateServer = createPrivateServer(DISCOVERY_OWNER_ID, scheduleNativeScene);
+    servers.push(demoServer, privateServer);
+
+    const demoTransport = createTransport();
+    const privateTransport = createTransport();
+    await demoServer.connect(demoTransport);
+    await privateServer.connect(privateTransport);
+
+    const [demoResponse, privateResponse] = await Promise.all([
+      demoTransport.handleRequest(request.clone()),
+      privateTransport.handleRequest(request.clone()),
+    ]);
+    const response = await mergeToolCatalogs(demoResponse, privateResponse);
+    const decorated = await addOAuthSecuritySchemes(response);
+    console.info("[mcp] handled request", { httpMethod: request.method, rpcMethod: "tools/list", status: decorated.status });
+    return decorated;
+  } catch (error) {
+    console.warn("[mcp] request failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "REQUEST_FAILED" });
+    return failureResponse(error, "request");
+  } finally {
+    for (const server of servers) {
+      try { await server.close(); }
+      catch {
+        console.warn("[mcp] cleanup failed", { httpMethod: request.method, rpcMethod: "tools/list", reason: "CLEANUP_FAILED" });
+      }
+    }
+  }
+}
+
+async function mergeToolCatalogs(demoResponse: Response, privateResponse: Response) {
+  const [demoPayload, privatePayload] = await Promise.all([demoResponse.json(), privateResponse.json()]);
+  if (!hasToolList(demoPayload) || !hasToolList(privatePayload)) throw new Error("Invalid MCP tool catalog response.");
+
+  const tools = [...demoPayload.result.tools];
+  const names = new Set(tools.flatMap((tool) => tool && typeof tool === "object" && !Array.isArray(tool) && typeof (tool as { name?: unknown }).name === "string"
+    ? [(tool as { name: string }).name]
+    : []));
+  for (const tool of privatePayload.result.tools) {
+    const name = tool && typeof tool === "object" && !Array.isArray(tool) ? (tool as { name?: unknown }).name : undefined;
+    if (typeof name === "string" && names.has(name)) continue;
+    tools.push(tool);
+    if (typeof name === "string") names.add(name);
+  }
+
+  const headers = new Headers(demoResponse.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify({ ...demoPayload, result: { ...demoPayload.result, tools } }), {
+    status: demoResponse.status,
+    statusText: demoResponse.statusText,
+    headers,
+  });
 }
 
 function hasToolList(payload: unknown): payload is { result: { tools: unknown[] } } {

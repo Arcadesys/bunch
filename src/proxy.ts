@@ -16,10 +16,20 @@ const publicPages = new Set([
   "/welcome",
 ]);
 
+const publicAssets = new Set([
+  "/apple-touch-icon.png",
+  "/bunch-barrel-monkeys.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/manifest.webmanifest",
+  "/plural-rings.svg",
+]);
+
 export function isPublicBrowserPath(pathname: string) {
   return publicPages.has(pathname)
     || pathname.startsWith("/gallery/share/")
-    || /\.[A-Za-z0-9]+$/.test(pathname);
+    || pathname.startsWith("/landing/")
+    || publicAssets.has(pathname);
 }
 
 export function isProtocolPath(pathname: string) {

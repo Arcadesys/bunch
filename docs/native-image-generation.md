@@ -2,25 +2,35 @@
 
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
-For a one-shot named-character request in ChatGPT such as “@Bunch draw Lucy in
-a cozy sweater,” the companion resolves the exact active name `Lucy Arcade`
-(or a confirmed exact alias), then calls `prepare_chatgpt_scene`. Bunch returns
-the canonical prompt plus the selected private appearance references as
-ordered, model-visible MCP image blocks. ChatGPT must pass that prompt and all
-of those image blocks to its own image-generation harness in one generation.
-Bunch does not start a provider job or charge its image allowance on this path.
+For every ChatGPT named-character request such as “@Bunch draw Lucy in a cozy
+sweater,” resolve the exact active name `Lucy Arcade` (or a confirmed exact
+alias), then call `prepare_chatgpt_alter_image`. The optional `sceneImage` is
+image 1 when supplied; otherwise the ordered private appearance references
+begin at image 1. The widget transfers those references to transient ChatGPT
+files with `library: false`, keeps Bunch capabilities widget-only, and asks
+ChatGPT's image tool to generate once. Reference bytes are necessary for
+identity fidelity; reference IDs, prose, URLs, and storage identifiers are not
+image content.
 
-Reference IDs alone carry no pixels. The dedicated ChatGPT handoff is the only
-prepare tool that intentionally puts selected private reference pixels in
-model-visible content, and only after an authenticated owner-scoped request.
-Its slot manifest and content order bind every image to the correct person.
-Capability URLs and storage keys never enter the result.
+This handoff creates no Bunch scene job, calls no Bunch image provider, consumes
+no Bunch image allowance, and saves no Bunch output. `generate_scene` is the
+paid Bunch-native path and is reserved for a Bunch-owned surface or an explicit
+request for Bunch-native generation.
 
-The older `_meta.referenceMedia` packet remains available for trusted external
-adapters, but ChatGPT cannot use `_meta` as image input. ChatGPT must not fall
-back to `generate_scene`: that would create a second paid generation path. If
-the host cannot pass returned MCP image blocks to its image harness, it must
-stop and report that limitation without generating.
+If an alter is unknown, ambiguous, archived, or has no selected appearance
+reference, stop visibly and name the exact missing or conflicting identity.
+Never silently omit a participant, invent a likeness, or fall back to a prose
+description. If the ChatGPT file, upload, or generation handoff fails, stop
+without claiming an image was generated.
+
+The ChatGPT handoff is distinct from native Bunch generation. Its generated
+output remains a private generated image and does not change profile pictures,
+appearance references, hosting, fronting, presence, or canon. A generated
+output is never automatically a profile picture, selected reference, or canon.
+
+Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
+but carry no pixels. Capabilities, URLs, bytes, and storage keys remain private
+metadata and never enter model-visible content.
 
 Tool descriptions and server instructions reach ChatGPT only after a deploy and
 a refresh of the connector's tool list; a stale connector keeps the old wording.
@@ -55,7 +65,7 @@ requests one fresh capability before pointing to that link.
 
 ## Execution and privacy
 
-The Bunch web interface and paid native MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage. `prepare_chatgpt_scene` creates no job, reservation, allowance row, provider call, or saved output.
+The Bunch web interface and paid native MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage.
 
 For named people, the job freezes profile versions, the canonical prompt and ordered reference associations. Private reference bytes transfer directly from Bunch's server to the configured image provider. They do not enter model-facing tool text. Before attaching the normalized JPEG, the worker rechecks profile versions and erasure. Authenticated image routes serve output with private/no-store headers.
 

@@ -350,7 +350,7 @@ export function SwitchDock() {
         const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), [tabindex]:not([tabindex='-1'])"));
         const first = controls[0];
         const last = controls.at(-1);
-        if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panelHeading.current || !event.currentTarget.contains(document.activeElement))) {
           event.preventDefault();
           last?.focus();
         } else if (!event.shiftKey && (document.activeElement === last || !event.currentTarget.contains(document.activeElement))) {

@@ -2,7 +2,7 @@ import type { AlterView } from "@/domain/contracts";
 import { buildAlterImagePrompt, furrySceneInputSchema, imagePromptInputSchema } from "@/domain/image-prompt";
 import { issueImageReadCapability } from "./mcp-authorization";
 
-type ProfileReader = {
+export type ProfileReader = {
   getAlter(ownerId: string, id: string): Promise<AlterView>;
   listAlters(ownerId: string, input: { limit: number; cursor?: string; includeArchived: boolean }): Promise<{ data: AlterView[]; nextCursor?: string }>;
 };

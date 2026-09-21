@@ -5,11 +5,11 @@ Bunch serves one fixed, explicitly fictional sample for demonstrations. The plug
 ## Access
 
 - Existing plugin endpoint: `/mcp`. With no Authorization header, initialize and list tools, resources, resource templates, or prompts, then call `get_demo_system` with `{}`. The non-tool discovery lists are empty. A newer client's `server/discover` probe receives the legacy SDK's JSON-RPC method-not-found response over HTTP 200 so it can fall back to `initialize`. The structured demo result is labeled `Demo system`, `fictional: true`, and `readOnly: true`.
-- Direct JSON: `GET /api/demo/system`. This explicitly public endpoint always returns only the fictional sample, even if a browser has a session.
+- Direct JSON: `GET /api/demo/system`. This explicitly public endpoint always returns only the fictional sample, even if a browser has a session. Each demo person includes a fixed public profile-picture path under `/demo/people/`.
 - Private access: `connect_private_system` advertises OAuth and challenges anonymous callers. After sign-in, refresh `tools/list`. Authenticated requests use the existing verified-owner server, including its pilot access gate. `get_companion_state` and all existing private tools continue to operate on that owner alone.
 - An explicitly requested `get_demo_system` remains available after authentication; it is never substituted for private results.
 
-Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous clients may enumerate the empty resource, resource-template, and prompt indexes for host compatibility, but resource reads, private tool calls, and mutations remain protected. An anonymous GET stream probe receives 405 because this stateless endpoint has no SSE stream; it does not prompt demo visitors to sign in. Responses are not cached. No data is accepted for storage by the demo endpoint.
+Only an absent Authorization header selects anonymous MCP discovery/demo. Empty, malformed, expired, wrong-audience, wrong-scope, and revoked credentials still fail authentication. Anonymous clients may enumerate the empty resource, resource-template, and prompt indexes for host compatibility, but resource reads, private tool calls, and mutations remain protected. An anonymous GET stream probe may establish the transport without prompting demo visitors to sign in; the stream itself exposes no Demo or private records. Responses are not cached. No data is accepted for storage by the demo endpoint.
 
 ## Explore through the plugin
 
@@ -19,9 +19,9 @@ The anonymous tool list includes eight read tools plus the OAuth connection tool
 - “What reminder did Fenton leave Benny?” (`list_demo_notes`, `author: fenton`, `relevantTo: benny`)
 - “Show Fenton's hosting and fronting history.” (`list_demo_history`, `personId: fenton`)
 - “What does Benny need to catch up on?” (`get_demo_catch_up`, `personId: benny`)
-- “Who is Dot?” (`get_demo_person`, `personId: dot`)
+- “Who is Dot?” (`get_demo_person`, `personId: dot`), including Dot's demo profile picture
 
-Every response is labeled Demo system. There are no write tools in the anonymous demo. These are distinct fictional tools; the real-system `list_alters`, notes, tasks, and presence tools remain private.
+Every response is labeled Demo system. There are no write tools in the anonymous demo. `get_demo_person` includes the selected fictional profile picture as image content; the fixed files are loaded during fixture preparation, not uploaded at runtime. These are distinct fictional tools; the real-system `list_alters`, notes, tasks, and presence tools remain private.
 
 ## Fictional content
 
@@ -33,6 +33,6 @@ The dated snapshot includes Fenton's continuing hosting period, explicitly ended
 
 ## Scope
 
-This is a read-only API walkthrough. It neither creates a writable demo tenant nor modifies the local-only legacy walkthrough fixtures. It contains no private images, personal records, inferred species, or invented family relationships. No changes are required to production `SYSTEM_DEMO_MODE`; keep that legacy flag disabled.
+This is a read-only API walkthrough. It neither creates a writable demo tenant nor modifies the local-only legacy walkthrough fixtures. The three fictional profile pictures are static demo assets loaded by `demo:load-images`; no runtime upload endpoint or write tool is exposed. It contains no private images, personal records, inferred species, or invented family relationships. No changes are required to production `SYSTEM_DEMO_MODE`; keep that legacy flag disabled.
 
 The protocol supports an OAuth transition through `connect_private_system`; a specific host may require reconnecting its MCP connection to refresh available tools. Browser sign-in alone does not give an MCP client a bearer token.
