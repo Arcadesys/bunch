@@ -14,7 +14,7 @@ export const chatgptSceneImageSchema = z.object({
 export const chatgptAlterImageInputSchema = z.object({
   scene: z.string().trim().min(1).max(5000),
   alterNames: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
-  sceneImage: chatgptSceneImageSchema,
+  sceneImage: chatgptSceneImageSchema.optional(),
 }).strict();
 
 export const chatgptAlterImageResultSchema = z.object({
@@ -26,6 +26,11 @@ export const chatgptAlterImageResultSchema = z.object({
     referenceCount: z.number().int().positive(),
   }).strict()),
   referenceCount: z.number().int().positive(),
+  bunchGeneration: z.literal("none"),
+  nativeJobCreated: z.literal(false),
+  providerCalled: z.literal(false),
+  allowanceCharged: z.literal(false),
+  saved: z.literal(false),
 }).strict();
 
 export type ChatgptAlterImageInput = z.infer<typeof chatgptAlterImageInputSchema>;

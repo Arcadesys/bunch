@@ -41,18 +41,37 @@ const validInput = {
   sceneImage: { download_url: "https://files.example/scene.png", file_id: "file-scene", mime_type: "image/png", file_name: "piano.png" },
 };
 
-test("schema declares the complete ChatGPT scene file object and rejects unsupported MIME", () => {
+test("schema accepts references-only and validates an optional scene/style file", () => {
   const parsed = chatgptAlterImageInputSchema.parse(validInput);
   assert.deepEqual(parsed.sceneImage, validInput.sceneImage);
+  const referencesOnly = chatgptAlterImageInputSchema.parse({ scene: validInput.scene, alterNames: validInput.alterNames });
+  assert.equal(referencesOnly.sceneImage, undefined);
   assert.throws(() => chatgptAlterImageInputSchema.parse({ ...validInput, sceneImage: { ...validInput.sceneImage, mime_type: "image/gif" } }), /Invalid option/);
   assert.deepEqual(chatgptAlterImageInputSchema.parse({ ...validInput, sceneImage: { download_url: validInput.sceneImage.download_url, file_id: validInput.sceneImage.file_id } }).sceneImage, { download_url: validInput.sceneImage.download_url, file_id: validInput.sceneImage.file_id });
 });
 
-test("resolves exact names and aliases in requested order while keeping capabilities in metadata", async () => {
+test("references-only handoff preserves exact names and reference order with zero Bunch cost", async () => {
+  const result = await prepareChatgptAlterImage(serviceFor([first, second]), "owner", { scene: validInput.scene, alterNames: validInput.alterNames }, "https://bunch.example");
+  assert.deepEqual(result.structuredContent.identities.map((identity) => identity.alterName), [second.name, first.name]);
+  assert.equal(result.structuredContent.bunchGeneration, "none");
+  assert.equal(result.structuredContent.nativeJobCreated, false);
+  assert.equal(result.structuredContent.providerCalled, false);
+  assert.equal(result.structuredContent.allowanceCharged, false);
+  assert.equal(result.structuredContent.saved, false);
+  assert.equal(result._meta.sceneImage, undefined);
+  assert.equal(result._meta.referenceMedia.length, 2);
+  assert.match(result._meta.referenceMedia[0].src, /cap=/);
+  assert.match(result._meta.referenceMedia[1].src, /cap=/);
+});
+
+test("optional scene/style image stays in private metadata alongside ordered references", async () => {
   const result = await prepareChatgptAlterImage(serviceFor([first, second]), "owner", validInput, "https://bunch.example");
   assert.equal(result.structuredContent.ready, true);
   assert.deepEqual(result.structuredContent.identities.map((identity) => identity.alterName), [second.name, first.name]);
   assert.equal(result.structuredContent.referenceCount, 2);
+  assert.equal(result.structuredContent.allowanceCharged, false);
+  assert.equal(result.structuredContent.saved, false);
+  assert.equal(result._meta.sceneImage.file_id, "file-scene");
   assert.equal(result._meta.referenceMedia.length, 2);
   assert.match(result._meta.referenceMedia[0].src, /cap=/);
   assert.doesNotMatch(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }), /cap=|https:\/\/bunch\.example|storageKey/);
