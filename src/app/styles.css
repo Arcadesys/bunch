@@ -1704,7 +1704,7 @@ body:has(.switch-dock) { padding-bottom: 6.5rem; }
 .switch-dock-action:hover { filter: brightness(1.08); }
 
 /* The picker is a top-layer modal so page containers cannot clip it. */
-.switch-dock-modal { position: fixed; inset: 0; width: min(68rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); margin: auto; padding: 0; overflow: hidden; border: 2px solid rgb(255 60 172 / 55%); border-radius: 16px; background: #14142a; box-shadow: 0 18px 48px rgb(4 4 12 / 80%), 0 0 30px rgb(255 60 172 / 18%); color: var(--ink); }
+.switch-dock-modal { position: fixed; inset: 12px 0 auto; width: min(68rem, calc(100vw - 2rem)); max-width: none; height: min(42rem, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); margin: 0 auto; box-sizing: border-box; padding: 0; overflow: hidden; border: 2px solid rgb(255 60 172 / 55%); border-radius: 16px; background: #14142a; box-shadow: 0 18px 48px rgb(4 4 12 / 80%), 0 0 30px rgb(255 60 172 / 18%); color: var(--ink); }
 .switch-dock-modal[open] { display: flex; flex-direction: column; }
 .switch-dock-modal::backdrop { background: rgb(4 4 12 / 82%); }
 .switch-dock-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem .8rem; border-bottom: 1px solid rgb(255 138 0 / 30%); }
