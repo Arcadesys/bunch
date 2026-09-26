@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { GeneratedGalleryPage, GeneratedPhoto } from "@/domain/generated-gallery";
+import { DeleteImageButton } from "../delete-image-button";
 
 async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
   const response = await fetch(`/api/v1/generated-images${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store" });
@@ -11,7 +12,7 @@ async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
   return response.json();
 }
 
-function PhotoCard({ photo }: { photo: GeneratedPhoto }) {
+function PhotoCard({ photo, onDeleted }: { photo: GeneratedPhoto; onDeleted: () => void }) {
   const [failed, setFailed] = useState(false);
   const caption = photo.description.length > 120 ? `${photo.description.slice(0, 117)}…` : photo.description;
   return <li className="generated-photo-card">
@@ -24,6 +25,7 @@ function PhotoCard({ photo }: { photo: GeneratedPhoto }) {
       {caption !== photo.description && <details><summary>Read full prompt</summary><p>{photo.description}</p></details>}
       <p><time dateTime={photo.createdAt}>{new Date(photo.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></p>
       <div className="actions"><a className="button button-secondary" href={photo.imageUrl}>View full image</a><a className="button button-secondary" href={photo.sourceUrl}>Reopen scene</a><a className="button button-secondary" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a><a className="button button-secondary" href={`/images?repairKind=${photo.kind === "scene" ? "native" : "group"}&repairId=${photo.id}`}>Repair this image</a></div>
+      <DeleteImageButton url={`/api/v1/account/generated-images/${encodeURIComponent(photo.id)}?kind=${photo.kind}`} label={`${photo.kind === "group" ? "group photo" : "generated image"}: ${caption}`} onDeleted={onDeleted} />
     </div>
   </li>;
 }
@@ -34,6 +36,7 @@ export function GeneratedGallery() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     fetchPage().then(page => { if (active) { setPhotos(page.data); setNextCursor(page.meta.nextCursor); setLoaded(true); } })
@@ -53,10 +56,10 @@ export function GeneratedGallery() {
   }
 
   return <section aria-label="Saved photos" aria-busy={busy}>
-    <p role="status">{busy ? "Loading photos…" : loaded ? `${photos.length} saved photo${photos.length === 1 ? "" : "s"} shown${nextCursor ? " · more available" : ""}.` : ""}</p>
+    <p role="status">{busy ? "Loading photos…" : loaded ? `${notice ? `${notice} ` : ""}${photos.length} saved photo${photos.length === 1 ? "" : "s"} shown${nextCursor ? " · more available" : ""}.` : ""}</p>
     {error && <div className="notice" role="alert"><p>{error}</p>{error.startsWith("Sign in") && <a className="button" href="/auth/login?returnTo=%2Fgallery%2Fgenerated">Sign in</a>}</div>}
     {loaded && photos.length === 0 && <div className="panel"><h2>No generated photos yet</h2><p>Images you create in Images or Group Photo will appear here when they finish.</p></div>}
-    <ul className="generated-photo-grid">{photos.map(photo => <PhotoCard key={`${photo.kind}-${photo.id}`} photo={photo} />)}</ul>
+    <ul className="generated-photo-grid">{photos.map(photo => <PhotoCard key={`${photo.kind}-${photo.id}`} photo={photo} onDeleted={() => { setPhotos(current => current.filter(existing => !(existing.kind === photo.kind && existing.id === photo.id))); setNotice("The image was permanently deleted."); }} />)}</ul>
     {(nextCursor || error) && <button className="button" disabled={busy} onClick={() => void loadMore()}>{busy ? "Loading…" : error ? "Try again" : "Load older photos"}</button>}
   </section>;
 }

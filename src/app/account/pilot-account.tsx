@@ -290,7 +290,7 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
                       <a href={image.downloadUrl}>
                         Download original image {index + 1}
                       </a>
-                      {account.state === "ACTIVE" && (
+                      {(account.state === "ACTIVE" || account.state === "REVOKED") && (
                         <details>
                           <summary>Delete image {index + 1}</summary>
                           <p>

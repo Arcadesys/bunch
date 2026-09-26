@@ -62,6 +62,7 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 - Use the private upload tools for gallery or profile-picture uploads. Bytes transfer directly to private System storage.
 - Do not place image bytes, temporary download URLs, or storage keys in model-visible content.
 - Do not claim an upload succeeded until the refreshed authenticated record shows it.
+- Use `delete_private_image` only after the user explicitly confirms deleting that specific image. Deletion is permanent and also removes repairs made from it.
 
 ## Conversation catch-up
 

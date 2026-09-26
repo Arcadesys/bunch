@@ -41,3 +41,31 @@ test("gallery distinguishes an empty gallery from sign-in failure", async ({ pag
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("heading", { name: "No generated photos yet" })).toBeVisible();
 });
+
+test("gallery deletes a photo only after confirmation and explains a refusal", async ({ page }) => {
+  const deletes: string[] = [];
+  let refuse = true;
+  await page.route("**/api/v1/generated-images**", route => route.fulfill({ json: { data: [photo("keep"), photo("gone", "group")], meta: { nextCursor: null } } }));
+  await page.route("**/api/v1/native-scenes/renders/*/image", route => route.fulfill({ contentType: "image/png", body: pixel }));
+  await page.route("**/api/v1/account/generated-images/**", route => {
+    deletes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}${new URL(route.request().url()).search}`);
+    if (refuse) { refuse = false; return route.fulfill({ status: 409, json: { error: { code: "CONFLICT", message: "This image is still being made. Wait for it to finish, then delete it." } } }); }
+    return route.fulfill({ json: { deleted: true } });
+  });
+  await page.goto("/gallery/generated");
+  const gone = page.getByRole("button", { name: "Delete group photo: Synthetic group photo gone" });
+  await gone.click();
+  const confirm = page.getByRole("group", { name: "Confirm deleting group photo: Synthetic group photo gone" });
+  await expect(confirm.getByRole("button", { name: "Keep it" })).toBeFocused();
+  await confirm.getByRole("button", { name: "Keep it" }).click();
+  expect(deletes).toEqual([]);
+  await gone.click();
+  await confirm.getByRole("button", { name: "Yes, delete permanently" }).click();
+  await expect(confirm.getByRole("alert")).toHaveText("This image is still being made. Wait for it to finish, then delete it.");
+  await expect(page.getByRole("heading", { name: "Synthetic group photo gone" })).toBeVisible();
+  await confirm.getByRole("button", { name: "Yes, delete permanently" }).click();
+  await expect(page.getByRole("heading", { name: "Synthetic group photo gone" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Synthetic scene photo keep" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Saved photos" }).getByRole("status")).toContainText("The image was permanently deleted. 1 saved photo shown.");
+  expect(deletes).toEqual(["DELETE /api/v1/account/generated-images/gone?kind=group", "DELETE /api/v1/account/generated-images/gone?kind=group"]);
+});
