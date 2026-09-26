@@ -1,0 +1,110 @@
+.gallery-detail-image {
+  width: 100%;
+}
+
+.gallery-detail-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 0.5rem;
+}
+
+.profile-photos-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.profile-photo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-photo-image-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  aspect-ratio: 1;
+}
+
+.profile-photo-image-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-picture-label {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  background-color: rgba(255, 60, 172, 0.9);
+  color: #e8e8ec;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.profile-photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-photo-actions .button {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.ld-tools {
+  padding: 1rem 0 0 0;
+  margin-top: 1rem;
+  border-top: 1px solid rgba(182, 179, 198, 0.2);
+}
+
+.ld-tools .button {
+  width: 100%;
+}
+
+.gallery-detail-image img { max-height: 70vh; object-fit: contain; }
+
+.gallery-photo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gallery-photo-count {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.gallery-photo-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gallery-photo-nav .button,
+.detail-actions .button { min-height: 48px; }
+
+.gallery-empty,
+.gallery-alert { display: grid; gap: 0.5rem; justify-items: start; }
+.gallery-empty h2 { margin: 0; color: var(--ink); font-size: 1rem; }
+.gallery-empty p, .gallery-alert p { margin: 0; }
+
+.generated-gallery { display: contents; }
+
+.profile-photo-caption { display: grid; gap: 0.1rem; margin: 0; }
+.profile-photo-caption span { color: var(--muted); font-size: 0.85rem; }
+.profile-photo-actions .button { min-height: 48px; }

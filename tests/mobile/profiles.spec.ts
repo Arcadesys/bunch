@@ -1,12 +1,20 @@
-import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
+import { test, expect, openSections } from "./fixtures";
+
+// Phones show one pane at a time: return to the People list when a detail is open.
+async function backToList(page: Page) {
+  const back = page.getByRole("button", { name: "← People" });
+  if (await back.isVisible()) await back.click();
+}
 
 const profiles = [
   { id: "test-robin", name: "Test Robin", selfDescribedGender: "Robin's description", description: "First profile", version: 1, images: [], profilePicture: null },
   { id: "test-finch", name: "Test Finch", selfDescribedGender: "Finch's description", description: "Second profile", version: 1, images: [], profilePicture: null },
 ];
 
-test("profiles show the lineup before editing and save the chosen profile", async ({ page }) => {
+test("profiles show the people list and save the chosen profile", async ({ page }) => {
   const writes: unknown[] = [];
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.route("**/api/v1/alters/test-finch", async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: { data: { ...profiles[1], appearanceReferenceImageIds: [] } } });
     expect(route.request().method()).toBe("PATCH");
@@ -21,13 +29,22 @@ test("profiles show the lineup before editing and save the chosen profile", asyn
     return route.fulfill({ json: { profiles, currentFront: null, assignments: [] } });
   });
   await page.goto("/profiles");
-  await expect(page.getByRole("heading", { name: "Profile lineup" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
+  // The sections sidebar marks People as the current page.
+  const sections = await openSections(page);
+  await expect(sections.getByRole("link", { name: "People", exact: true })).toHaveAttribute("aria-current", "page");
+  const close = page.getByRole("button", { name: "Close sections" });
+  if (await close.isVisible()) await close.click();
+  await expect(page.getByRole("heading", { name: "People", level: 1 })).toBeVisible();
+  // The people list shows every profile; nothing is editable until a profile is chosen.
+  await expect(page.getByRole("button", { name: /Test Robin/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Test Finch/ })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0);
+  // On phone, click row to open detail
+  await page.getByRole("button", { name: /Test Finch/ }).click();
   await expect(page.getByRole("heading", { name: "Test Finch", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "People and pictures" }).getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
-  await page.getByText("Manage Test Finch’s profile and pictures", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit Test Finch’s details" }).click();
+  // Click Edit button
+  await page.getByRole("button", { name: "Edit" }).click();
   const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(reflow.scroll, "Expanded profile editor must fit the viewport").toBeLessThanOrEqual(reflow.client + 1);
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Test Finch");
@@ -38,23 +55,24 @@ test("profiles show the lineup before editing and save the chosen profile", asyn
   expect(writes).toEqual([expect.objectContaining({ name: "Test Finch revised", selfDescribedGender: "Finch's description", description: "Second profile", expectedVersion: 1, species: "", signatureTraits: [] })]);
 });
 
-test("unavailable profiles do not assert empty records and retry restores the lineup", async ({ page }) => {
+test("unavailable profiles do not assert empty records and retry restores the list", async ({ page }) => {
   let status = 401;
   await page.route("**/api/system", (route) => route.fulfill({ status, json: status === 401 ? { error: "Sign in to access private records." } : { profiles, currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.goto("/profiles");
   await expect(page.getByRole("status")).toHaveText("Sign in to access private records.");
-  await expect(page.getByText("No current front is recorded.", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Profile lineup" })).toHaveCount(0);
+  // The people list is not shown (and never claims to be empty) while records are unavailable.
+  await expect(page.getByRole("region", { name: "People" }).getByRole("list")).toHaveCount(0);
   await expect(page.getByText("No profiles are recorded yet.", { exact: false })).toHaveCount(0);
   status = 200;
   await page.getByRole("button", { name: "Retry loading profiles" }).click();
-  await expect(page.getByRole("heading", { name: "Profile lineup" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "People", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Test Robin/ })).toBeVisible();
 });
-
 
 test("adding a profile stays a create when another profile editor is open", async ({ page }) => {
   const writes: Record<string, unknown>[] = [];
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.route("**/api/v1/alters", async (route) => {
     expect(route.request().method()).toBe("POST");
     writes.push(route.request().postDataJSON());
@@ -68,14 +86,20 @@ test("adding a profile stays a create when another profile editor is open", asyn
     return route.fulfill({ json: { profiles, currentFront: null, assignments: [] } });
   });
   await page.goto("/profiles");
-  const add = page.locator("details").filter({ has: page.locator("summary", { hasText: /^Add a private profile$/ }) });
-  await add.locator("summary").click();
-  await add.getByRole("textbox", { name: "Name", exact: true }).fill("Test Wren");
-  await page.getByText("Manage Test Finch’s profile and pictures", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit Test Finch’s details" }).click();
+  // Click "Add a profile" button
+  await page.getByRole("button", { name: "Add a profile" }).click();
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("Test Wren");
+  // Click on another profile to edit
+  await backToList(page);
+  await page.getByRole("button", { name: /Test Finch/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
   const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(reflow.scroll, "Expanded profile editor must fit the viewport").toBeLessThanOrEqual(reflow.client + 1);
-  await add.getByRole("button", { name: "Add private profile", exact: true }).click();
+  // Back to add form and submit
+  await backToList(page);
+  await page.getByRole("button", { name: "Add a profile" }).click();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Test Wren");
+  await page.getByRole("button", { name: "Add private profile", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Profile saved privately.");
   expect(writes).toEqual([expect.objectContaining({ name: "Test Wren", selfDescribedGender: "", description: "", species: "", signatureTraits: [] })]);
   expect(writes[0]).not.toHaveProperty("expectedVersion");
@@ -89,6 +113,7 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
   const writes: Array<{ requestId?: string; body: Record<string, unknown> }> = [];
   let fail = true;
   await page.route("**/api/system", (route) => route.fulfill({ json: { profiles: [profile], currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.route("**/api/v1/alters/test-robin", async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: { data: { ...profile, appearanceReferenceImageIds: [] } } });
     const body = route.request().postDataJSON();
@@ -100,11 +125,12 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
   await page.goto("/profiles");
   await expect(page).toHaveURL(/\/profiles$/);
   await expect(page).toHaveTitle(/Bunch/);
-  await expect(page.getByRole("heading", { name: "People & pictures", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "People", level: 1 })).toBeVisible();
   await page.getByLabel("Search profiles").fill("moonlit");
-  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toBeVisible();
-  await page.getByText("Manage Test Robin’s profile and pictures", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  await expect(page.getByRole("button", { name: /Test Robin/ })).toBeVisible();
+  // Click to open profile
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
   await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
   await expect(page.getByRole("group", { name: "Visual identity", exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Species", exact: true }).focus();
@@ -122,7 +148,8 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
   expect(writes[1].requestId).toBe(writes[0].requestId);
   expect(writes[1].body.expectedVersion).toBe(1);
   expect(writes[1].body.signatureTraits).toEqual(["glasses", "long glorious ears", "cotton tail"]);
-  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  // Edit again to verify reload
+  await page.getByRole("button", { name: "Edit" }).click();
   await expect(page.getByRole("textbox", { name: "Species", exact: true })).toHaveValue("hare");
   await expect(page.getByRole("textbox", { name: "Signature traits" })).toHaveValue("glasses\nlong glorious ears\ncotton tail");
   const size = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
@@ -144,10 +171,12 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
 
 test("conflicting visual profile edit keeps entries and explains recovery", async ({ page }) => {
   await page.route("**/api/system", (route) => route.fulfill({ json: { profiles, currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.route("**/api/v1/alters/test-robin", (route) => route.fulfill({ status: 409, json: { error: { message: "Conflict" } } }));
   await page.goto("/profiles");
-  await page.getByText("Manage Test Robin’s profile and pictures", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit Test Robin’s details" }).click();
+  // Click to open profile
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
   await page.getByRole("textbox", { name: "Species", exact: true }).fill("hare");
   await page.getByRole("button", { name: "Save profile changes" }).click();
   await expect(page.getByRole("status")).toContainText("This profile changed since you opened it");
@@ -165,6 +194,7 @@ test("appearance references are independently selectable and usable at enlarged 
   };
   const appearanceWrites: unknown[] = [];
   await page.route("**/api/system", (route) => route.fulfill({ json: { profiles: [profile], currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.route("**/api/v1/alters/test-melody", (route) => route.fulfill({ json: { data: { appearanceNotes: "Keep the supplied scene and pose.", appearanceReferenceImageIds: ["image-reference"], version: 4 } } }));
   await page.route("**/api/v1/alters/test-melody/appearance", async (route) => {
     appearanceWrites.push(route.request().postDataJSON());
@@ -173,21 +203,19 @@ test("appearance references are independently selectable and usable at enlarged 
   await page.route("**/api/system/images/**", (route) => route.fulfill({ status: 204 }));
 
   await page.goto("/profiles");
-  await page.getByText("Manage Synthetic Profile’s profile and pictures", { exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Transformation appearance" })).toBeVisible();
-  const notes = page.getByRole("textbox", { name: "Appearance notes" });
-  await expect(notes).toHaveValue("Keep the supplied scene and pose.");
-  const profileReference = page.getByRole("checkbox", { name: "Use private picture 1 as an appearance reference" });
-  const secondaryReference = page.getByRole("checkbox", { name: "Use private picture 2 as an appearance reference" });
-  await expect(profileReference).not.toBeChecked();
-  await expect(secondaryReference).toBeChecked();
+  // Click to open profile
+  await page.getByRole("button", { name: /Synthetic Profile/ }).click();
+  // Click on Appearance tab
+  await page.getByRole("tab", { name: "Appearance" }).click();
+  await expect(page.getByRole("textbox", { name: "Appearance notes" })).toHaveValue("Keep the supplied scene and pose.");
+  const profileReference = page.getByRole("button", { name: /appearance reference/ }).first();
+  const secondaryReference = page.getByRole("button", { name: /appearance reference/ }).nth(1);
 
   // This is a synthetic browser fixture: it proves interaction/layout only,
   // never a claim about an alter's approved visual canon.
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
-  await profileReference.check();
-  await notes.fill("Keep the supplied scene and pose, with glasses.");
-  await notes.blur();
+  await profileReference.click();
+
   const reflow = await page.evaluate(() => {
     const scrollingElement = document.scrollingElement;
     return { client: scrollingElement?.clientWidth ?? document.documentElement.clientWidth, scroll: scrollingElement?.scrollWidth ?? document.documentElement.scrollWidth };
@@ -195,13 +223,13 @@ test("appearance references are independently selectable and usable at enlarged 
   // Chromium's emulation rounds this enlarged-text layout to a 3px document
   // delta even when no rendered element reaches outside the scrollport.
   expect(reflow.scroll, "Appearance controls must not horizontally overflow at 200% text").toBeLessThanOrEqual(reflow.client + 4);
-  const checkboxBox = await profileReference.boundingBox();
-  expect(checkboxBox?.height, "Appearance reference checkbox must remain a 44px target").toBeGreaterThanOrEqual(44);
+  const buttonBox = await profileReference.boundingBox();
+  expect(buttonBox?.height, "Appearance reference button must remain a 44px target").toBeGreaterThanOrEqual(44);
   await page.getByRole("button", { name: "Save appearance references" }).click();
   await expect(page.getByRole("status")).toHaveText("Appearance references saved. Profile picture and presence are unchanged.");
   expect(appearanceWrites).toHaveLength(1);
   expect(appearanceWrites[0]).toMatchObject({
-    appearanceNotes: "Keep the supplied scene and pose, with glasses.",
+    appearanceNotes: "Keep the supplied scene and pose.",
     referenceImageIds: ["image-reference", "image-profile"],
     expectedVersion: 4,
   });

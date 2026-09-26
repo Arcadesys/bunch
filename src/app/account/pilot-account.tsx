@@ -1,7 +1,8 @@
 "use client";
 import { ImageAllowanceSettings } from "./image-allowance-settings";
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { ListDetail, useListSelection, type ListRow } from "../list-detail";
 import { GalleryShareControls } from "./gallery-share-controls";
 import { TenantInvitationControls } from "./tenant-invitation-controls";
 
@@ -15,7 +16,10 @@ type Account = {
   usedBytes: number;
   quotaBytes: number;
 };
-export function PilotAccount({ join = false }: { join?: boolean }) {
+type AccountSectionId = "account" | "privacy" | "retention" | "laptop" | "gallery" | "invitations" | "images" | "delete";
+
+/** `sections` shows the account as a split view (the Account screen); otherwise it is the single join page. */
+export function PilotAccount({ join = false, sections = false }: { join?: boolean; sections?: boolean }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [message, setMessage] = useState("");
   const [token, setToken] = useState("");
@@ -168,6 +172,223 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
       setBusy(false);
     }
   }
+  const canExport = Boolean(account && ["ACTIVE", "REVOKED"].includes(account.state));
+  const canErase = Boolean(account && account.role === "FRIEND" && account.state !== "DELETED");
+  const statusLabel = !loaded ? "Loading" : !account ? "Sign in needed" : account.state === "LEGACY" ? "Existing account" : account.state.replaceAll("_", " ").toLowerCase();
+  const sectionRows: ListRow[] = [
+    { id: "account", title: "Your private system account", meta: statusLabel },
+    { id: "privacy", title: "Who can access your data?", meta: "Privacy" },
+    { id: "retention", title: "How catch-up and deletion work", meta: "Retention" },
+    ...(account?.state === "ACTIVE" ? [{ id: "laptop", title: "Laptop reference credentials", meta: "Working Monkey" }] : []),
+    ...(account?.canShareGallery ? [{ id: "gallery", title: "Gallery sharing", meta: "Read-only links" }] : []),
+    ...(account?.canManageTenantInvitations ? [{ id: "invitations", title: "System invitations", meta: "Friends" }] : []),
+    ...(account?.role === "OPERATOR" && account.state === "ACTIVE" ? [{ id: "images", title: "Image allowance", meta: "Pilot budgets" }] : []),
+    ...(canExport || canErase ? [{ id: "delete", title: "Delete this system’s account", meta: "Export first", badge: { label: "Permanent", tone: "danger" as const } }] : []),
+  ];
+  const sectionIds = sectionRows.map(row => row.id).join(" ");
+  // Until the account loads, the permitted sections are unknown; an empty list keeps a saved ?id= from being replaced.
+  const ids = useMemo(() => loaded ? sectionIds.split(" ") : [], [loaded, sectionIds]);
+  const [selectedId, select] = useListSelection(ids);
+  const section = ids.includes(selectedId ?? "") ? selectedId as AccountSectionId : null;
+
+  useEffect(() => {
+    // Links to #tenant-invitations-heading open the invitations section.
+    if (!sections || !loaded || !account?.canManageTenantInvitations || location.hash !== "#tenant-invitations-heading") return;
+    const frame = requestAnimationFrame(() => select("invitations"));
+    return () => cancelAnimationFrame(frame);
+  }, [sections, loaded, account, select]);
+  useEffect(() => {
+    if (!sections || section !== "invitations" || location.hash !== "#tenant-invitations-heading") return;
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById("tenant-invitations-heading");
+      target?.scrollIntoView({ block: "start" });
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [sections, section]);
+
+  if (sections) {
+    const notice = message ? <p role="status" className="pilot-notice">{message}</p> : null;
+    return <ListDetail title="Account" intro={<p>One login holds your system’s alters, notes, tasks, images, and recorded hosting/fronting periods.</p>}
+      rows={sectionRows} selectedId={section} onSelect={select} detailLabel="Account section"
+      listStatus={section ? null : notice}>
+      {section ? <article className="detail-card account-section">
+        {notice}
+        {section === "account" ? <>
+          <h2>Your private system account</h2>
+          {!loaded ? (
+            <p>Loading account…</p>
+          ) : !account ? (
+            <p>
+              <a href="/auth/login?returnTo=%2Fjoin">Sign in with Google</a>. Keep
+              your invitation code to paste after signing in.
+            </p>
+          ) : (
+            <>
+              <p>
+                <strong>
+                  Account status: {account.state === "LEGACY" ? "Existing system account" : account.state.replaceAll("_", " ")}
+                </strong>
+              </p>
+              {account.state === "NOT_ENROLLED" ? (
+                <form onSubmit={accept} className="form-stack">
+                  <label>
+                    Invitation code
+                    <input
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      required
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    System display name
+                    <input
+                      name="displayName"
+                      required
+                      maxLength={120}
+                      autoComplete="off"
+                    />
+                  </label>
+                  {!account.emailVerified && (
+                    <p>Verify your Google account email before accepting.</p>
+                  )}
+                  <label className="pilot-check">
+                    <input type="checkbox" name="privacy" required />I understand
+                    the privacy and recovery information in “Who can access your data?” and “How catch-up and deletion work”.
+                  </label>
+                  <button className="button" disabled={busy || !account.emailVerified}>
+                    Accept invitation
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <h3>{account.displayName || "Account"}</h3>
+                  {account.state === "ACTIVE" && (
+                    <>
+                      <p>
+                        Image storage: {(account.usedBytes / 1048576).toFixed(1)} MB
+                        {account.role === "FRIEND"
+                          ? ` of ${(account.quotaBytes / 1048576).toFixed(0)} MB`
+                          : ""}
+                        .
+                      </p>
+                      <p>
+                        <a href="/profiles">Add or manage alter profiles</a>
+                      </p>
+                    </>
+                  )}
+                  {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}
+                </>
+              )}
+            </>
+          )}
+          <p><Link href="/connect">Connect clients</Link></p>
+        </> : null}
+        {section === "privacy" ? <>
+          <h2>Who can access your data?</h2>
+          <p>
+            Other systems cannot access your records. The hosting operator can
+            technically access stored data for administration. This is not
+            end-to-end encryption.
+          </p>
+          <p>
+            Your connected ChatGPT or Codex account receives the records you
+            request. Bunch does not automatically receive your conversation
+            history. Generated catch-up summaries are saved privately for 30 days,
+            with their dates and coverage gaps. Raw transcripts are not saved.
+          </p>
+        </> : null}
+        {section === "retention" ? <>
+          <h2>How catch-up and deletion work</h2>
+          <p>
+            Your connected ChatGPT or Codex account receives the records you
+            request. Bunch does not automatically receive your conversation
+            history. Generated catch-up summaries are saved privately for 30 days,
+            with their dates and coverage gaps. Raw transcripts are not saved.
+          </p>
+          <p>
+            Deletion removes live records and images. The pilot requires
+            encrypted recovery copies that expire within seven days. A minimal
+            deletion record remains to prevent accidental reactivation.
+          </p>
+        </> : null}
+        {section === "laptop" ? <>
+          <h2>Laptop reference credentials</h2>
+          <p>
+            Create a credential for one laptop and an explicit set of profiles. The plaintext credential is shown once. Revocation takes effect on the next request.
+          </p>
+          <p><a href="/account/reference-credentials" className="button">Manage laptop reference credentials</a></p>
+        </> : null}
+        {section === "gallery" ? <GalleryShareControls /> : null}
+        {section === "invitations" ? <TenantInvitationControls /> : null}
+        {section === "images" ? <ImageAllowanceSettings /> : null}
+        {section === "delete" ? <>
+          <h2>Delete this system’s account</h2>
+          <p>
+            This permanently removes this system’s live records and
+            images. Export first if you want a copy. Access stops as
+            soon as deletion starts.
+          </p>
+          {canExport && (
+            <p>
+              <button onClick={() => void exportRecords()} disabled={busy} className="button button-secondary">
+                Export records and image list
+              </button>
+            </p>
+          )}
+          {images.length > 0 && (
+            <ul>
+              {images.map((image, index) => (
+                <li key={image.id}>
+                  <a href={image.downloadUrl}>
+                    Download original image {index + 1}
+                  </a>
+                  {canExport && (
+                    <details>
+                      <summary>Delete image {index + 1}</summary>
+                      <p>
+                        This permanently deletes this image, including its
+                        profile-picture selection.
+                      </p>
+                      <button
+                        className="button"
+                        disabled={busy}
+                        onClick={() => void removeImage(image.id)}
+                      >
+                        Confirm permanent image deletion
+                      </button>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canErase && account && (
+            <form onSubmit={erase} className="form-stack">
+              <label>
+                Type DELETE MY SYSTEM
+                <input
+                  name="confirmation"
+                  required
+                  pattern="DELETE MY SYSTEM"
+                  autoComplete="off"
+                />
+              </label>
+              <button className="button" disabled={busy}>
+                {account.state === "DELETING"
+                  ? "Retry deletion"
+                  : "Permanently delete my system"}
+              </button>
+            </form>
+          )}
+        </> : null}
+      </article> : null}
+    </ListDetail>;
+  }
+
+  // Legacy mode: render full page with all sections
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">

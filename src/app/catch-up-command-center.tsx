@@ -4,6 +4,8 @@ import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CatchUpItem, CatchUpReviewState, CatchUpSession } from "@/domain/catch-up";
 import { AppNavigation, PRESENCE_CHANGED_EVENT } from "./app-navigation";
+import "./catch-up.css";
+import { ListDetail, useListSelection, type ListRow } from "./list-detail";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import { CurrentFrontSummary } from "./current-front-summary";
 import { SavedReturnReview } from "./saved-return-review";
@@ -64,7 +66,7 @@ export function CatchUpCommandCenter({ initialView = "CATCH_UP", focused = false
 function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" | "HISTORY"; focused: boolean; quiet: boolean }) {
   const [overwhelmed, setOverwhelmed] = useState(quiet);
   const nextStepHeading = useRef<HTMLHeadingElement>(null);
-  const [frontRefresh,setFrontRefresh] = useState(0);
+  const [frontRefresh, setFrontRefresh] = useState(0);
   const selectedPeriod = useRef<string | undefined>(undefined);
   const [session, setSession] = useState<CatchUpSession | null>(null);
   const [notice, setNotice] = useState("");
@@ -74,7 +76,6 @@ function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" 
   const reviewReceipt = useRef<{ key: string; requestId: string; body: object } | null>(null);
   const loadGeneration = useRef(0);
 
-  // The front-switch panel can call this directly with its returned `catchUp`.
   const setCatchUpFromServer = (catchUp: CatchUpSession | null) => {
     loadGeneration.current += 1;
     setSession(catchUp);
@@ -126,8 +127,6 @@ function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" 
     selectedPeriod.current = periodId;
     void loadCatchUp(periodId);
   };
-  // A change confirmed from the navigation header refreshes this page too,
-  // because each page mounts its own navigation and shares no state with it.
   const latestPresenceChanged = useRef(presenceChanged);
   useEffect(() => { latestPresenceChanged.current = presenceChanged; });
   useEffect(() => {
@@ -140,6 +139,7 @@ function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" 
     const urgency = (item: CatchUpItem) => Number(/BLOCKED/.test(item.statusLabel ?? "")) * 4 + Number(/HIGH/.test(item.statusLabel ?? "")) * 2 + Number(Boolean(item.dueOn && new Date(`${item.dueOn}T23:59:59`).getTime() < new Date(session?.windowEnd ?? 0).getTime()));
     return session?.items.filter(item => item.reviewState === "NEW" && (item.itemType === "TODO" && !/^(DONE|CANCELLED)/.test(item.statusLabel ?? "") || item.itemType === "THREAD")).sort((a, b) => urgency(b) - urgency(a) || b.timestamp.localeCompare(a.timestamp)) ?? [];
   }, [session]);
+
   const updates = session?.items.filter(item => !primaryItems.includes(item)) ?? [];
   const nextItem = primaryItems[0];
   const recordHref = (item: CatchUpItem) => `${item.itemType === "TODO" ? "/board" : item.itemType === "THREAD" ? "/threads" : item.itemType === "NOTE" ? "/notes" : "/decisions"}#record-${item.itemId}`;
@@ -165,81 +165,86 @@ function CatchUpView({ initialView, focused, quiet }: { initialView: "CATCH_UP" 
     });
   }
 
+  const rowDisabled = isPending || loadState !== "ready";
+  const navCurrent = initialView === "HISTORY" ? "HISTORY" : focused ? "REVIEW" : "CATCH_UP";
 
-  return <main className="command-shell task-home">
-    <AppNavigation current={initialView} />
-    <section className="command-main">
-      {focused ? <Link className="tool-home-link" href="/home">← Home</Link> : null}
-      <section className="command-hero" aria-labelledby="welcome-heading">
-
-        <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Help me resume my day.</p></div>
-        {loadState === "unauthorized" ? <a className="command-button" href="/auth/login">Sign in with Google</a> : null}
-      </section>
-      {!focused ? <nav className="home-tasks" aria-label="Things you can do">
-        <h2>Choose an action</h2>
-        <div className="home-task-grid">
-          <a href="#catch-up-records">Read my catch-up</a>
-          <Link href="/notes#create-record">Leave a note</Link>
-          <Link href="/board">Manage todos</Link>
-          <Link href="/profiles">People &amp; pictures</Link>
-          <Link href="/account#tenant-invitations-heading">Invite another system</Link>
-          <a href="#presence-controls">Hosting &amp; fronting</a>
-          <Link href="/account#gallery-share-heading">Share photo gallery</Link>
-          <Link href="/threads#create-record">Save a thread</Link>
-        </div>
-      </nav> : null}
-      <section id="catch-up-records" tabIndex={-1} className="home-catch-up" aria-labelledby="catch-up-section-heading">
-      <h2 id="catch-up-section-heading">Your catch-up</h2>
-      <p>Read what was saved for this recorded period. Mark reviewed means you’ve read it; a todo stays open until you complete it in Todos.</p>
-      {session ? <><p className="command-kicker">Catch-up · recorded window</p><p className="command-window">{session.windowStart ? `Since ${formatTimestamp(session.windowStart)}` : "Previous fronting end unknown · available history"} → {formatTimestamp(session.windowEnd)}</p><div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div></> : null}
-      <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
-      <button className="command-button secondary" disabled={isPending || loadState === "loading"} onClick={() => void loadCatchUp()}>{loadState === "error" ? "Retry catch-up" : "Refresh catch-up"}</button>
-      {loadState === "ready" && !session && <p>No catch-up open. No return window is recorded; you can still read saved notes and tasks without reporting an arrival.</p>}
-      {loadState === "error" && <p role="alert">{session ? "Refresh failed. Showing the previously loaded records; they may be out of date." : "Saved records could not be loaded. Retry catch-up, or open Notes or Todos."}</p>}
-      {initialView === "HISTORY" ? session && <SwitchTimeline session={session} /> : (session || loadState === "ready") && <>
-        <p className="catch-up-coverage">Conversation history is not read here; the briefing uses saved records, with any saved conversation review available below.</p>
-        <button className="command-button secondary" aria-pressed={overwhelmed} onClick={() => { setOverwhelmed(!overwhelmed); if (!overwhelmed) requestAnimationFrame(() => nextStepHeading.current?.focus()); }}>{overwhelmed ? "Show full catch-up" : "I’m overwhelmed"}</button>
-        {!overwhelmed && <>
-          <section className="command-section" aria-labelledby="attention-heading"><h2 id="attention-heading">Needs attention</h2>
-            <div className="command-items">{primaryItems.slice(0, 3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div>
-            {!primaryItems.length && <p>{session ? "No unreviewed attention items in the loaded records." : "Open Todos to check your saved tasks."}</p>}
-            {primaryItems.length > 3 && <details><summary>More needs attention ({primaryItems.length - 3})</summary><div className="command-items">{primaryItems.slice(3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div></details>}
-          </section>
-          <section className="command-section" aria-labelledby="changes-heading"><h2 id="changes-heading">What changed</h2>
-            <p>{updates.length ? `${updates.length} other saved records in this catch-up.` : session ? "No other saved changes in the loaded records." : "Choose Notes to read saved context; there is no catch-up window to compare yet."}</p>
-            {updates.length > 0 && <details><summary>More saved changes ({updates.length})</summary><div className="command-items">{updates.map(item => <CatchUpRow key={item.entryId} item={item} disabled={isPending || loadState !== "ready"} onState={setReviewState} />)}</div></details>}
-          </section>
-        </>}
-        <section className="command-section" aria-labelledby="next-step-heading"><h2 id="next-step-heading" ref={nextStepHeading} tabIndex={-1}>Next step</h2>
-          {nextItem ? <><p>{nextItem.title}: {nextItem.nextAction}</p><Link className="command-button" href={recordHref(nextItem)}>Open {nextItem.title}</Link></> : <><p>Open Todos and choose one saved task when you’re ready.</p><Link className="command-button" href="/board">Open Todos</Link></>}
-          {overwhelmed && <p>The rest is available with “Show full catch-up” whenever you want it.</p>}
+  // Split view: the briefing (the catch-up list with its review actions) beside
+  // the presence record it was opened for. Narrow screens stack the two.
+  return <main className="app-page task-home catch-up-page">
+    <AppNavigation current={navCurrent} />
+    <div className="catch-up-split">
+      <section className="catch-up-briefing" aria-labelledby="welcome-heading">
+        {focused ? <Link className="tool-home-link" href="/home"><span aria-hidden="true">←&nbsp;</span>Home</Link> : null}
+        <section className="command-hero">
+          <div><h1 id="welcome-heading">{loadState === "ready" && session ? `Catch-up for ${session.alterName}` : loadState === "unauthorized" ? "Sign in to your Bunch" : loadState === "error" ? "Catch-up could not be read" : "Your Bunch home"}</h1><p>Help me resume my day.</p></div>
+          {loadState === "unauthorized" ? <a className="command-button" href="/auth/login">Sign in with Google</a> : null}
         </section>
-        {!overwhelmed && session && <>
-          <details><summary>More: saved review and coverage</summary><SavedReturnReview key={session.id} sessionId={session.id} /></details>
-          <SwitchTimeline session={session} compact />
-        </>}
-      </>}
-      <a className="task-return" href="#welcome-heading">Back to Home actions</a>
+        {!focused ? <nav className="home-tasks" aria-label="Things you can do">
+          <h2>Choose an action</h2>
+          <div className="home-task-grid">
+            <a href="#catch-up-records">Read my catch-up</a>
+            <Link href="/notes#create-record">Leave a note</Link>
+            <Link href="/board">Manage todos</Link>
+            <Link href="/profiles">People &amp; pictures</Link>
+            <Link href="/account#tenant-invitations-heading">Invite another system</Link>
+            <a href="#presence-controls">Hosting &amp; fronting</a>
+            <Link href="/account#gallery-share-heading">Share photo gallery</Link>
+            <Link href="/threads#create-record">Save a thread</Link>
+          </div>
+        </nav> : null}
+        <section id="catch-up-records" tabIndex={-1} className="home-catch-up" aria-labelledby="catch-up-section-heading">
+          <h2 id="catch-up-section-heading">Your catch-up</h2>
+          <p>Read what was saved for this recorded period. Mark reviewed means you’ve read it; a todo stays open until you complete it in Todos.</p>
+          {session ? <><p className="command-kicker">Catch-up · recorded window</p><p className="command-window">{session.windowStart ? `Since ${formatTimestamp(session.windowStart)}` : "Previous fronting end unknown · available history"} → {formatTimestamp(session.windowEnd)}</p><div className="command-progress" aria-label={`${session.reviewedCount} of ${session.totalCount} reviewed`}><strong>{session.reviewedCount} of {session.totalCount}</strong><span>reviewed</span><div className="command-progress-track"><span style={{ width: `${session.totalCount ? session.reviewedCount / session.totalCount * 100 : 100}%` }} /></div></div></> : null}
+          <p className="command-notice" role="status" aria-live="polite">{isPending ? "Saving review state…" : loadState === "loading" ? "Loading your catch-up…" : notice}</p>
+          <button className="command-button secondary" disabled={isPending || loadState === "loading"} onClick={() => void loadCatchUp()}>{loadState === "error" ? "Retry catch-up" : "Refresh catch-up"}</button>
+          {loadState === "ready" && !session && <p>No catch-up open. No return window is recorded; you can still read saved notes and tasks without reporting an arrival.</p>}
+          {loadState === "error" && <p role="alert">{session ? "Refresh failed. Showing the previously loaded records; they may be out of date." : "Saved records could not be loaded. Retry catch-up, or open Notes or Todos."}</p>}
+          {initialView === "HISTORY" ? session && <SwitchTimeline session={session} /> : (session || loadState === "ready") && <>
+            <p className="catch-up-coverage">Conversation history is not read here; the briefing uses saved records, with any saved conversation review available below.</p>
+            <button className="command-button secondary" aria-pressed={overwhelmed} onClick={() => { setOverwhelmed(!overwhelmed); if (!overwhelmed) requestAnimationFrame(() => nextStepHeading.current?.focus()); }}>{overwhelmed ? "Show full catch-up" : "I’m overwhelmed"}</button>
+            {!overwhelmed && <>
+              <section className="command-section" aria-labelledby="attention-heading"><h2 id="attention-heading">Needs attention</h2>
+                <div className="command-items">{primaryItems.slice(0, 3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={rowDisabled} onState={setReviewState} />)}</div>
+                {!primaryItems.length && <p>{session ? "No unreviewed attention items in the loaded records." : "Open Todos to check your saved tasks."}</p>}
+                {primaryItems.length > 3 && <details><summary>More needs attention ({primaryItems.length - 3})</summary><div className="command-items">{primaryItems.slice(3).map(item => <CatchUpRow key={item.entryId} item={item} disabled={rowDisabled} onState={setReviewState} />)}</div></details>}
+              </section>
+              <section className="command-section" aria-labelledby="changes-heading"><h2 id="changes-heading">What changed</h2>
+                <p>{updates.length ? `${updates.length} other saved records in this catch-up.` : session ? "No other saved changes in the loaded records." : "Choose Notes to read saved context; there is no catch-up window to compare yet."}</p>
+                {updates.length > 0 && <details><summary>More saved changes ({updates.length})</summary><div className="command-items">{updates.map(item => <CatchUpRow key={item.entryId} item={item} disabled={rowDisabled} onState={setReviewState} />)}</div></details>}
+              </section>
+            </>}
+            <section className="command-section" aria-labelledby="next-step-heading"><h2 id="next-step-heading" ref={nextStepHeading} tabIndex={-1}>Next step</h2>
+              {nextItem ? <><p>{nextItem.title}: {nextItem.nextAction}</p><Link className="command-button" href={recordHref(nextItem)}>Open {nextItem.title}</Link></> : <><p>Open Todos and choose one saved task when you’re ready.</p><Link className="command-button" href="/board">Open Todos</Link></>}
+              {overwhelmed && <p>The rest is available with “Show full catch-up” whenever you want it.</p>}
+            </section>
+            {!overwhelmed && session && <details className="catch-up-review"><summary>More: saved review and coverage</summary><SavedReturnReview key={session.id} sessionId={session.id} /></details>}
+          </>}
+          <a className="task-return" href="#welcome-heading">Back to Home actions</a>
+        </section>
       </section>
-      {focused ? <section className="home-presence focused-presence" aria-labelledby="current-presence-heading">
-        <h2 id="current-presence-heading">Current presence record</h2>
-        <p>Review the last saved record here. Use Switch above to record an explicit change.</p>
-        <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
-      </section> : null}
-      {!focused ? <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
-        <h2 id="hosting-actions-heading">Hosting and fronting controls</h2>
-        <p>Choose a current fronter’s catch-up, or explicitly record a change. Hosting and fronting are separate records.</p>
-        <FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} />
-        <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
-        <a className="task-return" href="#welcome-heading">Back to Home actions</a>
-      </section> : null}
-    </section>
+      <aside className="catch-up-context" aria-label="Presence and timeline">
+        {focused ? <section className="home-presence focused-presence" aria-labelledby="current-presence-heading">
+          <h2 id="current-presence-heading">Current presence record</h2>
+          <p>Review the last saved record here. Use Switch above to record an explicit change.</p>
+          <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
+        </section> : null}
+        {!focused ? <section id="presence-controls" tabIndex={-1} className="home-presence" aria-labelledby="hosting-actions-heading">
+          <h2 id="hosting-actions-heading">Hosting and fronting controls</h2>
+          <p>Choose a current fronter’s catch-up, or explicitly record a change. Hosting and fronting are separate records.</p>
+          <FrontSwitchPanel onConfirmed={presenceChanged} onNotice={setNotice} />
+          <CurrentFrontSummary refreshKey={frontRefresh} onChoose={choosePeriod} session={session} />
+          <a className="task-return" href="#welcome-heading">Back to Home actions</a>
+        </section> : null}
+        {initialView !== "HISTORY" && !overwhelmed && session ? <SwitchTimeline session={session} compact /> : null}
+      </aside>
+    </div>
   </main>;
 }
 
 const reviewLabels = { NEW: "Not reviewed", ACKNOWLEDGED: "Reviewed", DEFERRED: "Review postponed", RESOLVED: "Review finished" };
 
-function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { refreshing: boolean; view: RecordView; onNotice: (message: string) => void; profiles: AlterView[]; onSaved: () => void }) {
+function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing, onViewSaved }: { refreshing: boolean; view: RecordView; onNotice: (message: string) => void; profiles: AlterView[]; onSaved: () => void; onViewSaved?: () => void }) {
   const [formNotice, setFormNotice] = useState("");
   const feedbackRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (formNotice && !refreshing) feedbackRef.current?.scrollIntoView({ block: "nearest" }); }, [formNotice, refreshing]);
@@ -295,7 +300,7 @@ function CreateRecordPanel({ view, onNotice, profiles, onSaved, refreshing }: { 
     finally { submitInFlight.current = false; setBusy(false); }
   }
 
-  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records">View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/home">Back to Home</Link></div></div>;
+  const feedback = <div className="form-feedback"><p ref={feedbackRef} role="status">{busy ? "Saving…" : formNotice}</p><div className="task-return-links"><a href="#saved-records" onClick={onViewSaved ? (event) => { event.preventDefault(); onViewSaved(); } : undefined}>View saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</a><Link href="/home">Back to Home</Link></div></div>;
   if (view === "BOARD") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Add a todo</h2><form ref={formRef} onSubmit={submit}><label>Title<input disabled={busy} name="title" required maxLength={500} /></label><label>Details <span className="optional">optional</span><textarea disabled={busy} name="details" rows={2} maxLength={5000} /></label><label>Priority<select disabled={busy} name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label><label>Due date <span className="optional">optional</span><input disabled={busy} name="dueOn" type="date" /></label><Recipients profiles={profiles} disabled={busy} label="Assign to" /><button className="command-button" disabled={busy}>Save todo</button></form>{feedback}</section>;
   if (view === "NOTES") return <section id="create-record" className="command-create" aria-labelledby="create-heading"><h2 id="create-heading" tabIndex={-1}>Leave a note</h2><form ref={formRef} onSubmit={submit}><label>Note<textarea disabled={busy} name="body" required rows={4} maxLength={5000} /></label><label>Recipient<select name="recipient" disabled={busy}><option value="">System-wide</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="command-button" disabled={busy}>Save note</button></form>{feedback}</section>;
   const invalidateSuggestion = () => setSuggestion(null);
@@ -321,7 +326,7 @@ function SwitchTimeline({ session, compact = false }: { session: CatchUpSession 
 }
 
 type RecordView = "BOARD" | "NOTES" | "THREADS";
-type SavedThread = { id: string; title: string; url: string; approvedSummary: string; keyDecisionOrAction: string; recipients: string[]; status: string; version: number; updatedAt: string };
+type SavedThread = { id: string; title: string; url: string; source: string; approvedSummary: string; keyDecisionOrAction: string; recipients: string[]; status: string; version: number; updatedAt: string };
 type SavedRecord = TodoView | NoteView | SavedThread;
 const recordEndpoints = { BOARD: "/api/v1/todos", NOTES: "/api/v1/notes", THREADS: "/api/v1/important-threads" };
 const recordTitles = { BOARD: "Todos", NOTES: "Notes", THREADS: "Important threads" };
@@ -348,9 +353,26 @@ function SavedRecords({ view }: { view: RecordView }) {
   const [refresh, setRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const mutation = useRef(false);
   const generation = useRef(0);
   const initialFragmentHandled = useRef(false);
+
+  // Hooks for THREADS view - called unconditionally
+  const threadRecords = useMemo(() => records as SavedThread[], [records]);
+  const ids = useMemo(() => threadRecords.map(r => r.id), [threadRecords]);
+  const [selectedId, select] = useListSelection(ids);
+  const threadRowsCurrent = threadRecords.find(r => r.id === selectedId);
+  const threadRows: ListRow[] = useMemo(() =>
+    threadRecords.map(record => ({
+      id: record.id,
+      title: record.title,
+      meta: record.source,
+      time: formatTimestamp(record.updatedAt),
+      badge: record.status === "SUGGESTED" ? { label: "Needs confirmation", tone: "attention" } : undefined,
+    })),
+    [threadRecords]
+  );
 
   function refreshRecords() {
     generation.current += 1;
@@ -398,15 +420,37 @@ function SavedRecords({ view }: { view: RecordView }) {
     return () => { active = false; };
   }, [refresh]);
 
+  // Links into this page: `#create-record` opens the create form, `#record-<id>`
+  // opens that saved record (the first read pages until it is found).
   useEffect(() => {
-    if (window.location.hash && !initialFragmentHandled.current) {
-      const target = document.getElementById(window.location.hash.slice(1));
-      if (!target) return;
+    if (initialFragmentHandled.current || !window.location.hash) return;
+    const hash = window.location.hash;
+    if (view === "THREADS") {
+      if (hash === "#create-record") {
+        initialFragmentHandled.current = true;
+        // Not cancelled on re-run: this fragment is handled exactly once.
+        requestAnimationFrame(() => setCreating(true));
+        return;
+      }
+      const target = hash.startsWith("#record-") ? hash.slice(8) : undefined;
+      if (!target || state !== "ready") return;
       initialFragmentHandled.current = true;
-      target.scrollIntoView();
-      if (target?.id === "create-record") target.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+      if (records.some(record => record.id === target)) requestAnimationFrame(() => select(target));
+      return;
     }
-  }, [records, profilesReady]);
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return;
+    initialFragmentHandled.current = true;
+    target.scrollIntoView();
+    if (target.id === "create-record") target.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+  }, [view, state, records, profilesReady, select]);
+
+  // Opening the create form moves focus to its heading.
+  useEffect(() => {
+    if (view !== "THREADS" || !creating || !profilesReady) return;
+    const frame = requestAnimationFrame(() => document.getElementById("create-heading")?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [view, creating, profilesReady]);
 
   async function loadMore() {
     if (!cursor || mutation.current || refreshing) return;
@@ -439,21 +483,85 @@ function SavedRecords({ view }: { view: RecordView }) {
     finally { mutation.current = false; setBusy(false); }
   }
 
-  return <main className="command-shell saved-records"><AppNavigation current={view} /><section className="command-main">
-    <section className="command-hero"><div><h1>{recordTitles[view]}</h1><p>{view === "BOARD" ? "Add a task, choose who it is for, and mark it complete when it is done." : view === "NOTES" ? "Leave a message for a person or the whole System. Your saved notes are below." : "Save a link and summary, then confirm it for catch-up."}</p><a className="command-button" href="#create-record">{view === "BOARD" ? "Add a todo" : view === "NOTES" ? "Leave a note" : "Save a thread"}</a></div></section>
-    <p className="command-notice" role="status" aria-live="polite">{state === "loading" ? "Loading saved records…" : notice}</p>
-    {state === "unauthorized" ? <p><a href="/auth/login">Sign in to view your saved records</a></p> : state === "error" ? <button className="command-button" onClick={refreshRecords}>Retry records</button> : null}
-    {state === "ready" ? <>
-      <section id="saved-records" className="command-section" aria-label={`Saved ${recordTitles[view]}`}>
-        <h2>Saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"}</h2><button className="command-button secondary" disabled={busy || refreshing} onClick={refreshRecords}>{refreshing ? "Refreshing records…" : "Refresh records"}</button>
-        {!records.length ? <p className="command-empty">No saved {view === "BOARD" ? "todos" : view === "NOTES" ? "notes" : "threads"} yet. Use the button above to add your first one.</p> : null}
-        <div className="command-items">{records.map((record) => <article className="command-row" id={`record-${record.id}`} key={record.id}><div className="command-row-content">
-          {"body" in record ? <><h3>Note for {record.alterName ?? (record.alterId ? "a linked profile" : "System-wide")}</h3><p style={{ whiteSpace: "pre-wrap" }}>{record.body}</p>{record.actorAlterName ? <p>From {record.actorAlterName}</p> : null}</> : "assigneeAlterIds" in record ? <><h3>{record.title}</h3><p>{record.status.toLowerCase().replaceAll("_", " ")} · {record.priority?.toLowerCase() ?? "normal"} priority</p>{record.details ? <p style={{ whiteSpace: "pre-wrap" }}>{record.details}</p> : null}<p>Assigned to: {record.assigneeAlterIds.length ? record.assigneeAlterIds.map((id) => profiles.find((profile) => profile.id === id)?.name ?? "Linked profile").join(", ") : "System-wide"}</p>{record.dueOn ? <p>Due {record.dueOn}</p> : null}<button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(record)}>{record.status === "DONE" ? "Reopen todo" : "Mark todo complete"}</button></> : <><h3>{record.title}</h3><p>{record.status === "CONFIRMED" ? "Confirmed for catch-up" : "Suggestion — not yet confirmed"}</p><p>{record.approvedSummary}</p><p><strong>Decision or action:</strong> {record.keyDecisionOrAction}</p><p>For {record.recipients?.length ? record.recipients.join(", ") : "System-wide"}</p><a href={record.url} target="_blank" rel="noreferrer">Open thread</a>{record.status === "SUGGESTED" ? <p><button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(record)}>Confirm this summary and action</button></p> : null}</>}
-          <p className="command-row-meta">Updated {formatTimestamp(record.updatedAt)}</p>
-        </div></article>)}</div>
-        {cursor ? <button className="command-button" disabled={busy || refreshing} onClick={loadMore}>Load more</button> : null}
-      </section>
-      {profilesReady ? <CreateRecordPanel view={view} refreshing={refreshing} profiles={profiles} onNotice={setNotice} onSaved={refreshRecords} /> : profileError ? <p>{profileError} <button className="command-button" onClick={refreshRecords}>Retry profiles</button></p> : <p>Loading recipient choices…</p>}
-    </> : null}
-  </section></main>;
+  if (view === "BOARD" || view === "NOTES") {
+    // Keep original view for BOARD and NOTES
+    const typedRecords = records as (TodoView | NoteView)[];
+    return <main className="command-shell saved-records"><AppNavigation current={view} /><section className="command-main">
+      <section className="command-hero"><div><h1>{recordTitles[view]}</h1><p>{view === "BOARD" ? "Add a task, choose who it is for, and mark it complete when it is done." : "Leave a message for a person or the whole System. Your saved notes are below."}</p><a className="command-button" href="#create-record">{view === "BOARD" ? "Add a todo" : "Leave a note"}</a></div></section>
+      <p className="command-notice" role="status" aria-live="polite">{state === "loading" ? "Loading saved records…" : notice}</p>
+      {state === "unauthorized" ? <p><a href="/auth/login">Sign in to view your saved records</a></p> : state === "error" ? <button className="command-button" onClick={refreshRecords}>Retry records</button> : null}
+      {state === "ready" ? <>
+        <section id="saved-records" className="command-section" aria-label={`Saved ${recordTitles[view]}`}>
+          <h2>Saved {view === "BOARD" ? "todos" : "notes"}</h2><button className="command-button secondary" disabled={busy || refreshing} onClick={refreshRecords}>{refreshing ? "Refreshing records…" : "Refresh records"}</button>
+          {!typedRecords.length ? <p className="command-empty">No saved {view === "BOARD" ? "todos" : "notes"} yet. Use the button above to add your first one.</p> : null}
+          <div className="command-items">{typedRecords.map((record) => <article className="command-row" id={`record-${record.id}`} key={record.id}><div className="command-row-content">
+            {"body" in record ? <><h3>Note for {record.alterName ?? (record.alterId ? "a linked profile" : "System-wide")}</h3><p style={{ whiteSpace: "pre-wrap" }}>{record.body}</p>{record.actorAlterName ? <p>From {record.actorAlterName}</p> : null}</> : <><h3>{record.title}</h3><p>{record.status.toLowerCase().replaceAll("_", " ")} · {record.priority?.toLowerCase() ?? "normal"} priority</p>{record.details ? <p style={{ whiteSpace: "pre-wrap" }}>{record.details}</p> : null}<p>Assigned to: {record.assigneeAlterIds.length ? record.assigneeAlterIds.map((id: string) => profiles.find((profile) => profile.id === id)?.name ?? "Linked profile").join(", ") : "System-wide"}</p>{record.dueOn ? <p>Due {record.dueOn}</p> : null}<button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(record as TodoView)}>{"status" in record && record.status === "DONE" ? "Reopen todo" : "Mark todo complete"}</button></>}
+            <p className="command-row-meta">Updated {formatTimestamp(record.updatedAt)}</p>
+          </div></article>)}</div>
+          {cursor ? <button className="command-button" disabled={busy || refreshing} onClick={loadMore}>Load more</button> : null}
+        </section>
+        {profilesReady ? <CreateRecordPanel view={view} refreshing={refreshing} profiles={profiles} onNotice={setNotice} onSaved={refreshRecords} /> : profileError ? <p>{profileError} <button className="command-button" onClick={refreshRecords}>Retry profiles</button></p> : <p>Loading recipient choices…</p>}
+      </> : null}
+    </section></main>;
+  }
+
+  if (view === "THREADS") {
+    const chooseThread = (id: string | null) => { setCreating(false); select(id); };
+    return <main className="app-page"><AppNavigation current="THREADS" />
+      <ListDetail
+        title="Threads"
+        count={threadRecords.length ? `${threadRecords.length} saved` : undefined}
+        intro={<p>Save a link and summary, then confirm it for catch-up.</p>}
+        newAction={{ label: "Save a thread", onClick: () => setCreating(true), pressed: creating }}
+        rows={threadRows}
+        selectedId={creating ? null : selectedId}
+        onSelect={chooseThread}
+        detailLabel={creating ? "Save a thread" : "Thread"}
+        listTools={state === "ready" ? <button className="command-button secondary" disabled={busy || refreshing} onClick={refreshRecords}>{refreshing ? "Refreshing records…" : "Refresh records"}</button> : null}
+        listStatus={
+          <>
+            <p className="command-notice" role="status" aria-live="polite">{state === "loading" ? "Loading saved records…" : notice}</p>
+            {state === "unauthorized" && <p><a href="/auth/login">Sign in to view your saved records</a></p>}
+            {state === "error" && <button className="command-button" onClick={refreshRecords}>Retry records</button>}
+            {state === "ready" && !threadRecords.length && <p className="command-empty">No saved threads yet. Use the button above to add your first one.</p>}
+          </>
+        }
+        listFooter={state === "ready" && cursor ? <button className="command-button" disabled={busy || refreshing} onClick={loadMore}>Load more</button> : null}
+        detailOpen={creating}
+      >
+        {creating ? (
+          profilesReady ? <CreateRecordPanel view="THREADS" refreshing={refreshing} profiles={profiles} onNotice={setNotice} onSaved={refreshRecords} onViewSaved={() => setCreating(false)} />
+            : profileError ? <p>{profileError} <button className="command-button" onClick={refreshRecords}>Retry profiles</button></p>
+            : <p role="status">Loading recipient choices…</p>
+        ) : threadRowsCurrent ? (
+          <article className="detail-card" id={`record-${threadRowsCurrent.id}`}>
+            {threadRowsCurrent.source ? <span className="detail-eyebrow">{threadRowsCurrent.source}</span> : null}
+            <h2>{threadRowsCurrent.title}</h2>
+            <dl className="detail-facts">
+              <div><dt>Status</dt><dd>{threadRowsCurrent.status === "CONFIRMED" ? "Confirmed for catch-up" : "Suggestion — not yet confirmed"}</dd></div>
+              <div><dt>For</dt><dd>{threadRowsCurrent.recipients?.length ? threadRowsCurrent.recipients.join(", ") : "System-wide"}</dd></div>
+              <div><dt>Updated</dt><dd>{formatTimestamp(threadRowsCurrent.updatedAt)}</dd></div>
+            </dl>
+            <div>
+              <span className="detail-eyebrow">Approved summary</span>
+              <p>{threadRowsCurrent.approvedSummary}</p>
+            </div>
+            <div className="detail-callout">
+              <span className="detail-eyebrow">Key decision or action</span>
+              <p>{threadRowsCurrent.keyDecisionOrAction}</p>
+            </div>
+            <div className="detail-actions">
+              <a className="command-button" href={threadRowsCurrent.url} target="_blank" rel="noreferrer">Open thread</a>
+              {threadRowsCurrent.status === "SUGGESTED" && (
+                <button className="command-button" disabled={busy || refreshing} onClick={() => changeRecord(threadRowsCurrent)}>Confirm this summary and action</button>
+              )}
+            </div>
+            <p>Review the saved summary and action before confirming it for catch-up. No transcript is stored.</p>
+          </article>
+        ) : null}
+      </ListDetail>
+    </main>;
+  }
+
+  return null;
 }

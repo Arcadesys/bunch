@@ -15,6 +15,7 @@ test("operator can expand an open pilot by three with fresh evidence", async ({ 
   });
 
   await page.goto("/account");
+  await page.getByRole("button", { name: "System invitations" }).click();
   await page.getByText("Increase pilot capacity by 3", { exact: true }).click();
   await expect(page.getByText("New capacity:")).toContainText("6");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);

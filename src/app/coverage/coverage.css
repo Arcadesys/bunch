@@ -1,0 +1,5 @@
+/* Coverage detail: reasons read as a short list that wraps at phone width and enlarged text. */
+.coverage-reasons { min-width: 0; overflow-wrap: anywhere; }
+.coverage-reasons h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.coverage-reasons ul { margin: 0; padding-left: 1.2rem; }
+.coverage-reasons li + li { margin-top: .25rem; }

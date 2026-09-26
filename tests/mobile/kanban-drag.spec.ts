@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 test('drag a task by its title into an empty column', async ({ page, harness }, info) => {
   test.skip(info.project.name !== 'desktop');
-  await page.goto('/board');
+  await page.goto('/board?view=board');
   const task = page.getByRole('article').filter({ hasText: 'Fixture todo' });
   const title = task.getByRole('heading', { name: 'Fixture todo' });
   const target = page.getByRole('heading', { name: 'Doing' });

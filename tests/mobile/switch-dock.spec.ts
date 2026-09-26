@@ -86,7 +86,8 @@ test("energy and trigger are saved with the arrival only when Done is pressed", 
   await page.getByRole("group", { name: "Trigger" }).getByRole("button", { name: "Stress", exact: true }).click();
   expect(harness.writes).toHaveLength(1);
 
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  // Todos' status group also has a "Done" button; press the dock's own Done.
+  await dock(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dock(page).getByRole("status")).toContainText("Energy and trigger saved with Test Finch’s record.");
   expect(harness.writes).toHaveLength(2);
   expect(harness.writes[1].path).toBe(`/api/v1/presence/periods/${harness.presence.hosting!.id}/details`);

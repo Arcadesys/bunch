@@ -1,4 +1,6 @@
-import { test, expect } from "./fixtures";
+import { test, expect, openSections } from "./fixtures";
+
+const origin = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3217"}`;
 
 const gallery = {
   alters: [
@@ -114,19 +116,19 @@ test("account share controls create links and revoke with an idempotency key", a
     const request = route.request();
     calls.push({ method: request.method(), key: request.headers()["idempotency-key"], body: request.postDataJSON() });
     if (request.method() === "GET") return route.fulfill({ json: { data: shares } });
-    if (request.method() === "POST") return route.fulfill({ status: 201, json: { data: { id: "new", expiresAt: null, revokedAt: null, createdAt: "2026-09-06T12:00:00.000Z", token: "new", url: "http://127.0.0.1:3217/gallery/share/new" } } });
+    if (request.method() === "POST") return route.fulfill({ status: 201, json: { data: { id: "new", expiresAt: null, revokedAt: null, createdAt: "2026-09-06T12:00:00.000Z", token: "new", url: `${origin}/gallery/share/new` } } });
     shares = [];
     return route.fulfill({ json: { data: { revoked: true } } });
   });
   await page.goto("/home");
-  await page.getByText("More places", { exact: true }).click();
-  await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
+  await (await openSections(page)).getByRole("link", { name: "Options", exact: true }).click();
   await page.getByRole("link", { name: "Account & privacy", exact: false }).press("Enter");
   await expect(page).toHaveURL(/\/account$/);
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByRole("heading", { name: "Share a read-only photo gallery" })).toBeVisible();
   await page.getByLabel("Link lifetime").selectOption("1w");
   await page.getByRole("button", { name: "Create gallery link" }).click();
-  await expect(page.getByLabel("Gallery link", { exact: true })).toHaveValue("http://127.0.0.1:3217/gallery/share/new");
+  await expect(page.getByLabel("Gallery link", { exact: true })).toHaveValue(`${origin}/gallery/share/new`);
   await page.getByRole("button", { name: "Revoke link" }).first().click();
   // The click only dispatches the request; wait for it before reading calls.
   await expect.poll(() => calls.some((call) => call.method === "DELETE")).toBe(true);
@@ -140,7 +142,7 @@ test("existing owner can create and keyboard-copy a link without accepting an in
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const url = "http://127.0.0.1:3217/gallery/share/disposable-fixture-token";
+  const url = `${origin}/gallery/share/disposable-fixture-token`;
   const writes: string[] = [];
   await page.route("**/api/v1/account", route => route.fulfill({ json: { data: { state: "LEGACY", canShareGallery: true, emailVerified: true } } }));
   await page.route("**/api/v1/account/gallery-shares", async route => {
@@ -148,9 +150,16 @@ test("existing owner can create and keyboard-copy a link without accepting an in
     return route.fulfill({ json: { data: writes.length ? [{ id: "fixture", expiresAt: null }] : [] } });
   });
   await page.goto("/account");
+  await page.getByRole("button", { name: "Your private system account" }).click();
   await expect(page.getByText("Account status: Existing system account")).toBeVisible();
   await expect(page.getByLabel("Invitation code")).toHaveCount(0);
+  // Phones show one pane at a time; return to the section list first.
+  const back = page.getByRole("button", { name: "← Account" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByText(/whole system’s profile names and all gallery photos/)).toBeVisible();
+  // The section loads its links when opened; the button is enabled once they are known.
+  await expect(page.getByRole("button", { name: "Create gallery link", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Create gallery link", exact: true }).press("Enter");
   const copy = page.getByRole("button", { name: "Copy link", exact: true });
   await copy.press("Enter");
@@ -170,15 +179,17 @@ test("existing owner can create and keyboard-copy a link without accepting an in
   await expect(page.getByRole("button", { name: "Revoke link", exact: true })).toBeEnabled();
   expect(writes).toEqual(["create"]);
   expect(errors).toEqual([]);
-  await expect(page).toHaveURL("http://127.0.0.1:3217/account");
+  // The open section stays in the address so a reload returns to it.
+  await expect(page).toHaveURL(`${origin}/account?id=gallery`);
   await expect(page).toHaveTitle(/Bunch/);
 });
 
 test("clipboard failure selects the new link for manual copying", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { value: { writeText: async () => { throw new Error("Denied"); } } }));
   await page.route("**/api/v1/account", r => r.fulfill({ json: { data: { state: "ACTIVE", canShareGallery: true, role: "OPERATOR" } } }));
-  await page.route("**/api/v1/account/gallery-shares", r => r.fulfill({ json: { data: r.request().method() === "POST" ? { id: "new", url: "http://127.0.0.1:3217/gallery/share/manual-fixture", expiresAt: null } : [] } }));
+  await page.route("**/api/v1/account/gallery-shares", r => r.fulfill({ json: { data: r.request().method() === "POST" ? { id: "new", url: `${origin}/gallery/share/manual-fixture`, expiresAt: null } : [] } }));
   await page.goto("/account");
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await page.getByRole("button", { name: "Create gallery link", exact: true }).click();
   await page.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Could not copy automatically");
@@ -191,11 +202,13 @@ test("unenrolled and blocked accounts never get sharing controls", async ({ page
   for (const state of ["NOT_ENROLLED", "REVOKED", "DELETED", "ACTIVE"]) {
     await page.route("**/api/v1/account", r => r.fulfill({ json: { data: { state, canShareGallery: false, emailVerified: true } } }));
     await page.goto("/account");
+    await page.getByRole("button", { name: "Your private system account" }).click();
     await expect(page.getByText(`Account status: ${state.replaceAll("_", " ")}`)).toBeVisible();
     await expect(page.getByRole("button", { name: "Create gallery link", exact: true })).toHaveCount(0);
   }
   await page.route("**/api/v1/account", r => r.fulfill({ status: 401, json: {} }));
   await page.goto("/account");
+  await page.getByRole("button", { name: "Your private system account" }).click();
   await expect(page.getByRole("link", { name: "Sign in with Google" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create gallery link", exact: true })).toHaveCount(0);
 });
@@ -215,9 +228,9 @@ test("owner enables fronting on an existing stable link and visitors see refresh
   });
   await page.route("**/api/public/gallery/stable", r => r.fulfill(unavailable ? { status: 404 } : { json: { ...gallery, ...(enabled ? { currentFronting: { people, checkedAt: new Date().toISOString() } } : {}) } }));
   await page.goto("/home");
-  await page.getByText("More places", { exact: true }).click();
-  await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
+  await (await openSections(page)).getByRole("link", { name: "Options", exact: true }).click();
   await page.getByRole("link", { name: "Account & privacy", exact: false }).click();
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Share current fronting on this link" }).press("Enter");
   await expect(page.getByText("Current fronting: Shared", { exact: true })).toBeVisible();
@@ -237,6 +250,7 @@ test("owner enables fronting on an existing stable link and visitors see refresh
   await page.getByRole("button", { name: "Refresh shared gallery" }).click();
   await expect(current).toContainText("This does not mean nobody is fronting.");
   await page.goto("/account");
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await page.getByRole("button", { name: "Stop sharing current fronting" }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.goto("/gallery/share/stable");

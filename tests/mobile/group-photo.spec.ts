@@ -25,6 +25,7 @@ test("direct placement keeps three people together and supports Arrange and keyb
     return route.fulfill({ json: { data: project, meta: {} } });
   });
   await page.goto("/group-photo");
+  await page.getByRole("button", { name: "Start a new scene" }).click();
   await page.getByLabel("Choose a JPEG, PNG, or WebP photo").setInputFiles({ name: "room.png", mimeType: "image/png", buffer: Buffer.from("fixture") });
   await page.getByRole("button", { name: "Use this scene" }).click();
   const stage = page.getByLabel("Photo staging area", { exact: true });
@@ -102,8 +103,9 @@ test("finisher shows progress, a saved image and the same result after reopening
   await expect(page.getByRole("button", { name: "Finishing photo…", exact: true })).toBeDisabled();
   await expect(page.getByRole("img", { name: "Finished group photo", exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("link", { name: "Download finished photo" })).toBeVisible();
-  await page.getByRole("link", { name: "Start or reopen another scene" }).click();
-  await page.getByRole("link", { name: /Open scene 1/ }).click();
+  // Start or reopen another scene: the saved-scenes list reopens it from the server.
+  await page.goto("/group-photo");
+  await page.getByRole("button", { name: /^Scene 1/ }).click();
   const image = page.getByRole("img", { name: "Finished group photo", exact: true });
   await expect(image).toBeVisible();
   expect(await image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(800);

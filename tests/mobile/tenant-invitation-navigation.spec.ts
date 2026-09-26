@@ -17,7 +17,9 @@ test("Home routes through Options to account invitations", async ({ page }, info
   await page.screenshot({ path: info.outputPath("home-invite-action.png"), fullPage: false });
   await invite.click();
 
-  await expect(page).toHaveURL(/\/account$/);
+  await expect(page).toHaveURL(/\/account(\?id=[\w-]+)?$/);
+  // Account is a split view: the invitations section opens from its row.
+  await page.locator(".ld-row").filter({ hasText: "System invitations" }).click();
   const heading = page.getByRole("heading", { name: "Invite a new private system", exact: true });
   await expect(heading).toBeVisible();
   await expect(page.getByRole("heading", { name: "Open invitations", exact: true })).toBeVisible();

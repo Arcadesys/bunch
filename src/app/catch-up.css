@@ -1,0 +1,25 @@
+/* Catch-up split view: the briefing beside the presence record and timeline. */
+.catch-up-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 2rem;
+  max-width: 84rem;
+  padding: 1rem clamp(.8rem, 3vw, 2rem) 2rem;
+  overflow-wrap: anywhere;
+}
+.catch-up-briefing, .catch-up-context { min-width: 0; }
+.catch-up-briefing .home-catch-up { margin-top: 1rem; }
+.catch-up-briefing .command-row h3 { overflow-wrap: anywhere; }
+.catch-up-briefing .command-row a,
+.catch-up-briefing .tool-home-link,
+.catch-up-briefing .task-return,
+.catch-up-context .task-return { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+.catch-up-briefing details > summary,
+.catch-up-context details > summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; }
+.catch-up-context .home-presence:first-child { margin-top: 1rem; }
+.catch-up-context .command-timeline { margin-top: 1.5rem; }
+
+@media (min-width: 1100px) {
+  .catch-up-split { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; }
+  .catch-up-context { padding-left: 1.5rem; border-left: 1px solid rgb(255 138 0 / 22%); }
+}

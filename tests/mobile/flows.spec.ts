@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures";
+import { test, expect, openSections } from "./fixtures";
 
 test("catch-up loads, acknowledges, and reloads server-owned review state", async ({ page, harness }, testInfo) => {
   const errors: string[] = [];
@@ -65,15 +65,25 @@ test("navigation opens saved records and identifies the active page", async ({ p
     if (label === "Save a thread") await page.getByText("More places").click();
     await page.getByRole("link", { name: label, exact: false }).click();
     await expect(page).toHaveURL(new RegExp(`${path}(#create-record)?$`));
-    await expect(page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    // Split view: saved records are rows in the list; choosing one opens its detail.
+    // On phones a create form replaces the list, so step back to the list first.
+    const savedRow = page.locator(".ld-row").filter({ hasText: `Fixture ${type}` });
+    await expect(savedRow).toBeAttached();
+    // Let a create form opened by the link settle first (sync only, not an assertion).
+    if (page.url().endsWith("#create-record")) await page.locator("form").first().waitFor({ timeout: 1500 }).catch(() => undefined);
+    if (await page.locator(".ld-back").isVisible()) await page.locator(".ld-back").click();
+    await savedRow.click();
     await expect(page.getByRole("article")).toHaveCount(1);
     await expect(page.getByRole("article")).toContainText(`Fixture ${type}`);
-    await page.getByRole("navigation", { name: "Bunch navigation" }).getByRole("link", { name: "Home", exact: true }).click();
+    const nav = await openSections(page);
+    await expect(nav.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    await nav.getByRole("link", { name: "Home", exact: true }).click();
   }
 });
 
 test("thread suggestion requires a separate confirmation and excludes transcript", async ({ page, harness }) => {
   await page.goto("/threads");
+  await page.getByRole("button", { name: "Save a thread" }).click();
   await page.getByLabel("Thread link").fill("https://example.invalid/approved-thread");
   await page.getByLabel("Title", { exact: true }).fill("Synthetic thread");
   await page.getByLabel("Approved summary").fill("Approved summary only.");
