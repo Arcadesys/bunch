@@ -69,6 +69,7 @@ export const OWNER_TABLES = [
   "private_image",
   "alter_alias",
   "coverage_assignment",
+  "alter_sticker_pack",
   "alter_profile",
   "system_preference",
 ] as const;
