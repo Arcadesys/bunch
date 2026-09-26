@@ -90,18 +90,40 @@ export class ImageDeletionService {
 
   /** Storage keys of repairs plus every display rendition of the source and its repairs. */
   private async derivedKeys(client: PoolClient, ownerId: string, repairs: { id: string; storage_key: string | null }[], source: { private?: string; native?: string; group?: string }) {
+    const ownKeys = repairs.map((r) => r.storage_key).filter((key): key is string => typeof key === "string");
     const nativeIds = [...(source.native ? [source.native] : []), ...repairs.map((r) => String(r.id))];
-    const renditions = await client.query(
-      "select storage_key from image_rendition where owner_id=$1 and (source_native_id=any($2::uuid[]) or source_private_id=$3::uuid or source_group_id=$4::uuid)",
-      [ownerId, nativeIds, source.private ?? null, source.group ?? null],
-    );
-    return [...repairs.map((r) => r.storage_key), ...renditions.rows.map((r) => r.storage_key)].filter((key): key is string => typeof key === "string");
+    let renditions: { storage_key: string }[];
+    // A failed query aborts the rest of this transaction, so a missing table is
+    // guarded by a savepoint: catching the JS error alone would leave every later
+    // statement in this delete failing with "current transaction is aborted".
+    await client.query("savepoint image_rendition_lookup");
+    try {
+      renditions = (await client.query(
+        "select storage_key from image_rendition where owner_id=$1 and (source_native_id=any($2::uuid[]) or source_private_id=$3::uuid or source_group_id=$4::uuid)",
+        [ownerId, nativeIds, source.private ?? null, source.group ?? null],
+      )).rows;
+    } catch (error) {
+      // A schema that has not yet run drizzle/0023_image_renditions.sql has no rendition
+      // table at all. Deletion must still work there instead of 500ing on every attempt.
+      if (!(error && typeof error === "object" && "code" in error && error.code === "42P01")) throw error;
+      await client.query("rollback to savepoint image_rendition_lookup");
+      console.error("[image-deletion] schema is missing image_rendition; run npm run db:migrate");
+      renditions = [];
+    }
+    return [...ownKeys, ...renditions.map((r) => r.storage_key)];
   }
 
   // Files go first: if the commit then fails, the rows remain and a retry finds the same keys.
   private async removeStored(client: PoolClient, ownerId: string, keys: string[]) {
     if (!keys.length) return;
-    await this.removeFiles(keys);
+    try {
+      await this.removeFiles(keys);
+    } catch (error) {
+      // The transaction rolls back on any thrown error, so nothing was deleted.
+      // Say that plainly instead of the caller's generic 500.
+      console.error("[image-deletion] storage removal failed", { error: error instanceof Error ? error.message : String(error) });
+      throw new SystemError("STORAGE_UNAVAILABLE", "Image storage is unavailable right now. Nothing was deleted — try again in a minute.");
+    }
     await client.query("delete from pilot_upload where owner_id=$1 and storage_key=any($2::text[])", [ownerId, keys]);
   }
 
