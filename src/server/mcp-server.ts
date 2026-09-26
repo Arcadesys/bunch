@@ -53,6 +53,7 @@ import { issueImageReadCapability, issueImageUploadCapability, issueSceneImageRe
 import { setAlterAppearanceSchema } from "@/domain/contracts";
 import { repository, type SystemRepository } from "@/server/repository";
 import { draftSchema, noteSchema, preferenceSchema, resolveDraftSchema } from "@/server/schemas";
+import { registerTelegramStickerTools } from "@/server/telegram-sticker-mcp";
 import { registerSystemSkill } from "@/server/system-skill";
 import { getSystemService } from "@/server/system-service";
 import { CatchUpService, getCatchUpService } from "@/server/catch-up-service";
@@ -236,6 +237,7 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
     }
   }) as never)) as RegisterTool;
   registerSystemSkill(server);
+  registerTelegramStickerTools(server, ownerId);
   registerDemoSystemTool(server);
   server.registerTool("connect_private_system", connectPrivateSystemTool, async () => ({
     structuredContent: { mode: "private", authenticated: true },

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Telegram Sticker Uploader"
+  short_description: "Review and publish Bunch stickers to Telegram"
+  default_prompt: "Use $upload-telegram-stickers to prepare my selected Bunch sticker images for Telegram."

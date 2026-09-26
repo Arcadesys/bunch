@@ -1,3 +1,4 @@
+import { TELEGRAM_STICKER_SKILL_URI, TELEGRAM_STICKER_SKILL_TEXT, telegramStickerSkillEntry } from "@/server/telegram-sticker-skill";
 import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -42,8 +43,12 @@ export function registerSystemSkill(server: McpServer) {
     { title: "System Companion skill", description: frontmatter.description, mimeType: "text/markdown" },
     async () => ({ contents: [{ uri: SYSTEM_SKILL_URI, mimeType: "text/markdown", text: SYSTEM_SKILL_TEXT }] }),
   );
-  server.server.setRequestHandler(skillsListRequestSchema, async () => ({ skills: [systemSkillEntry()] }) as never);
+  server.registerResource("telegram-sticker-skill", TELEGRAM_STICKER_SKILL_URI,
+    { title: "Telegram sticker uploader skill", mimeType: "text/markdown" },
+    async () => ({ contents: [{ uri: TELEGRAM_STICKER_SKILL_URI, mimeType: "text/markdown", text: TELEGRAM_STICKER_SKILL_TEXT }] }));
+  server.server.setRequestHandler(skillsListRequestSchema, async () => ({ skills: [systemSkillEntry(), telegramStickerSkillEntry()] }) as never);
   server.server.setRequestHandler(skillsGetRequestSchema, async ({ params }) => {
+    if (params.uri === TELEGRAM_STICKER_SKILL_URI) return { skill: telegramStickerSkillEntry() } as never;
     if (params.uri !== SYSTEM_SKILL_URI) throw new Error("Skill not found.");
     return { skill: systemSkillEntry() } as never;
   });
