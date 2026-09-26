@@ -56,7 +56,7 @@ integrationTest("sticker packs are owner-scoped, versioned, idempotent, and pres
     await assert.rejects(
       () => stickers.save(owner, person.id, {
         requestId: randomUUID(),
-        expectedVersion: first.data.version - 1,
+        expectedVersion: first.data.version + 10,
         communicationProfile: first.data.communicationProfile,
         status: "APPROVED",
         slots,
