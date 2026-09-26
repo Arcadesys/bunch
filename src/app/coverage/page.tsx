@@ -22,7 +22,7 @@ async function systemRequest(method: "GET" | "POST", body?: unknown) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Request failed.");
   return data;
 }
 
