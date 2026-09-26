@@ -18,6 +18,7 @@ files = [
     'skills/system-companion/SKILL.md',
     'skills/system-companion/agents/openai.yaml',
     'skills/bunch-sticker-pack/SKILL.md',
+    'skills/bunch-sticker-pack/agents/openai.yaml',
     'README.md',
     'assets/bunch-barrel-monkeys.png',
 ]
@@ -38,6 +39,7 @@ require(portable_server.get('url') == compat_server.get('url') == 'https://syste
 require((plugin / 'skills/system-companion/SKILL.md').read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'System Companion skill is stale')
 require((plugin / 'skills/system-companion/agents/openai.yaml').read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale')
 require((plugin / 'skills/bunch-sticker-pack/SKILL.md').read_bytes() == (root / 'skills/bunch-sticker-pack/SKILL.md').read_bytes(), 'Sticker pack skill is stale')
+require((plugin / 'skills/bunch-sticker-pack/agents/openai.yaml').read_bytes() == (root / 'skills/bunch-sticker-pack/agents/openai.yaml').read_bytes(), 'Sticker pack OpenAI agent config is stale')
 for name in files:
     source = plugin / name
     require(source.is_file() and not source.is_symlink(), f'Unsafe or missing plugin file: {name}')
