@@ -43,7 +43,12 @@ export async function apiResponse(run: () => Promise<Response>) {
   } catch (raw) {
     const error = normalizeSystemError(raw);
     if (!(error instanceof SystemError)) {
-      console.error("[api] request failed", { code: "INTERNAL_ERROR" });
+      console.error("[api] request failed", {
+        code: "INTERNAL_ERROR",
+        name: error instanceof Error ? error.name : typeof error,
+        pgCode: error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : undefined,
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      });
       return NextResponse.json(
         { error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } },
         { status: 500, headers: { "Cache-Control": "private, no-store" } },
