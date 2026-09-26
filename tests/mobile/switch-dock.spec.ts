@@ -158,3 +158,38 @@ test("a signed-out dock still offers Switch and never raises an alert", async ({
   await expect(dock(page)).toContainText("Sign in to record switches.");
   await expect(page.getByRole("button", { name: /^Record as/ })).toHaveCount(0);
 });
+
+test("the dock fits the viewport at 200% text and keeps its status in words", async ({ page, harness }) => {
+  harness.presence.hosting = { id: "60000000-0000-4000-8000-000000000009", alterId: harness.profiles[1].id, alterName: "Test Finch", startedAt: "2026-09-04T12:00:00.000Z", version: 1, kind: "HOSTING", origin: "EXPLICIT" };
+  // Init scripts run before <html> exists, so enlarge once the document is parsed.
+  await page.addInitScript(() => document.addEventListener("DOMContentLoaded", () => { document.documentElement.style.fontSize = "40px"; }));
+  await page.goto("/board");
+  const trigger = await liveDock(page);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe("40px");
+  await expect(trigger).toHaveAccessibleName("Switch. Hosting: Test Finch. Fronting alongside: Test Robin.");
+  await expect(dock(page)).toContainText("Host Test Finch");
+  await expect(dock(page)).toContainText("Also Test Robin");
+  // The words must be on screen, not clipped down to a letter or a colour.
+  const clipped = await dock(page).locator(".switch-dock-host-line, .switch-dock-also-line").evaluateAll(lines =>
+    lines.filter(line => line.clientWidth === 0 || line.scrollWidth > line.clientWidth + 1).map(line => line.textContent));
+  expect(clipped).toEqual([]);
+
+  // A phone widens its layout viewport to fit overflowing content, so pin
+  // innerWidth to the device width before trusting the scrollWidth check.
+  const viewport = page.viewportSize()!;
+  expect(await page.evaluate(() => innerWidth)).toBe(viewport.width);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const bounds = await dock(page).boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+
+  await trigger.scrollIntoViewIfNeeded();
+  const button = await trigger.boundingBox();
+  expect(button).not.toBeNull();
+  expect(button!.height).toBeGreaterThanOrEqual(44);
+  expect(button!.x).toBeGreaterThanOrEqual(0);
+  expect(button!.x + button!.width).toBeLessThanOrEqual(viewport.width + 1);
+  await trigger.click();
+  await expect(panelHeading(page)).toBeFocused();
+});
