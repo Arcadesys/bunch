@@ -64,12 +64,16 @@ export default function StickerPacksPage() {
     if (requested && all.some((person) => person.id === requested)) setSelectedId(requested);
   }, []);
 
+  // Loading resolves asynchronously; state changes happen only after network responses.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     void loadPeople().catch((error) =>
       setNotice(error instanceof Error ? error.message : "Could not load people."),
     );
   }, [loadPeople]);
 
+  // The selected person is external UI state; reset the board when that selection changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!selectedId) {
       setPack(null);
