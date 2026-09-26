@@ -363,3 +363,32 @@ test("lineup follows pagination to include every active profile", async () => {
     await server.close();
   }
 });
+
+test("delete_private_image is destructive, owner-scoped, and retry-safe", async () => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const calls: string[] = [];
+  const deletions = { delete: async (ownerId: string, kind: string, imageId: string) => { calls.push(`${ownerId}:${kind}:${imageId}`); return { deleted: calls.length === 1 }; } };
+  const server = createMcpServer("demo:image-delete", {} as SystemService, undefined, { listProfiles: async () => [] }, undefined, undefined, undefined, undefined, deletions);
+  const client = new Client({ name: "image-delete-test", version: "1.0.0" });
+  const imageId = "77777777-7777-4777-8777-777777777777";
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const tool = (await client.listTools()).tools.find((candidate) => candidate.name === "delete_private_image");
+    assert.equal(tool?.annotations?.destructiveHint, true);
+    assert.equal(tool?.annotations?.idempotentHint, true);
+    assert.equal(tool?.annotations?.readOnlyHint, false);
+    assert.match(tool?.description ?? "", /only after the user explicitly confirms/);
+    const first = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(first.structuredContent, { deleted: true });
+    const retry = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(retry.structuredContent, { deleted: false });
+    assert.deepEqual(calls, [`demo:image-delete:scene:${imageId}`, `demo:image-delete:scene:${imageId}`]);
+    const invalid = await client.callTool({ name: "delete_private_image", arguments: { kind: "backplate", imageId } });
+    assert.equal(invalid.isError, true);
+    assert.equal(calls.length, 2);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});

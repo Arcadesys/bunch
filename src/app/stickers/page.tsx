@@ -30,7 +30,6 @@ export default function StickerLabPage() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setPack(null);
     void fetch(`/api/v1/preferences/stickers/${encodeURIComponent(selectedId)}`,{headers:demoHeaders,cache:"no-store"}).then(async r=>{
       const payload = await r.json();
       if (!r.ok) throw new Error(payload?.error?.message || "Could not load sticker directions.");
@@ -81,7 +80,7 @@ export default function StickerLabPage() {
     <p className="notice" role="status">{notice}</p>
 
     <section className="panel sticker-person">
-      <label>Person<select value={selectedId} onChange={e=>setSelectedId(e.target.value)}>{people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label>Person<select value={selectedId} onChange={e=>{ setPack(null); setSelectedId(e.target.value); }}>{people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {person && <div className="sticker-person-summary">
         {person.profilePicture?.id && <Image src={`/api/v1/images/${encodeURIComponent(person.profilePicture.id)}`} alt={`${person.name} profile picture`} width={180} height={180} unoptimized />}
         <div><h2>{person.name}</h2><p>{person.description || "No description recorded."}</p><p>{person.appearanceReferenceImageIds?.length ? `${person.appearanceReferenceImageIds.length} selected appearance reference(s) ready.` : "No selected appearance reference yet."}</p></div>

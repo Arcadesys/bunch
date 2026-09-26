@@ -2118,3 +2118,8 @@ body:has(.switch-dock) { padding-bottom: 0; }
   .sticker-fields { grid-template-columns:minmax(0,1fr); }
   .sticker-actions .button { width:100%; }
 }
+
+.delete-image-confirm { margin-top: 12px; padding: 12px; border: 4px solid var(--line); background: var(--wash); color: var(--ink); }
+.delete-image-confirm p { margin: 0 0 10px; font-size: 1.05rem; }
+.gallery-card .button, .gallery-profile-picture .button { margin-top: 10px; margin-right: 10px; }
+.generated-photo-caption > .button { margin-top: 12px; }
