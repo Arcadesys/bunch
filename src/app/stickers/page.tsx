@@ -375,7 +375,7 @@ export default function StickerPacksPage() {
                 placeholder="https://t.me/addstickers/..."
               />
             </label>
-            <button className="button" type="button" disabled={busy || !telegramUrl.trim()} onClick={() => void save("PUBLISHED")}>
+            <button className="button" type="button" disabled={busy || pack?.status !== "APPROVED" || !telegramUrl.trim()} onClick={() => void save("PUBLISHED")}>
               Mark pack published
             </button>
             {pack?.telegramUrl && (
