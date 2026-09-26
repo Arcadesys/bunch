@@ -17,6 +17,8 @@ files = [
     '.mcp.json',
     'skills/system-companion/SKILL.md',
     'skills/system-companion/agents/openai.yaml',
+    'skills/upload-telegram-stickers/SKILL.md',
+    'skills/upload-telegram-stickers/agents/openai.yaml',
     'README.md',
     'assets/bunch-barrel-monkeys.png',
 ]
@@ -36,6 +38,8 @@ require(compat_server.get('type') == 'http', 'Compatibility MCP server must use 
 require(portable_server.get('url') == compat_server.get('url') == 'https://system.thearcades.me/mcp', 'Hosted MCP URLs do not match')
 require((plugin / files[4]).read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'Plugin skill is stale')
 require((plugin / files[5]).read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale')
+for name in ['SKILL.md', 'agents/openai.yaml']:
+    require((plugin / 'skills/upload-telegram-stickers' / name).read_bytes() == (root / 'skills/upload-telegram-stickers' / name).read_bytes(), 'Telegram sticker skill is stale')
 for name in files:
     source = plugin / name
     require(source.is_file() and not source.is_symlink(), f'Unsafe or missing plugin file: {name}')

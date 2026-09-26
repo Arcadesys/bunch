@@ -1,3 +1,4 @@
+import { TELEGRAM_STICKER_SKILL_URI } from "@/server/telegram-sticker-skill";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -51,6 +52,9 @@ test("MCP advertises and serves the System Companion skill snapshot", async () =
     assert.deepEqual(client.getServerCapabilities()?.extensions?.["io.modelcontextprotocol/skills"], {});
     const listed = await client.request({ method: "skills/list", params: {} }, skillListResultSchema);
     assert.equal(listed.skills[0].uri, SYSTEM_SKILL_URI);
+    assert.equal(listed.skills[1].uri, TELEGRAM_STICKER_SKILL_URI);
+    const telegramSkill = await client.request({ method: "skills/get", params: { uri: TELEGRAM_STICKER_SKILL_URI } }, skillGetResultSchema);
+    assert.equal(telegramSkill.skill.frontmatter.name, "upload-telegram-stickers");
     const fetched = await client.request({ method: "skills/get", params: { uri: SYSTEM_SKILL_URI } }, skillGetResultSchema);
     assert.equal(fetched.skill.frontmatter.name, "system-companion");
     const resource = await client.readResource({ uri: SYSTEM_SKILL_URI });
