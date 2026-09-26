@@ -26,7 +26,12 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [openTelegramAfterLoad, setOpenTelegramAfterLoad] = useState(() => typeof window !== "undefined" && ["telegram_confirmation", "telegram_error", "telegram_intent"].some(key => new URLSearchParams(window.location.search).has(key)));
+  const [telegramReturn] = useState(() => {
+    if (typeof window === "undefined") return { confirmationId: null, errorCode: null, intent: null };
+    const params = new URLSearchParams(window.location.search);
+    return { confirmationId: params.get("telegram_confirmation"), errorCode: params.get("telegram_error"), intent: params.get("telegram_intent") };
+  });
+  const openTelegramAfterLoad = Boolean(telegramReturn.confirmationId || telegramReturn.errorCode || telegramReturn.intent);
   const telegramAutoOpenConsumed = useRef(false);
   const [images, setImages] = useState<
     Array<{ id: string; downloadUrl: string }>
@@ -192,14 +197,18 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
   const sectionIds = sectionRows.map(row => row.id).join(" ");
   // Until the account loads, the permitted sections are unknown; an empty list keeps a saved ?id= from being replaced.
   const ids = useMemo(() => loaded ? sectionIds.split(" ") : [], [loaded, sectionIds]);
-  const [selectedId, select] = useListSelection(ids);
+  // A callback or MCP intent must select Telegram instead of racing the wide-screen first-row default.
+  const [selectedId, select] = useListSelection(ids, { autoSelectFirst: !openTelegramAfterLoad });
   const section = ids.includes(selectedId ?? "") ? selectedId as AccountSectionId : null;
 
   useEffect(() => {
-    const openTelegram = () => setOpenTelegramAfterLoad(true);
-    window.addEventListener("bunch:open-telegram-account", openTelegram);
-    return () => window.removeEventListener("bunch:open-telegram-account", openTelegram);
-  }, []);
+    if (!openTelegramAfterLoad) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("telegram_confirmation");
+    url.searchParams.delete("telegram_error");
+    url.searchParams.delete("telegram_intent");
+    window.history.replaceState(window.history.state, "", url);
+  }, [openTelegramAfterLoad]);
 
   useEffect(() => {
     if (sections && loaded && openTelegramAfterLoad && ids.includes("telegram") && !telegramAutoOpenConsumed.current) {
@@ -331,7 +340,7 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
             deletion record remains to prevent accidental reactivation.
           </p>
         </> : null}
-        {section === "telegram" ? <TelegramLinkControls /> : null}
+        {section === "telegram" ? <TelegramLinkControls {...telegramReturn} /> : null}
         {section === "laptop" ? <>
           <h2>Laptop reference credentials</h2>
           <p>

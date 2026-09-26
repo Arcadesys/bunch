@@ -5,45 +5,42 @@ import type { TelegramLinkStartResponse, TelegramLinkStatus } from "@/domain/tel
 
 const endpoint = "/api/v1/account/telegram";
 
-export function TelegramLinkControls() {
+export function TelegramLinkControls({ confirmationId, errorCode, intent }: { confirmationId: string | null; errorCode: string | null; intent: string | null }) {
   const [status, setStatus] = useState<TelegramLinkStatus | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmationHandle] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("telegram_confirmation"));
-  const [intent] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("telegram_intent"));
+  const [unavailable, setUnavailable] = useState(false);
 
-  async function load(confirmation?: string | null) {
-    const response = await fetch(confirmation ? `${endpoint}?confirmation=${encodeURIComponent(confirmation)}` : endpoint, { cache: "no-store" });
+  async function load(confirmation?: string | null, signal?: AbortSignal) {
+    const response = await fetch(confirmation ? `${endpoint}?confirmation=${encodeURIComponent(confirmation)}` : endpoint, { cache: "no-store", signal });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message ?? "Telegram connection status is unavailable.");
     setStatus(body as TelegramLinkStatus);
+    setUnavailable(false);
   }
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const confirmationId = params.get("telegram_confirmation");
-    const errorCode = params.get("telegram_error");
-    const intentHandle = params.get("telegram_intent");
-    if (confirmationId || errorCode || intentHandle) setTimeout(() => window.dispatchEvent(new Event("bunch:open-telegram-account")), 0);
-    if (confirmationId || errorCode || intentHandle) {
-      // The callback handle is short-lived and must not remain in browser history.
-      history.replaceState(null, "", `${location.pathname}${location.hash}`);
-    }
+    const controller = new AbortController();
     const initialize = async () => {
       try {
         if (confirmationId) {
-          await load(confirmationId);
+          await load(confirmationId, controller.signal);
         } else {
-          await load();
+          await load(null, controller.signal);
         }
         if (errorCode) setError(errorCode === "cancelled" ? "Telegram authorization was cancelled." : "Telegram could not be connected. Try again.");
       } catch (cause) {
+        if (controller.signal.aborted) return;
+        // Expired or account-mismatched callback handles must leave usable retry controls.
+        try { await load(null, controller.signal); }
+        catch { if (!controller.signal.aborted) setUnavailable(true); }
         setError(cause instanceof Error ? cause.message : "Telegram connection status is unavailable.");
       }
     };
     void initialize();
-  }, []);
+    return () => controller.abort();
+  }, [confirmationId, errorCode]);
 
   async function action(run: () => Promise<void>) {
     if (busy) return;
@@ -100,11 +97,11 @@ export function TelegramLinkControls() {
     <p>Connect your Telegram account to prepare sticker packs for review. Connecting does not approve or publish a pack. Bunch never asks you for Telegram tokens or numeric account IDs.</p>
     {notice && <p role="status" className="pilot-notice">{notice}</p>}
     {error && <p role="alert" className="pilot-notice telegram-error">{error}</p>}
-    {!status ? <p role="status">Loading Telegram connection…</p> : status.state === "disabled" ? <p>Telegram account linking is temporarily unavailable.</p> : status.state === "awaiting_confirmation" ? <>
+    {unavailable ? <div><p>The current Telegram connection status is unavailable. Bunch could not verify whether an account is connected.</p><button className="button" disabled={busy} onClick={() => void action(async () => { await load(); setNotice("Telegram connection status refreshed."); })}>Retry Telegram status</button></div> : !status ? <p role="status">Loading Telegram connection…</p> : status.state === "disabled" ? <p>Telegram account linking is temporarily unavailable.</p> : status.state === "awaiting_confirmation" ? <>
       <p><strong>Review this Telegram account:</strong> {name}{status.pending?.username && status.pending.displayName ? ` (@${status.pending.username})` : ""}</p>
       <p>Confirm only if this is the account you want linked to this Bunch account.</p>
       <button className="button" disabled={busy} onClick={() => void action(async () => {
-        const response = await fetch(`${endpoint}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmationId: confirmationHandle ?? status.pending?.confirmationId }) });
+        const response = await fetch(`${endpoint}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmationId: confirmationId ?? status.pending?.confirmationId }) });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error?.message ?? "Telegram account could not be confirmed.");
         setStatus(body as TelegramLinkStatus); setNotice("Telegram account connected to this Bunch account.");

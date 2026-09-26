@@ -4,6 +4,9 @@ const account = { state: "ACTIVE", role: "FRIEND", displayName: "Test system", e
 
 test("Telegram callback asks for confirmation before connecting and preserves keyboard access", async ({ page }, info) => {
   const calls: string[] = [];
+  const browserErrors: string[] = [];
+  page.on("console", message => { if (message.type() === "error") browserErrors.push(message.text()); });
+  page.on("pageerror", error => browserErrors.push(error.message));
   await page.route("**/api/v1/account", route => route.fulfill({ json: { data: account } }));
   await page.route("**/api/v1/account/telegram**", async route => {
     const request = route.request();
@@ -49,6 +52,7 @@ test("Telegram callback asks for confirmation before connecting and preserves ke
   await page.getByRole("button", { name: "Recheck bot access" }).click();
   await expect(page.getByText("Bot access confirmed.")).toBeVisible();
   expect(calls).toContain("POST /api/v1/account/telegram/recheck");
+  expect(browserErrors.filter(message => /hydration|did not match|server rendered/i.test(message))).toEqual([]);
 });
 
 test("Telegram connect uses a full-page authorization redirect and disconnected accounts can be removed", async ({ page }) => {
@@ -81,12 +85,35 @@ test("Telegram connect uses a full-page authorization redirect and disconnected 
 
 test("Telegram callback errors stay on the account page and expose a recoverable retry", async ({ page }) => {
   await page.route("**/api/v1/account", route => route.fulfill({ json: { data: account } }));
-  await page.route("**/api/v1/account/telegram?confirmation=expired-fixture", route => route.fulfill({ status: 410, json: { error: { code: "confirmation_expired", message: "This Telegram confirmation has expired. Start again." } } }));
-  await page.route("**/api/v1/account/telegram", route => route.fulfill({ json: { state: "disconnected" } }));
+  await page.route("**/api/v1/account/telegram**", route => {
+    const url = new URL(route.request().url());
+    return url.searchParams.has("confirmation")
+      ? route.fulfill({ status: 410, json: { error: { code: "confirmation_expired", message: "This Telegram confirmation has expired. Start again." } } })
+      : route.fulfill({ json: { state: "disconnected" } });
+  });
   await page.goto("/account?telegram_confirmation=expired-fixture");
   await expect(page.locator(".telegram-error")).toContainText("expired");
   await expect(page).not.toHaveURL(/telegram_confirmation/);
   await page.getByRole("button", { name: "Connect Telegram" }).waitFor({ state: "visible" });
+});
+
+test("unavailable fallback status offers a status retry without claiming disconnected", async ({ page }) => {
+  await page.route("**/api/v1/account", route => route.fulfill({ json: { data: account } }));
+  let allowStatus = false;
+  await page.route("**/api/v1/account/telegram**", route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has("confirmation")) return route.fulfill({ status: 410, json: { error: { code: "confirmation_expired", message: "This Telegram confirmation has expired. Start again." } } });
+    return allowStatus
+      ? route.fulfill({ json: { state: "disconnected" } })
+      : route.fulfill({ status: 503, json: { error: { code: "temporarily_unavailable", message: "Telegram status is temporarily unavailable." } } });
+  });
+  await page.goto("/account?telegram_confirmation=expired-status-fixture");
+  await expect(page.getByText("The current Telegram connection status is unavailable.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Telegram" })).toHaveCount(0);
+  allowStatus = true;
+  await page.getByRole("button", { name: "Retry Telegram status" }).click();
+  await expect(page.getByText("No Telegram account is connected.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Telegram" })).toBeVisible();
 });
 
 test("disabled Telegram setup reports status instead of navigating to an empty URL", async ({ page }) => {
