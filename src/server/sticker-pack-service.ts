@@ -120,7 +120,7 @@ export class StickerPackService {
         return { data: stickerPackViewSchema.parse(prior.result), replayed: true };
       }
 
-      const alter = await this.activeAlter(client, ownerId, alterId);
+      await this.activeAlter(client, ownerId, alterId);
       const current = (
         await client.query<{ id: string; version: number; status: string }>(
           "select id,version,status from alter_sticker_pack where owner_id=$1 and alter_id=$2::uuid for update",
