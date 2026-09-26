@@ -73,11 +73,13 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal(accountProfileId(ownerId), accountProfileId(ownerId), "the same account must retain its profile ID");
     assert.notEqual(accountProfileId(ownerId), accountProfileId("auth0:other-private-subject"), "different accounts must not share profile IDs");
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
-    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
+    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render", "get_sticker_pack", "list_sticker_packs"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
     assert.equal(byName.has("prepare_furry_transform"), false);
     assert.equal(byName.has("prepare_furry_result_upload"), false);
     assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
+    assert.match(byName.get("save_sticker_pack")?.description ?? "", /after the user approves/, "sticker save must require explicit approval");
+    assert.match(byName.get("save_sticker_pack")?.description ?? "", /Never infer the alter from presence/, "sticker subject must remain explicit");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
     assert.equal((handoff.structuredContent as { historyAccess?: string }).historyAccess, "HOST_REQUIRED");
@@ -86,7 +88,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const gallery = await client.callTool({ name: "open_private_photo_gallery", arguments: {} });
     assert.deepEqual(gallery.structuredContent, { url: "https://bunch.example/gallery" });
     for (const name of ["erase_alter", "erase_todo", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.destructiveHint, true, `${name} must be destructive`);
-    for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
+    for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record", "save_sticker_pack"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
     for (const name of ["set_catch_up_item_state", "suggest_important_thread", "confirm_important_thread"]) {
       assert.equal(byName.get(name)?.annotations?.idempotentHint, true);
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, false);
