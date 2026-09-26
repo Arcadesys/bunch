@@ -64,26 +64,17 @@ export default function StickerPacksPage() {
     if (requested && all.some((person) => person.id === requested)) setSelectedId(requested);
   }, []);
 
-  // Loading resolves asynchronously; state changes happen only after network responses.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
+    // loadPeople mutates state only after its network work completes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPeople().catch((error) =>
       setNotice(error instanceof Error ? error.message : "Could not load people."),
     );
   }, [loadPeople]);
 
-  // The selected person is external UI state; reset the board when that selection changes.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    if (!selectedId) {
-      setPack(null);
-      setSlots(defaultStickerSlots());
-      setCommunicationProfile("");
-      setTelegramUrl("");
-      return;
-    }
+    if (!selectedId) return;
     let cancelled = false;
-    setNotice("Loading this person's sticker board…");
     void fetch(`/api/v1/alters/${encodeURIComponent(selectedId)}/sticker-pack`, {
       headers: demoHeaders,
     })
@@ -114,6 +105,15 @@ export default function StickerPacksPage() {
       cancelled = true;
     };
   }, [selectedId]);
+
+  function choosePerson(value: string) {
+    setSelectedId(value);
+    setPack(null);
+    setSlots(defaultStickerSlots());
+    setCommunicationProfile("");
+    setTelegramUrl("");
+    setNotice(value ? "Loading this person's sticker board…" : "Choose a person to design ten everyday reaction stickers.");
+  }
 
   function updateSlot(index: number, patch: Partial<StickerSlot>) {
     setSlots((current) =>
@@ -215,7 +215,7 @@ export default function StickerPacksPage() {
         <h2 id="person-heading">1. Choose a person</h2>
         <label>
           Person
-          <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
+          <select value={selectedId} onChange={(event) => choosePerson(event.target.value)}>
             <option value="">Choose a person</option>
             {people.map((person) => (
               <option key={person.id} value={person.id}>{person.name}</option>
@@ -260,7 +260,7 @@ export default function StickerPacksPage() {
             <div style={{ display: "flex", gap: 12, alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div>
                 <h2 id="board-heading">3. Direct the ten reactions</h2>
-                <p>These are semantic slots. Change the acting, not the person's identity.</p>
+                <p>These are semantic slots. Change the acting, not the person&apos;s identity.</p>
               </div>
               {pack && <strong>Status: {pack.status}</strong>}
             </div>
