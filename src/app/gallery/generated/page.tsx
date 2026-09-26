@@ -14,9 +14,9 @@ export default function GeneratedGalleryPage() {
   return <main className="shell gallery-shell">
     <AppNavigation current="GALLERY" />
     <PeopleToolsNav current="gallery" />
-    <header className="site-header">
-      <div><p className="eyebrow">Bunch · private photos</p><h1>Photo gallery</h1><p>Your generated images and group photos, newest first.</p></div>
-      <div className="header-actions"><Link className="button" href="/images">Create an image</Link><Link className="button button-secondary" href="/group-photo">Create a group photo</Link><Link className="button button-secondary" href="/gallery">Profile photos</Link></div>
+    <header className="album-header">
+      <div><h1>Photo gallery</h1><p>Everything you&apos;ve made, newest first. Only you can see these.</p></div>
+      <Link className="button" href="/images">Make an image</Link>
     </header>
     <GeneratedGallery />
   </main>;
