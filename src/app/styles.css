@@ -2199,9 +2199,9 @@ body:has(.app-shell-nav) { padding-bottom: 7rem; }
 .ld-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .ld-thumb { flex: 0 0 auto; width: 52px; height: 52px; border: 1px solid rgb(255 138 0 / 30%); border-radius: 8px; object-fit: cover; }
 .ld-row-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
-.ld-row-top { display: flex; align-items: baseline; gap: .5rem; min-width: 0; }
-.ld-row-title { flex: 1; min-width: 0; overflow: hidden; font-size: .9rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.ld-row-time { flex: 0 0 auto; color: var(--muted); font-size: .7rem; }
+.ld-row-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .5rem; min-width: 0; }
+.ld-row-title { flex: 1 1 100%; display: -webkit-box; min-width: 0; overflow: hidden; font-size: .9rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ld-row-time { flex: 0 1 auto; color: var(--muted); font-size: .72rem; }
 .ld-row-meta { overflow: hidden; color: var(--muted); font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .ld-row-snippet { overflow: hidden; color: var(--muted); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .ld-badge { flex: 0 0 auto; display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border: 2px solid currentColor; border-radius: 999px; font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
