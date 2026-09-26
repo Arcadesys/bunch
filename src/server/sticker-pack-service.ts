@@ -156,8 +156,8 @@ export class StickerPackService {
 
       await client.query(
         `insert into activity_event
-         (owner_id,entity_type,entity_id,action,source,changed_fields,request_id,from_status,to_status,actor_alter_id)
-         values($1,'STICKER_PACK',$2::uuid,$3,$4::record_source,$5::text[],$6::uuid,$7,$8,$9::uuid)`,
+         (owner_id,entity_type,entity_id,action,source,changed_fields,request_id,from_status,to_status)
+         values($1,'STICKER_PACK',$2::uuid,$3,$4::record_source,$5::text[],$6::uuid,$7,$8)`,
         [
           ownerId,
           data.id,
@@ -167,7 +167,6 @@ export class StickerPackService {
           input.requestId,
           current?.status ?? null,
           data.status,
-          alter.id,
         ],
       );
       await client.query(
