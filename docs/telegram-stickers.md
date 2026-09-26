@@ -3,7 +3,8 @@
 The authenticated Bunch MCP server exposes `prepare_telegram_sticker_pack` and
 `publish_telegram_sticker_pack`. The `upload-telegram-stickers` skill is available
 through MCP `skills/list`, `skills/get`, and `resources/read`, and in the portable
-Bunch plugin package. No web UI is added.
+Bunch plugin package. Eligible signed-in users connect Telegram from Account &
+Privacy. Account linking is separate from approval to publish any pack.
 
 ## First-version boundary
 
@@ -29,28 +30,20 @@ pack. A preparation request, attached README, saved draft or implementation
 request does not authorize publication. Review the exact pack and destination
 with the user, retaining any explicit authorization already provided.
 
-## Operator setup
+## Account linking and operator setup
 
-Create a dedicated Telegram bot with BotFather. Have the intended Telegram owner
-start that bot privately and verify their numeric user ID outside the model
-conversation. Do not use a group or channel ID. Provision the secret environment
-variable `TELEGRAM_STICKER_ACCOUNTS` on the hosted server as a JSON object keyed by
-the exact authenticated Bunch owner ID. Each value has `token` (the BotFather
-secret) and `userId` (a positive integer). Keep the entire mapping in the deployment
-secret manager; never put it in tool arguments, source control, chat, telemetry,
-or literal shell commands. A synthetic shape is:
+Configure one application bot with `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_OIDC_CLIENT_ID`, and `TELEGRAM_OIDC_CLIENT_SECRET` in server-only
+secrets. Never ask a user for a bot token or numeric Telegram ID. Users link their
+own account through Telegram Login and confirm the returned account in Bunch.
+If Telegram requires bot access, the Account & Privacy panel offers a Start link
+and a recheck action. The app does not send an automatic direct message.
 
-```json
-{"auth0|example-owner":{"token":"BOTFATHER_SECRET","userId":123456789}}
-```
-
-The placeholder token deliberately fails validation. Each Bunch account needs
-its own explicit binding; a missing or malformed binding fails closed. This is
-operator-managed provisioning, not self-service Telegram account linking.
-`getChat` proves access to a private chat, not that its human is the Bunch owner;
-the operator must verify that mapping. No account is inferred from hosting or
-fronting. This version never polls updates, changes webhooks, sends Telegram
-messages, or modifies existing sets.
+Linking does not authorize public uploads. Each exact sticker pack still needs a
+separate user review and approval before publication. Disconnecting does not
+remove packs already published to Telegram. Existing operator mappings are not
+silently treated as verified user links. Do not infer account ownership from
+hosting or fronting.
 
 ## Results and retries
 
