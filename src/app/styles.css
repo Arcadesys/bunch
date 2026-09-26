@@ -2124,3 +2124,13 @@ body:has(.switch-dock) { padding-bottom: 0; }
 }
 @media (max-width: 360px) { .photo-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .photo-tile-frame img { transition: none; } }
+
+.preview-login { max-width: 40rem; }
+.preview-login h1 { margin-top: 12px; }
+.preview-login p { font-size: 1.15rem; line-height: 1.55; }
+.preview-login-banner { border: 3px solid var(--line); border-left: 10px solid var(--accent); background: var(--surface); padding: 14px 16px; }
+.preview-login-form { display: grid; gap: 12px; margin: 20px 0; }
+.preview-login-form label { font-size: 1.15rem; font-weight: 800; }
+.preview-login-form input { font-size: 1.2rem; padding: 14px; border: 3px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); }
+.preview-login-form input:focus-visible { outline: 5px solid var(--focus); outline-offset: 2px; }
+.preview-login details { margin-top: 28px; font-size: 1.05rem; }
