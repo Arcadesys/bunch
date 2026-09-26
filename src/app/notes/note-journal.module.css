@@ -17,4 +17,11 @@
 .gifts img { width: 100%; height: auto; display: block; }
 .gifts figcaption { font-size: .9rem; }
 .formFeedback { margin-top: 1rem; }
-.statusNotice { position: absolute; left: -9999px; }
+.statusNotice { margin: 0; font-weight: 800; overflow-wrap: anywhere; }
+
+/* Enlarged text: keep the detail pane usable beside the sidebar by letting the list pane shrink. */
+@media (min-width: 760px) {
+  .layout:global(.list-detail) { grid-template-columns: min(17rem, 38%) minmax(0, 1fr); }
+}
+.layout textarea, .layout select, .layout input { max-width: 100%; min-width: 0; }
+.layout h2, .layout label, .layout legend, .layout p { overflow-wrap: anywhere; }

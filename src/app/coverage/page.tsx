@@ -5,6 +5,7 @@ import type { AlterProfile, CoverageAssignment } from "@/domain/types";
 import { AppNavigation } from "../app-navigation";
 import { ListDetail, useListSelection, initials } from "../list-detail";
 import { DraftDetail, ConfirmedDetail } from "./coverage-records";
+import "./coverage.css";
 
 type SystemState = { profiles: AlterProfile[]; assignments: CoverageAssignment[] };
 const demoHeaders = { "Content-Type": "application/json", "x-system-demo": "local" };
@@ -154,17 +155,20 @@ export default function CoveragePage() {
         title="Coverage"
         count={draftCount ? `${draftCount} draft${draftCount === 1 ? "" : "s"}` : undefined}
         rows={rows}
-        selectedId={selectedId}
-        onSelect={select}
-        newAction={{ label: "Create a coverage draft", onClick: () => setCreating(true), pressed: creating }}
+        selectedId={creating ? null : selectedId}
+        onSelect={(id) => { setCreating(false); select(id); }}
+        newAction={loadState === "ready" ? { label: "Create a coverage draft", onClick: () => setCreating(true), pressed: creating } : undefined}
         detailOpen={creating}
         listStatus={
           loadState === "error" ? (
             <div className="ld-intro">
+              <p>Coverage records are unavailable. Sign in if needed, then try again.</p>
               <button className="button button-secondary" onClick={() => void load()}>
                 Retry loading coverage
               </button>
             </div>
+          ) : loadState === "ready" && !assignmentsList.length ? (
+            <p className="ld-intro">No coverage drafts or confirmed coverage records yet.</p>
           ) : null
         }
       >
@@ -239,19 +243,18 @@ export default function CoveragePage() {
               <>
                 <span className="detail-eyebrow">Draft</span>
                 <h2>{`${current.startsOn}${current.endsOn ? ` – ${current.endsOn}` : " onward"}`}</h2>
-                <div className="detail-facts">
-                  <div>
-                    <dt>Why it was suggested</dt>
-                    <dd>
-                      <ul>
-                        {current.reasons.map((reason) => (
-                          <li key={reason}>{reason}</li>
-                        ))}
-                      </ul>
-                    </dd>
-                  </div>
-                </div>
+                <section aria-labelledby="coverage-reasons-heading" className="coverage-reasons">
+                  <h3 id="coverage-reasons-heading">Why it was suggested</h3>
+                  {current.reasons.length ? (
+                    <ul>
+                      {current.reasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  ) : <p>No reasons were recorded.</p>}
+                </section>
                 <DraftDetail
+                  key={current.id}
                   draft={current}
                   profiles={state.profiles}
                   onResolve={resolveDraft}

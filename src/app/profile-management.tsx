@@ -105,7 +105,12 @@ export function ProfileManagement() {
   );
 
   const profileIds = useMemo(() => filteredProfiles.map((p) => p.id), [filteredProfiles]);
-  const [selectedId, select] = useListSelection(profileIds, { autoSelectFirst: false });
+  const [selectedId, select] = useListSelection(profileIds);
+  const createHeading = useRef<HTMLHeadingElement>(null);
+  const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (creating) createHeading.current?.focus();
+  }, [creating]);
 
   const currentProfile = useMemo(
     () => state.profiles.find((p) => p.id === selectedId),
@@ -164,6 +169,7 @@ export function ProfileManagement() {
         );
       saveAttempt.current = null;
       formElement.reset();
+      if (!profileId) setCreateDraft({});
       setEditing(false);
       setCreating(false);
       await load("Profile saved privately.");
@@ -313,230 +319,126 @@ export function ProfileManagement() {
     [filteredProfiles, presence]
   );
 
-  const detailContent = useMemo(() => {
-    if (creating) {
-      return (
-        <article className="detail-card profiles-detail-card">
-          <div className="profiles-detail-header">
-            <h2>Add a profile</h2>
-          </div>
-          <form
-            onSubmit={(event) => saveProfile(event, "")}
-            className="form-stack"
-          >
-            <label>
-              Name
-              <input required name="name" maxLength={120} />
-            </label>
-            <label>
-              Self-described gender{" "}
-              <span className="optional">optional</span>
-              <input name="gender" maxLength={120} />
-            </label>
-            <label>
-              Description <span className="optional">optional</span>
-              <textarea
-                name="description"
-                maxLength={1000}
-                rows={3}
-              />
-            </label>
-            <fieldset className="form-stack visual-identity">
-              <legend>Visual identity</legend>
-              <p>Saved identity for image prompts. Leave unknown details empty.</p>
-              <label>
-                Species
-                <input name="species" maxLength={500} />
-              </label>
-              <label>
-                Visual description
-                <textarea
-                  name="visualDescription"
-                  maxLength={1000}
-                  rows={3}
-                />
-              </label>
-              <label>
-                Presentation
-                <input name="presentation" maxLength={500} />
-              </label>
-              <label>
-                Pronouns
-                <input name="pronouns" maxLength={500} />
-              </label>
-              <label>
-                Signature traits — one per line
-                <textarea name="signatureTraits" rows={3} />
-              </label>
-              <label>
-                Style tags — one per line
-                <textarea name="styleTags" rows={3} />
-              </label>
-              <label>
-                Keep unchanged — one per line
-                <textarea name="imageDoNotChange" rows={3} />
-              </label>
-            </fieldset>
-            <div className="actions">
-              <button
-                className="button"
-                type="submit"
-                disabled={saveInFlight}
-              >
-                Add private profile
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => setCreating(false)}
-                disabled={saveInFlight}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </article>
-      );
-    }
+  const detailShown = creating || Boolean(currentProfile);
+  // Exactly one live notice, shown in whichever pane is visible (phones show one pane at a time).
+  const statusNotice = <p className="notice profiles-notice" role="status">{notice}</p>;
 
-    if (currentProfile && !editing) {
-      return (
-        <ProfileDetail
-          profile={currentProfile}
-          appearance={appearance[currentProfile.id]}
-          onLoadAppearance={loadAppearance}
-          onSaveAppearance={saveAppearance}
-          onUpdateAppearance={updateAppearance}
-          onStartEdit={() => {
-            setEditingVersion(currentProfile.version);
-            setEditing(true);
-          }}
-          onSaveProfile={saveProfile}
-          onChooseProfilePicture={chooseProfilePicture}
-          onUploadImage={uploadImage}
-          editing={false}
-          onCancelEdit={() => setEditing(false)}
-          saveInFlight={saveInFlight}
-          editingVersion={editingVersion}
-          notice={notice}
-          presenceBadge={
-            presence[currentProfile.id]
-              ? {
-                  label: presence[currentProfile.id] === "host" ? "Host" : "Also here",
-                  tone: presence[currentProfile.id] as "host" | "also",
-                }
-              : undefined
-          }
-          privateImageUrl={privateImageUrl}
-        />
-      );
-    }
+  const rememberCreateDraft = (event: FormEvent<HTMLFormElement>) => {
+    const field = event.target as HTMLInputElement | HTMLTextAreaElement;
+    if (field.name) setCreateDraft((draft) => ({ ...draft, [field.name]: field.value }));
+  };
 
-    if (currentProfile && editing) {
-      return (
-        <ProfileDetail
-          profile={currentProfile}
-          appearance={appearance[currentProfile.id]}
-          onLoadAppearance={loadAppearance}
-          onSaveAppearance={saveAppearance}
-          onUpdateAppearance={updateAppearance}
-          onStartEdit={() => {}}
-          onSaveProfile={saveProfile}
-          onChooseProfilePicture={chooseProfilePicture}
-          onUploadImage={uploadImage}
-          editing={true}
-          onCancelEdit={() => setEditing(false)}
-          saveInFlight={saveInFlight}
-          editingVersion={editingVersion}
-          notice={notice}
-          presenceBadge={
-            presence[currentProfile.id]
-              ? {
-                  label: presence[currentProfile.id] === "host" ? "Host" : "Also here",
-                  tone: presence[currentProfile.id] as "host" | "also",
-                }
-              : undefined
-          }
-          privateImageUrl={privateImageUrl}
-        />
-      );
-    }
-
-    return null;
-  }, [
-    creating,
-    currentProfile,
-    editing,
-    appearance,
-    presence,
-    notice,
-    saveInFlight,
-    editingVersion,
-    chooseProfilePicture,
-    loadAppearance,
-    saveAppearance,
-    saveProfile,
-    uploadImage,
-    updateAppearance,
-  ]);
-
-  const listStatus = useMemo(() => {
-    if (loadState === "loading") {
-      return <p className="ld-intro" role="status">{notice}</p>;
-    }
-    if (loadState === "error") {
-      return (
-        <div className="ld-intro" role="status">
-          <p>{notice}</p>
-          <button className="button" type="button" onClick={() => void load()}>
-            Retry loading profiles
-          </button>
+  const createForm = (
+    <article className="detail-card profiles-detail-card" aria-labelledby="profiles-create-heading">
+      <div className="profiles-detail-header">
+        <h2 id="profiles-create-heading" ref={createHeading} tabIndex={-1}>Add a profile</h2>
+      </div>
+      {statusNotice}
+      {/* A half-written profile is kept while looking at another one. */}
+      <form onSubmit={(event) => saveProfile(event, "")} onChange={rememberCreateDraft} className="form-stack">
+        <label>Name<input required name="name" maxLength={120} defaultValue={createDraft.name} /></label>
+        <label>Self-described gender <span className="optional">optional</span><input name="gender" maxLength={120} defaultValue={createDraft.gender} /></label>
+        <label>Description <span className="optional">optional</span><textarea name="description" maxLength={1000} rows={3} defaultValue={createDraft.description} /></label>
+        <fieldset className="form-stack visual-identity"><legend>Visual identity</legend>
+          <p>Saved identity for image prompts. Leave unknown details empty.</p>
+          <label>Species<input name="species" maxLength={500} defaultValue={createDraft.species} /></label>
+          <label>Visual description<textarea name="visualDescription" maxLength={1000} rows={3} defaultValue={createDraft.visualDescription} /></label>
+          <label>Presentation<input name="presentation" maxLength={500} defaultValue={createDraft.presentation} /></label>
+          <label>Pronouns<input name="pronouns" maxLength={500} defaultValue={createDraft.pronouns} /></label>
+          <label>Signature traits — one per line<textarea name="signatureTraits" rows={3} defaultValue={createDraft.signatureTraits} /></label>
+          <label>Style tags — one per line<textarea name="styleTags" rows={3} defaultValue={createDraft.styleTags} /></label>
+          <label>Keep unchanged — one per line<textarea name="imageDoNotChange" rows={3} defaultValue={createDraft.imageDoNotChange} /></label>
+        </fieldset>
+        <div className="actions">
+          <button className="button" type="submit" disabled={saveInFlight}>Add private profile</button>
+          <button className="button button-secondary" type="button" onClick={() => setCreating(false)} disabled={saveInFlight}>Cancel</button>
         </div>
-      );
-    }
-    if (state.profiles.length === 0) {
-      return <p className="ld-intro" role="status">No profiles recorded yet. Add one to get started.</p>;
-    }
-    if (filteredProfiles.length === 0) {
-      return <p className="ld-intro" role="status">No matching profiles.</p>;
-    }
-    return notice ? <p className="ld-intro" role="status">{notice}</p> : null;
-  }, [loadState, notice, state.profiles.length, filteredProfiles.length]);
+      </form>
+    </article>
+  );
+
+  const presenceBadge = currentProfile && presence[currentProfile.id]
+    ? { label: presence[currentProfile.id] === "host" ? "Host" : "Also here", tone: presence[currentProfile.id] }
+    : undefined;
+
+  const listStatus = (
+    <>
+      {detailShown ? null : statusNotice}
+      {loadState === "error" ? (
+        <div className="ld-intro">
+          <p>Private records are unavailable. Sign in if needed, then try again.</p>
+          <button className="button" type="button" onClick={() => void load()}>Retry loading profiles</button>
+        </div>
+      ) : loadState === "ready" && state.profiles.length === 0 ? (
+        <p className="ld-intro">No profiles are recorded yet. Add a private profile to get started.</p>
+      ) : loadState === "ready" && filteredProfiles.length === 0 ? (
+        <p className="ld-intro">No matching profiles.</p>
+      ) : null}
+    </>
+  );
 
   return (
     <main className="app-page">
       <AppNavigation current="PROFILES" />
       <ListDetail
         title="People"
-        count={state.profiles.length ? `${state.profiles.length} profiles` : undefined}
-        search={{
+        className="profiles-layout"
+        count={loadState === "ready" ? `${state.profiles.length} ${state.profiles.length === 1 ? "profile" : "profiles"}` : undefined}
+        intro={loadState === "ready" ? <p>Profiles, private pictures, and visual references. Choose a person to see or change their details.</p> : undefined}
+        search={loadState === "ready" ? {
           label: "Search profiles by name, species, or style",
           placeholder: "Search name, species, or style",
           value: profileSearch,
           onChange: setProfileSearch,
-        }}
-        newAction={{
+        } : undefined}
+        newAction={loadState === "ready" ? {
           label: "Add a profile",
           onClick: () => {
             setCreating(true);
             setEditing(false);
-            select(null);
           },
           pressed: creating,
-        }}
-        rows={rows}
-        selectedId={selectedId}
+        } : undefined}
+        rows={loadState === "ready" ? rows : []}
+        selectedId={creating ? null : selectedId}
         onSelect={(id) => {
           select(id);
           setCreating(false);
           setEditing(false);
         }}
         listStatus={listStatus}
-        detailOpen={creating || editing || !!currentProfile}
+        detailLabel="Profile details"
+        detailOpen={creating}
       >
-        {loadState === "ready" && detailContent}
+        {loadState === "ready" ? (
+          <>
+            {creating ? createForm : null}
+            {!creating && currentProfile ? (
+              <ProfileDetail
+                key={currentProfile.id}
+                profile={currentProfile}
+                appearance={appearance[currentProfile.id]}
+                onLoadAppearance={loadAppearance}
+                onSaveAppearance={saveAppearance}
+                onUpdateAppearance={updateAppearance}
+                onStartEdit={() => {
+                  setEditingVersion(currentProfile.version);
+                  setEditing(true);
+                }}
+                onSaveProfile={saveProfile}
+                onChooseProfilePicture={chooseProfilePicture}
+                onUploadImage={uploadImage}
+                editing={editing}
+                onCancelEdit={() => setEditing(false)}
+                saveInFlight={saveInFlight}
+                statusNotice={statusNotice}
+                presenceBadge={presenceBadge}
+                privateImageUrl={privateImageUrl}
+              />
+            ) : null}
+          </>
+        ) : null}
       </ListDetail>
-      <p className="notice" role="status">{notice}</p>
     </main>
   );
 }

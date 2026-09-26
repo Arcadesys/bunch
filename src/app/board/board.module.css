@@ -35,9 +35,10 @@
 }
 .columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(16rem, 1fr));
-  gap: 1rem;
-  overflow-x: auto;
+  /* Columns wrap instead of scrolling sideways beside the sections sidebar. */
+  /* 12rem keeps all four columns side by side on a wide screen and reflows at enlarged text. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.75rem;
 }
 .column {
   min-height: 20rem;
@@ -205,4 +206,79 @@
 :global(:root[data-theme="light"]) .shell :global(.command-topnav a[aria-current="page"]) {
   background: var(--wash);
   color: var(--ink);
+}
+
+/* List view (default at /board): split view with the full task card in the detail pane. */
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+.viewLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.statusGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.statusGroup button {
+  min-height: 44px;
+  padding: 0.35rem 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+}
+.statusGroup button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--wash);
+  text-decoration: underline;
+}
+.detailCard {
+  margin: 0;
+}
+.detailCard h2 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+.listView .create {
+  margin: 0;
+}
+.listView .create fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.listView .create button {
+  min-height: 44px;
+}
+.listView .check {
+  min-height: 44px;
+}
+/* Enlarged text: keep the detail pane usable beside the sidebar by letting the list pane shrink. */
+@media (min-width: 760px) {
+  .listView:global(.list-detail) {
+    grid-template-columns: min(17rem, 38%) minmax(0, 1fr);
+  }
+}
+.listView textarea,
+.listView select,
+.listView input {
+  max-width: 100%;
+  min-width: 0;
+}
+.listView h2,
+.listView label,
+.listView legend,
+.listView p {
+  overflow-wrap: anywhere;
 }

@@ -2159,7 +2159,7 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .app-sidebar a:not(.command-brand) { display: flex; align-items: center; min-height: 44px; padding: .3rem .6rem; border: 2px solid transparent; border-radius: 10px; color: var(--muted); font-size: .85rem; font-weight: 600; text-decoration: none; }
 .app-sidebar a:not(.command-brand):hover { background: #1a1a30; color: var(--ink); }
 .app-sidebar a[aria-current="page"] { border-color: var(--bunch-pink); background: #1e1e3a; color: var(--ink); }
-.app-sidebar a[aria-current="page"]::before { content: "▸"; margin-right: .35rem; color: var(--bunch-pink); }
+.app-sidebar a[aria-current="page"]::before { content: "▸" / ""; margin-right: .35rem; color: var(--bunch-pink); }
 .app-sidebar a:focus-visible, .app-topbar a:focus-visible, .app-shell-nav button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .app-sidebar-contrast { display: none; }
 

@@ -15,8 +15,7 @@ test("Notes journal creates a note with several reciprocal Board task references
   await page.getByLabel("Prepare the piano chart", { exact: true }).check();
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Note saved to Notes.");
-  // After save, the note should be in the list. Click it to open detail.
-  await page.getByRole("button", { name: /Bring the arrangement to rehearsal/ }).click();
+  // After save, the detail pane shows the saved note.
   const article = page.getByRole("article");
   await expect(article).toContainText("Bring the arrangement to rehearsal.");
   await expect(article.getByRole("region", { name: "Linked tasks" })).toContainText("Fixture todo");

@@ -58,7 +58,7 @@ export function ConfirmedDetail({
   const profile = profiles.find((p) => p.id === record.alterId);
 
   return (
-    <div className="detail-facts">
+    <dl className="detail-facts">
       <div>
         <dt>Person</dt>
         <dd>{profile?.name || "Recorded alter"}</dd>
@@ -67,6 +67,6 @@ export function ConfirmedDetail({
         <dt>Status</dt>
         <dd>Recorded as responsible for this period.</dd>
       </div>
-    </div>
+    </dl>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AppNavigation } from "../app-navigation";
-import { ListDetail, useListSelection, initials as getInitials } from "../list-detail";
+import { ListDetail, useListSelection } from "../list-detail";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import styles from "./board.module.css";
 type Status = TodoView["status"];
@@ -39,15 +39,7 @@ async function list<T>(path: string) {
   } while (cursor);
   return all;
 }
-function getInitialView() {
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("view") === "board" ? "board" : "list";
-  }
-  return "list";
-}
-
-export function Board() {
+export function Board({ view = "list" }: { view?: "list" | "board" }) {
   const [todos, setTodos] = useState<TodoView[]>([]),
     [notes, setNotes] = useState<NoteView[]>([]),
     [profiles, setProfiles] = useState<AlterView[]>([]),
@@ -59,11 +51,15 @@ export function Board() {
     [busy, setBusy] = useState(false),
     [deleting, setDeleting] = useState<string>(),
     [drafts, setDrafts] = useState<Record<string, string>>({}),
-    [view] = useState<"list" | "board">(getInitialView());
+    [creating, setCreating] = useState(false);
   const title = useRef<HTMLInputElement>(null),
     receipts = useRef(new Map<string, string>()),
     focusAfterMove = useRef<string | undefined>(undefined),
-    feedback = useRef<HTMLParagraphElement>(null);
+    feedback = useRef<HTMLParagraphElement>(null),
+    createHeading = useRef<HTMLHeadingElement>(null);
+  // List view selection (?id= in the URL); the board view ignores it.
+  const todoIds = useMemo(() => todos.map((t) => t.id), [todos]);
+  const [selectedId, select] = useListSelection(todoIds, { autoSelectFirst: view === "list" });
   const load = async () => {
     try {
       const [a, b, c] = await Promise.all([
@@ -114,7 +110,10 @@ export function Board() {
     path = `/api/v1/todos/${t.id}`,
     method = "PATCH",
   ): Promise<boolean> {
-    if (busy) return false;
+    if (busy) {
+      focusAfterMove.current = undefined;
+      return false;
+    }
     setBusy(true);
     setError("");
     try {
@@ -139,21 +138,16 @@ export function Board() {
       receipts.current.delete(
         `${method}:${path}:${JSON.stringify({ expectedVersion: t.version, ...body })}`,
       );
-      if (method === "DELETE" && !path.includes("/checklist/"))
+      if (method === "DELETE" && !path.includes("/checklist/")) {
         setTodos((x) => x.filter((a) => a.id !== t.id));
-      else put(p.data);
-      if (focusAfterMove.current) {
-        const target = focusAfterMove.current;
-        focusAfterMove.current = undefined;
-        requestAnimationFrame(() =>
-          document
-            .querySelector<HTMLElement>(`[data-task-id="${target}"]`)
-            ?.focus(),
-        );
+        if (view === "list" && selectedId === t.id) select(null);
       }
+      else put(p.data);
+      // The moved card is focused by the effect below, once it has re-rendered in its new column.
       setNotice(message);
       return true;
     } catch (e) {
+      focusAfterMove.current = undefined;
       setError(e instanceof Error ? e.message : "Unable to save task.");
       return false;
     } finally {
@@ -198,7 +192,11 @@ export function Board() {
       put(p.data);
       form.reset();
       setNotice("Todo saved to Todos.");
-      title.current?.focus();
+      if (view === "list") {
+        setCreating(false);
+        select(p.data.id);
+        focusAfterMove.current = p.data.id;
+      } else title.current?.focus();
     } catch (x) {
       setError(x instanceof Error ? x.message : "Unable to save task.");
     } finally {
@@ -215,12 +213,17 @@ export function Board() {
           .join(", ")
       : "System-wide";
   useEffect(() => {
+    const target = focusAfterMove.current;
+    if (!target) return;
+    const card = document.querySelector<HTMLElement>(`[data-task-id="${target}"]`);
+    if (!card) return;
+    focusAfterMove.current = undefined;
+    card.focus();
+  }, [todos]);
+  useEffect(() => {
     if (notice && notice !== "Loading Board…" && notice !== "Board loaded.") feedback.current?.scrollIntoView({ block: "nearest" });
   }, [notice]);
 
-  // List view hooks (called unconditionally for proper hook ordering)
-  const todoIds = todos.map((t) => t.id);
-  const [selectedId, select] = useListSelection(todoIds);
   const current = todos.find((t) => t.id === selectedId);
 
   const openCount = todos.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length;
@@ -249,6 +252,19 @@ export function Board() {
     });
   });
 
+  useEffect(() => {
+    if (view !== "list" || loadState !== "ready") return;
+    const match = /^#record-(.+)$/.exec(window.location.hash);
+    if (!match || !todos.some((t) => t.id === match[1])) return;
+    const frame = requestAnimationFrame(() => select(match[1]));
+    return () => cancelAnimationFrame(frame);
+    // Only follow the addressed record once, when the Board first loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, loadState]);
+  useEffect(() => {
+    if (creating) createHeading.current?.focus();
+  }, [creating]);
+
   if (view === "board") {
     return (
       <main className={styles.shell}>
@@ -263,9 +279,14 @@ export function Board() {
               order.
             </p>
           </div>
-          <a className="command-button" href="#create-record">
-            Add a todo
-          </a>
+          <div className={styles.heroActions}>
+            <a className="command-button" href="#create-record">
+              Add a todo
+            </a>
+            <Link className={styles.viewLink} href="/board">
+              Open the list view
+            </Link>
+          </div>
         </header>
         <p className={`command-notice ${styles.status}`}>
           {notice}
@@ -439,43 +460,127 @@ export function Board() {
   }
 
   // List view
+  const cardFor = (t: TodoView, detail = false) => (
+    <Card
+      key={t.id}
+      detail={detail}
+      todo={t}
+      profiles={profiles}
+      notes={notes}
+      names={names(t)}
+      busy={busy}
+      deleting={deleting === t.id}
+      draft={drafts[t.id] ?? ""}
+      setDraft={(v) => setDrafts((x) => ({ ...x, [t.id]: v }))}
+      move={(s) => void change(t, { status: s === "INBOX" ? "OPEN" : s }, `${t.title} moved.`)}
+      save={(body) => change(t, body, "Task details saved.")}
+      owners={(ids) => void change(t, { assigneeAlterIds: ids }, "Owners saved.")}
+      links={(ids) => void change(t, { noteIds: ids }, "Linked notes saved.")}
+      checklist={(id, b, m = "PATCH") => change(t, b, "Checklist updated.", `/api/v1/todos/${t.id}/checklist${id ? `/${id}` : ""}`, m)}
+      remove={() => {
+        if (deleting === t.id) {
+          setDeleting(undefined);
+          void change(t, {}, "Task permanently deleted.", `/api/v1/todos/${t.id}`, "DELETE");
+        } else setDeleting(t.id);
+      }}
+    />
+  );
+  const feedbackBlock = (
+    <>
+      {error && loadState === "ready" && (
+        <p className={styles.error} role="alert">
+          {error} <button className="button button-secondary" onClick={() => void load()}>Retry Board</button>
+        </p>
+      )}
+      <p ref={feedback} className={styles.status} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
+    </>
+  );
   return (
     <main className="app-page">
       <AppNavigation current="BOARD" />
       <ListDetail
         title="Todos"
-        count={openCount ? `${openCount} open` : undefined}
+        className={styles.listView}
+        count={loadState === "ready" ? `${openCount} open` : undefined}
         rows={listRows}
-        selectedId={selectedId}
-        onSelect={select}
+        selectedId={creating ? null : selectedId}
+        onSelect={(id) => { setCreating(false); select(id); }}
+        detailLabel="Todo details"
+        detailOpen={creating}
+        newAction={loadState === "ready" ? { label: "Add a todo", pressed: creating, onClick: () => setCreating(true) } : undefined}
         listStatus={
           loadState === "loading" ? (
-            <div className="ld-intro"><p role="status">Loading todos…</p></div>
+            <p className="ld-intro">Loading saved Board records…</p>
           ) : loadState === "unauthorized" ? (
-            <div className="ld-intro"><p role="status"><a href="/auth/login">Sign in to view your saved Board</a></p></div>
+            <p className="ld-intro"><a href="/auth/login">Sign in to view your saved Board</a></p>
           ) : loadState === "error" ? (
-            <div className="ld-intro"><p role="status">{error}</p><button className="button button-secondary" onClick={() => void load()}>Retry Board</button></div>
+            <div className="ld-intro"><p role="alert">{error}</p><button className="button button-secondary" onClick={() => void load()}>Retry Board</button></div>
+          ) : !todos.length ? (
+            <p className="ld-intro">No todos yet. Add one to get started.</p>
           ) : null
         }
         listTools={
-          <a href="/board?view=board" className="button button-secondary" style={{ display: "inline-block", marginTop: "0.5rem" }}>
-            Board view
-          </a>
+          <p className="ld-intro"><Link href="/board?view=board" className={styles.viewLink}>Open the board view</Link></p>
         }
+        emptyDetail={loadState === "ready" ? <div className="detail-card">{feedbackBlock}<p className="ld-empty">Choose a todo from the list, or add a new one.</p></div> : undefined}
       >
-        {current && loadState === "ready" ? (
-          <article className="detail-card">
-            <h2>{current.title}</h2>
-            <div role="group" aria-label="Status">
-              {(["BLOCKED", "IN_PROGRESS", "INBOX", "OPEN", "DONE", "CANCELLED"] as const).map((s) => (
+        {creating && loadState === "ready" ? (
+          <section className={`detail-card ${styles.create}`} aria-labelledby="create-todo-heading">
+            <h2 id="create-todo-heading" ref={createHeading} tabIndex={-1}>Add a todo</h2>
+            <form onSubmit={create}>
+              <label>
+                Title
+                <input ref={title} name="title" required maxLength={500} />
+              </label>
+              <label>
+                Details <span>optional</span>
+                <textarea name="details" rows={3} />
+              </label>
+              <label>
+                Priority
+                <select name="priority" defaultValue="NORMAL">
+                  <option value="LOW">Low</option>
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">High</option>
+                </select>
+              </label>
+              <label>
+                Due date <span>optional</span>
+                <input name="dueOn" type="date" />
+              </label>
+              <fieldset>
+                <legend>Assign to</legend>
+                {profiles.map((p) => (
+                  <label className={styles.check} key={p.id}>
+                    <input name="owners" type="checkbox" value={p.id} />
+                    {p.name}
+                  </label>
+                ))}
+              </fieldset>
+              <div className="detail-actions">
+                <button className="command-button" disabled={busy}>
+                  Save todo
+                </button>
+                <button type="button" className="button button-secondary" disabled={busy} onClick={() => setCreating(false)}>
+                  Cancel
+                </button>
+              </div>
+              {feedbackBlock}
+            </form>
+          </section>
+        ) : current && loadState === "ready" ? (
+          <div className="detail-card">
+            <p className="detail-eyebrow">{statusLabels[current.status]} · {current.priority === "HIGH" ? "High" : current.priority === "LOW" ? "Low" : "Normal"} priority</p>
+            <div role="group" aria-label="Status" className={styles.statusGroup}>
+              {[...cols, ["Cancelled", ["CANCELLED"], "CANCELLED"] as [string, Status[], Status]].map(([label, statuses, target]) => (
                 <button
-                  key={s}
+                  key={target}
                   type="button"
-                  aria-pressed={current.status === s}
-                  onClick={() => void change(current, { status: s === "INBOX" ? "OPEN" : s }, `Status changed to ${statusLabels[s]}.`)}
-                  disabled={busy}
+                  aria-pressed={statuses.includes(current.status)}
+                  disabled={busy || statuses.includes(current.status)}
+                  onClick={() => void change(current, { status: target }, `${current.title} moved to ${label}.`)}
                 >
-                  {statusLabels[s]}
+                  {statuses.includes(current.status) ? <span aria-hidden="true">✓ </span> : null}{label}
                 </button>
               ))}
             </div>
@@ -484,105 +589,16 @@ export function Board() {
               <div><dt>Due date</dt><dd>{current.dueOn || "No due date"}</dd></div>
               <div><dt>Owners</dt><dd>{names(current)}</dd></div>
             </dl>
-            {current.details && <p>{current.details}</p>}
-            <div>
-              <strong>Checklist · {current.checklist.filter((x) => x.completed).length}/{current.checklist.length}</strong>
-            </div>
-            {current.noteIds.length > 0 && (
-              <div>
-                <strong>Linked notes</strong>
-                <div>
-                  {notes
-                    .filter((n) => current.noteIds.includes(n.id))
-                    .map((n) => (
-                      <div key={n.id} style={{ marginTop: "0.5rem" }}>
-                        <a href="/notes">{n.body} →</a>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
-              <button
-                disabled={busy}
-                onClick={() => void change(current, { status: current.status === "DONE" ? "OPEN" : "DONE" }, `Task ${current.status === "DONE" ? "reopened" : "completed"}.`)}
-              >
-                {current.status === "DONE" ? "Reopen todo" : "Complete todo"}
-              </button>
-              <button disabled={busy}>
-                Edit task
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  if (deleting === current.id) {
-                    void change(
-                      current,
-                      {},
-                      "Task permanently deleted.",
-                      `/api/v1/todos/${current.id}`,
-                      "DELETE",
-                    );
-                  } else setDeleting(current.id);
-                }}
-              >
-                {deleting === current.id ? "Confirm deletion" : "Delete task"}
-              </button>
-            </div>
-            {deleting === current.id && (
-              <p style={{ fontWeight: "900", borderLeft: "0.35rem solid var(--line)", paddingLeft: "0.6rem" }}>
-                This permanently deletes this task and unlinks its notes.
-              </p>
-            )}
-          </article>
+            {feedbackBlock}
+            {cardFor(current, true)}
+          </div>
         ) : null}
       </ListDetail>
-      {loadState === "ready" && (
-        <div style={{ padding: "1rem", borderTop: "1px solid var(--line)", maxWidth: "52rem" }}>
-          <h2>Add a todo</h2>
-          <form onSubmit={create} style={{ display: "grid", gap: "0.8rem" }}>
-            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
-              Title
-              <input ref={title} name="title" required maxLength={500} style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
-              Details <span style={{ fontWeight: "400" }}>optional</span>
-              <textarea name="details" rows={3} style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
-              Priority
-              <select name="priority" defaultValue="NORMAL" style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }}>
-                <option value="LOW">Low</option>
-                <option value="NORMAL">Normal</option>
-                <option value="HIGH">High</option>
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
-              Due date <span style={{ fontWeight: "400" }}>optional</span>
-              <input name="dueOn" type="date" style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
-            </label>
-            <fieldset style={{ display: "grid", gap: "0.35rem", fontWeight: "800", border: "none", padding: 0, margin: 0 }}>
-              <legend style={{ padding: 0, margin: 0 }}>Assign to</legend>
-              {profiles.map((p) => (
-                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                  <input name="owners" type="checkbox" value={p.id} style={{ width: "1.35rem", height: "1.35rem" }} />
-                  {p.name}
-                </label>
-              ))}
-            </fieldset>
-            <button className="command-button" disabled={busy} style={{ minHeight: "2.75rem" }}>
-              Save todo
-            </button>
-            <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-              <p ref={feedback} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
-            </div>
-          </form>
-        </div>
-      )}
     </main>
   );
 }
 function Card({
+  detail = false,
   todo,
   profiles,
   notes,
@@ -598,6 +614,7 @@ function Card({
   checklist,
   remove,
 }: {
+  detail?: boolean;
   todo: TodoView;
   profiles: AlterView[];
   notes: NoteView[];
@@ -625,11 +642,13 @@ function Card({
     [checklistDrafts, setChecklistDrafts] = useState<Record<string, string>>({});
   return (
     <article
-      className={styles.card}
+      className={detail ? `${styles.card} ${styles.detailCard}` : styles.card}
       data-task-id={todo.id}
       tabIndex={-1}
-      draggable
+      aria-label={detail ? todo.title : undefined}
+      draggable={!detail}
       onDragStart={(e) => {
+        if (detail) return;
         if (busy) {
           e.preventDefault();
           return;
@@ -668,7 +687,7 @@ function Card({
         </>
       ) : (
         <>
-          <h3>{todo.title}</h3>
+          {detail ? <h2>{todo.title}</h2> : <h3>{todo.title}</h3>}
           {todo.details && <p>{todo.details}</p>}
           <button disabled={busy} onClick={() => setEditing(true)}>
             Edit task
@@ -677,27 +696,6 @@ function Card({
       )}
       <p>Assigned to: {names}</p>
       {todo.dueOn && <p>Due {todo.dueOn}</p>}
-      <button
-        disabled={busy}
-        onClick={() => move(todo.status === "DONE" ? "OPEN" : "DONE")}
-      >
-        {todo.status === "DONE" ? "Reopen todo" : "Mark todo complete"}
-      </button>
-      <label>
-        Move to
-        <select
-          value={todo.status}
-          disabled={busy}
-          onChange={(e) => move(e.target.value as Status)}
-        >
-          <option value="INBOX">To-do (inbox)</option>
-          <option value="OPEN">To-do</option>
-          <option value="IN_PROGRESS">Doing</option>
-          <option value="BLOCKED">Blocked</option>
-          <option value="DONE">Done</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
-      </label>
       <details>
         <summary>Owners</summary>
         {profiles.map((p) => (
@@ -815,6 +813,28 @@ function Card({
         const n = notes.find((x) => x.id === id);
         return n && <blockquote key={id}>{n.body}</blockquote>;
       })}
+      {/* Status controls sit below the collapsed sections so a card can be dragged from its middle. */}
+      <button
+        disabled={busy}
+        onClick={() => move(todo.status === "DONE" ? "OPEN" : "DONE")}
+      >
+        {todo.status === "DONE" ? "Reopen todo" : "Mark todo complete"}
+      </button>
+      <label>
+        Move to
+        <select
+          value={todo.status}
+          disabled={busy}
+          onChange={(e) => move(e.target.value as Status)}
+        >
+          <option value="INBOX">To-do (inbox)</option>
+          <option value="OPEN">To-do</option>
+          <option value="IN_PROGRESS">Doing</option>
+          <option value="BLOCKED">Blocked</option>
+          <option value="DONE">Done</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+      </label>
       <button disabled={busy} className={styles.delete} onClick={remove}>
         {deleting ? "Confirm deletion" : "Delete task"}
       </button>

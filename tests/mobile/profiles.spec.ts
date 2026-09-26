@@ -1,4 +1,11 @@
-import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
+import { test, expect, openSections } from "./fixtures";
+
+// Phones show one pane at a time: return to the People list when a detail is open.
+async function backToList(page: Page) {
+  const back = page.getByRole("button", { name: "← People" });
+  if (await back.isVisible()) await back.click();
+}
 
 const profiles = [
   { id: "test-robin", name: "Test Robin", selfDescribedGender: "Robin's description", description: "First profile", version: 1, images: [], profilePicture: null },
@@ -22,10 +29,16 @@ test("profiles show the people list and save the chosen profile", async ({ page 
     return route.fulfill({ json: { profiles, currentFront: null, assignments: [] } });
   });
   await page.goto("/profiles");
-  // Check sidebar has "People" with aria-current="page"
-  await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
+  // The sections sidebar marks People as the current page.
+  const sections = await openSections(page);
+  await expect(sections.getByRole("link", { name: "People", exact: true })).toHaveAttribute("aria-current", "page");
+  const close = page.getByRole("button", { name: "Close sections" });
+  if (await close.isVisible()) await close.click();
   await expect(page.getByRole("heading", { name: "People", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Test Robin", exact: true })).toHaveCount(0);
+  // The people list shows every profile; nothing is editable until a profile is chosen.
+  await expect(page.getByRole("button", { name: /Test Robin/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Test Finch/ })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0);
   // On phone, click row to open detail
   await page.getByRole("button", { name: /Test Finch/ }).click();
   await expect(page.getByRole("heading", { name: "Test Finch", exact: true })).toBeVisible();
@@ -48,7 +61,8 @@ test("unavailable profiles do not assert empty records and retry restores the li
   await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
   await page.goto("/profiles");
   await expect(page.getByRole("status")).toHaveText("Sign in to access private records.");
-  await expect(page.getByRole("heading", { name: "People", level: 1 })).toHaveCount(0);
+  // The people list is not shown (and never claims to be empty) while records are unavailable.
+  await expect(page.getByRole("region", { name: "People" }).getByRole("list")).toHaveCount(0);
   await expect(page.getByText("No profiles are recorded yet.", { exact: false })).toHaveCount(0);
   status = 200;
   await page.getByRole("button", { name: "Retry loading profiles" }).click();
@@ -76,12 +90,15 @@ test("adding a profile stays a create when another profile editor is open", asyn
   await page.getByRole("button", { name: "Add a profile" }).click();
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("Test Wren");
   // Click on another profile to edit
+  await backToList(page);
   await page.getByRole("button", { name: /Test Finch/ }).click();
   await page.getByRole("button", { name: "Edit" }).click();
   const reflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(reflow.scroll, "Expanded profile editor must fit the viewport").toBeLessThanOrEqual(reflow.client + 1);
   // Back to add form and submit
+  await backToList(page);
   await page.getByRole("button", { name: "Add a profile" }).click();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Test Wren");
   await page.getByRole("button", { name: "Add private profile", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Profile saved privately.");
   expect(writes).toEqual([expect.objectContaining({ name: "Test Wren", selfDescribedGender: "", description: "", species: "", signatureTraits: [] })]);
@@ -109,7 +126,7 @@ test("visual identity retains failed edits, retries with the same ID, saves and 
   await expect(page).toHaveURL(/\/profiles$/);
   await expect(page).toHaveTitle(/Bunch/);
   await expect(page.getByRole("heading", { name: "People", level: 1 })).toBeVisible();
-  await page.getByRole("textbox", { name: "Search name, species, or style" }).fill("moonlit");
+  await page.getByLabel("Search profiles").fill("moonlit");
   await expect(page.getByRole("button", { name: /Test Robin/ })).toBeVisible();
   // Click to open profile
   await page.getByRole("button", { name: /Test Robin/ }).click();

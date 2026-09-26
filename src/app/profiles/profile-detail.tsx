@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { AlterProfile } from "@/domain/types";
 import type { AlterView } from "@/domain/contracts";
 import { initials } from "../list-detail";
@@ -20,8 +20,8 @@ type ProfileDetailProps = {
   editing: boolean;
   onCancelEdit: () => void;
   saveInFlight: boolean;
-  editingVersion: number | undefined;
-  notice: string;
+  /** The page's single live notice; shown here while this profile is open. */
+  statusNotice: ReactNode;
   presenceBadge?: { label: string; tone: "host" | "also" };
   privateImageUrl: (storageKey: string) => string;
 };
@@ -41,8 +41,7 @@ export function ProfileDetail({
   editing,
   onCancelEdit,
   saveInFlight,
-  editingVersion,
-  notice,
+  statusNotice,
   presenceBadge,
   privateImageUrl,
 }: ProfileDetailProps) {
@@ -114,10 +113,12 @@ export function ProfileDetail({
       <div className="profiles-detail-header">
         <div className="profiles-detail-picture">
           {profile.profilePicture ? (
-            <img
+            <Image
               src={privateImageUrl(profile.profilePicture.storageKey)}
               alt={`Profile picture for ${profile.name}`}
-              loading="lazy"
+              width={240}
+              height={240}
+              unoptimized
             />
           ) : (
             <span className="profiles-initials">{initials(profile.name)}</span>
@@ -139,6 +140,8 @@ export function ProfileDetail({
         )}
       </div>
 
+      {statusNotice}
+
       {/* Edit mode notice */}
       {editing && (
         <p className="profiles-edit-notice">
@@ -150,16 +153,19 @@ export function ProfileDetail({
       <div
         className="profiles-tablist"
         role="tablist"
+        aria-label={`${profile.name}’s profile sections`}
         ref={tabsRef}
         onKeyDown={handleKeyDown}
       >
         {["about", "pictures", "appearance"].map((tab) => (
           <button
             key={tab}
+            id={`tab-${tab}`}
             type="button"
             role="tab"
             aria-selected={activeTab === tab ? "true" : "false"}
             aria-controls={`panel-${tab}`}
+            tabIndex={activeTab === tab ? 0 : -1}
             onClick={() => setActiveTab(tab as TabType)}
           >
             {tab === "about" && "About"}
@@ -171,7 +177,7 @@ export function ProfileDetail({
 
       {/* Tab panels */}
       {activeTab === "about" && !editing && (
-        <div id="panel-about" role="tabpanel">
+        <div id="panel-about" role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
           {profile.description && <p>{profile.description}</p>}
           <dl className="detail-facts">
             {profile.species && (
@@ -239,23 +245,26 @@ export function ProfileDetail({
       )}
 
       {activeTab === "about" && editing && (
-        <div id="panel-about" role="tabpanel">
+        <div id="panel-about" role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
           {profileForm()}
         </div>
       )}
 
       {activeTab === "pictures" && (
-        <div id="panel-pictures" role="tabpanel" className="profiles-pictures">
+        <div id="panel-pictures" role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex={0} className="profiles-pictures">
           <p>Private pictures. Earlier pictures stay available here.</p>
           {profile.images.length > 0 && (
             <div className="profiles-image-grid">
               {profile.images.map((image, index) => (
                 <figure key={image.id} className="profiles-image-card">
                   <div className="profiles-image-container">
-                    <img
+                    <Image
                       src={privateImageUrl(image.storageKey)}
                       alt={`Private picture ${index + 1} for ${profile.name}`}
-                      loading="lazy"
+                      width={240}
+                      height={240}
+                      sizes="(max-width: 800px) 70vw, 240px"
+                      unoptimized
                     />
                     {image.isProfilePicture && (
                       <span className="profiles-selected-label">
@@ -286,18 +295,18 @@ export function ProfileDetail({
             <input type="hidden" name="expectedVersion" value={profile.version} />
             <input type="hidden" name="setAsProfilePicture" value="true" />
             <label>Choose a new profile picture<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
-            <button className="button" type="submit" disabled={saveInFlight}>Change {profile.name}&apos;s profile picture</button>
+            <button className="button" type="submit" disabled={saveInFlight}>Change {profile.name}’s profile picture</button>
           </form>
           <form onSubmit={onUploadImage} className="upload-form">
             <input type="hidden" name="alterId" value={profile.id} />
-            <label>Add an image to {profile.name}&apos;s gallery<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            <label>Add an image to {profile.name}’s gallery<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
             <button className="button button-secondary" type="submit" disabled={saveInFlight}>Store private image</button>
           </form>
         </div>
       )}
 
       {activeTab === "appearance" && appearance && (
-        <div id="panel-appearance" role="tabpanel" className="profiles-appearance">
+        <div id="panel-appearance" role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex={0} className="profiles-appearance">
           <p>Choose visual references for Furry Image Studio. This does not change the profile picture, hosting, or fronting.</p>
           <label>Appearance notes <span className="optional">optional</span><textarea rows={3} maxLength={5000} value={appearance.appearanceNotes || ""} onChange={event => onUpdateAppearance(profile.id, { appearanceNotes: event.target.value })} /></label>
           {profile.images.length > 0 && (
@@ -320,12 +329,14 @@ export function ProfileDetail({
                     }}
                     aria-label={`Use private picture ${index + 1} as an appearance reference`}
                   >
-                    <img
+                    <Image
                       src={privateImageUrl(image.storageKey)}
-                      alt={`Private picture ${index + 1}`}
-                      loading="lazy"
+                      alt=""
+                      width={160}
+                      height={160}
+                      unoptimized
                     />
-                    <span>{appearance.appearanceReferenceImageIds.includes(image.id) ? "✓" : ""}</span>
+                    <span aria-hidden="true">{appearance.appearanceReferenceImageIds.includes(image.id) ? "✓" : ""}</span>
                   </button>
                 ))}
               </div>
@@ -346,7 +357,7 @@ export function ProfileDetail({
       )}
 
       {activeTab === "appearance" && !appearance && (
-        <div id="panel-appearance" role="tabpanel">
+        <div id="panel-appearance" role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
           <p>Loading appearance settings…</p>
         </div>
       )}

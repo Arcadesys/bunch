@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppNavigation } from "../app-navigation";
 import { ListDetail, useListSelection, type ListRow, initials } from "../list-detail";
@@ -121,11 +122,21 @@ export function NoteJournal() {
   const ids = useMemo(() => notes.map((note) => note.id), [notes]);
   const [selectedId, select] = useListSelection(ids);
 
-  // Handle hash-based selection (for linking from other screens)
+  // Links from Home and Catch-up address a note (#record-<id>) or the editor
+  // (#create-record). Follow the fragment once, after the first load.
+  const initialFragmentHandled = useRef(false);
   useEffect(() => {
-    const hashId = window.location.hash.startsWith("#record-") ? window.location.hash.slice("#record-".length) : "";
-    if (hashId && ids.includes(hashId)) select(hashId);
-  }, [ids, select]);
+    if (state !== "ready" || initialFragmentHandled.current) return;
+    const hash = window.location.hash;
+    // Runs after the list's own first-row selection so the addressed record wins.
+    const frame = requestAnimationFrame(() => {
+      initialFragmentHandled.current = true;
+      if (hash === "#create-record") { setDraft(emptyDraft()); setIsFormOpen(true); select(null); return; }
+      const hashId = hash.startsWith("#record-") ? hash.slice("#record-".length) : "";
+      if (hashId && ids.includes(hashId)) select(hashId);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [state, ids, select]);
 
   const tasksById = useMemo(() => new Map(todos.map((todo) => [todo.id, todo])), [todos]);
   const profileImages = useMemo(() => profiles.flatMap((profile) => (profile.images ?? []).map((image, index) => ({ ...image, label: `${profile.name} · picture ${index + 1}` }))), [profiles]);
@@ -142,7 +153,7 @@ export function NoteJournal() {
   const rows: ListRow[] = filteredNotes.map((note) => {
     const firstLine = note.body.split('\n')[0] || "(empty)";
     const recipientLabel = note.alterName ?? (note.alterId ? "a linked profile" : "System-wide");
-    const authorLabel = note.actorAlterName ?? "Unknown";
+    const authorLabel = note.actorAlterName ?? "Author not recorded";
     return {
       id: note.id,
       title: firstLine,
@@ -221,15 +232,21 @@ export function NoteJournal() {
     finally { setBusy(false); }
   }
 
-  const listStatus = state === "unauthorized" ? (
-    <div className="ld-intro"><p role="status"><a href="/auth/login">Sign in to view your saved notes</a></p></div>
-  ) : state === "error" ? (
-    <div className="ld-intro"><p role="status">Notes could not be loaded. This does not mean there are no notes.</p><button className="button button-secondary" onClick={reload}>Retry notes</button></div>
-  ) : notice && (state === "loading" || busy) ? (
-    <div className="ld-intro"><p role="status">{busy ? "Saving…" : "Loading private notes…"}</p></div>
-  ) : state === "loading" ? (
-    <div className="ld-intro"><p role="status">Loading private notes…</p></div>
-  ) : null;
+  const detailShown = isFormOpen || Boolean(current);
+  const noticeText = state === "loading" ? "Loading private notes…" : busy ? "Saving…" : notice;
+  // Exactly one live notice, in whichever pane is showing (phones show one pane at a time).
+  const statusNotice = <p ref={feedback} role="status" aria-live="polite" className={styles.statusNotice}>{noticeText}</p>;
+
+  const listStatus = <>
+    {detailShown ? null : statusNotice}
+    {state === "unauthorized" ? (
+      <p className="ld-intro"><a href="/auth/login">Sign in to view your saved notes</a></p>
+    ) : state === "error" ? (
+      <div className="ld-intro"><p>Notes could not be loaded. This does not mean there are no notes.</p><button className="button button-secondary" onClick={reload}>Retry notes</button></div>
+    ) : state === "ready" && !notes.length ? (
+      <p className="ld-intro">No saved notes yet.</p>
+    ) : null}
+  </>;
 
   const detailContent = isFormOpen ? (
     <NoteForm
@@ -245,12 +262,12 @@ export function NoteJournal() {
       onCancel={() => { setDraft(emptyDraft()); setIsFormOpen(false); }}
       toggleTask={toggleTask}
       toggleGift={toggleGift}
-      feedback={feedback as React.RefObject<HTMLParagraphElement>}
-      notice={notice}
+      statusNotice={statusNotice}
     />
   ) : current ? (
     <NoteDetail
       note={current}
+      statusNotice={statusNotice}
       busy={busy}
       tasksById={tasksById}
       onEdit={() => edit(current)}
@@ -263,6 +280,7 @@ export function NoteJournal() {
       <AppNavigation current="NOTES" />
       <ListDetail
         title="Notes"
+        className={styles.layout}
         count={notes.length ? `${notes.length} saved` : undefined}
         search={{ label: "Search notes", placeholder: "Search notes", value: searchQuery, onChange: setSearchQuery }}
         newAction={{ label: "Leave a note", onClick: () => { setDraft(emptyDraft()); setIsFormOpen(true); select(null); }, pressed: isFormOpen }}
@@ -270,16 +288,16 @@ export function NoteJournal() {
         selectedId={selectedId}
         onSelect={select}
         listStatus={listStatus}
+        listTools={<button type="button" className="button button-secondary" disabled={state === "loading" || busy} onClick={reload}>Refresh notes</button>}
         detailOpen={isFormOpen}
       >
         {detailContent}
       </ListDetail>
-      <p ref={feedback} role="status" aria-live="polite" className={styles.statusNotice}>{notice && !isFormOpen && !busy ? notice : ""}</p>
     </main>
   );
 }
 
-function NoteDetail({ note, busy, tasksById, onEdit, onDelete }: { note: NoteView; busy: boolean; tasksById: Map<string, TodoView>; onEdit: () => void; onDelete: () => void }) {
+function NoteDetail({ note, statusNotice, busy, tasksById, onEdit, onDelete }: { note: NoteView; statusNotice: React.ReactNode; busy: boolean; tasksById: Map<string, TodoView>; onEdit: () => void; onDelete: () => void }) {
   return (
     <article className="detail-card" id={`record-${note.id}`}>
       <div className={styles.detailHeader}>
@@ -307,6 +325,7 @@ function NoteDetail({ note, busy, tasksById, onEdit, onDelete }: { note: NoteVie
         <button className="button" disabled={busy} onClick={onEdit}>Edit note</button>
         <button className="button button-secondary" disabled={busy} onClick={onDelete}>Delete note</button>
       </div>
+      {statusNotice}
     </article>
   );
 }
@@ -324,8 +343,7 @@ function NoteForm({
   onCancel,
   toggleTask,
   toggleGift,
-  feedback,
-  notice,
+  statusNotice,
 }: {
   draft: NoteDraft;
   setDraft: (d: NoteDraft | ((prev: NoteDraft) => NoteDraft)) => void;
@@ -339,8 +357,7 @@ function NoteForm({
   onCancel: () => void;
   toggleTask: (id: string) => void;
   toggleGift: (id: string) => void;
-  feedback: React.RefObject<HTMLParagraphElement>;
-  notice: string;
+  statusNotice: React.ReactNode;
 }) {
   const editorHeading = useRef<HTMLHeadingElement>(null);
 
@@ -349,8 +366,8 @@ function NoteForm({
   }, []);
 
   return (
-    <article className="detail-card">
-      <h2 ref={editorHeading} tabIndex={-1}>{draft.id ? "Edit note" : "Leave a note"}</h2>
+    <section id="create-record" className="detail-card" aria-labelledby="editor-heading">
+      <h2 id="editor-heading" ref={editorHeading} tabIndex={-1}>{draft.id ? "Edit note" : "Leave a note"}</h2>
       <form onSubmit={onSave}>
         <div>
           <label htmlFor="journal-note-body">Note</label>
@@ -380,26 +397,21 @@ function NoteForm({
           {draft.id ? <button className="button button-secondary" type="button" disabled={busy} onClick={onCancel}>Cancel edit</button> : null}
         </div>
         <div className={styles.formFeedback}>
-          <p ref={feedback} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
+          {statusNotice}
         </div>
       </form>
-    </article>
+    </section>
   );
 }
 
 function TaskLinksDetail({ ids, tasks }: { ids: string[]; tasks: Map<string, TodoView> }) {
   if (!ids.length) return <p className={styles.noLinksDetail}>No Board tasks linked.</p>;
   return (
-    <div className={styles.tasksDetail}>
-      <span className="detail-eyebrow">Linked tasks</span>
+    <section className={styles.tasksDetail} aria-labelledby="note-linked-tasks">
+      <h3 id="note-linked-tasks" className="detail-eyebrow">Linked tasks</h3>
       <ul className={styles.tasksList}>
-        {ids.map((id) => <li key={id}>{tasks.get(id)?.title ?? `Unavailable task (${id})`}</li>)}
+        {ids.map((id) => <li key={id}><Link href={`/board?id=${encodeURIComponent(id)}`}>{tasks.get(id)?.title ?? `Unavailable task (${id})`}</Link></li>)}
       </ul>
-    </div>
+    </section>
   );
-}
-
-function TaskLinks({ ids, tasks }: { ids: string[]; tasks: Map<string, TodoView> }) {
-  if (!ids.length) return <p className={styles.links}>No Board tasks linked.</p>;
-  return <section className={styles.links} aria-label="Linked tasks"><h4>Linked tasks</h4><ul>{ids.map((id) => <li key={id}>{tasks.get(id)?.title ?? `Unavailable task (${id})`}</li>)}</ul></section>;
 }

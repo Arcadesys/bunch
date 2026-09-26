@@ -25,8 +25,8 @@ test("board creates, moves, links, and keeps cancellation recoverable", async ({
     page.getByRole("heading", { name: "Cancelled tasks" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Restore to To-do" }).click();
-  expect(
-    harness.writes.some((write) => write.body.status === "OPEN"),
+  await expect.poll(
+    () => harness.writes.some((write) => write.body.status === "OPEN"),
   ).toBeTruthy();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: info.outputPath(`board-${info.project.name}.png`), fullPage: true });
@@ -71,7 +71,8 @@ test("board edits, checks off, removes, deletes, and retains a failed checklist 
   await edited.getByText("Owners", { exact: true }).click();
   await edited.getByLabel("Test Robin", { exact: true }).check();
   await edited.getByRole("button", { name: "Save owners" }).click();
-  expect(harness.writes.some((write) => Array.isArray(write.body.assigneeAlterIds) && write.body.assigneeAlterIds.includes(harness.profiles[0].id))).toBeTruthy();
+  // The PATCH is asynchronous: wait for it rather than racing the click.
+  await expect.poll(() => harness.writes.some((write) => Array.isArray(write.body.assigneeAlterIds) && write.body.assigneeAlterIds.includes(harness.profiles[0].id))).toBeTruthy();
   await edited.getByText(/^Checklist \(/).click();
   await edited.getByLabel(/New checklist item/).fill("First step");
   await edited.getByRole("button", { name: "Add checklist item" }).click();
@@ -103,6 +104,8 @@ test("linked journal edits appear on Board and task deletion preserves the note"
   await task.getByRole("button", { name: "Save linked notes" }).click();
   await expect(task.locator("blockquote")).toHaveText("Fixture note");
   await page.goto("/notes");
+  // Notes is a list/detail view: open the note, then edit it.
+  await page.getByRole("button", { name: /^Fixture note/ }).click();
   await page.getByRole("button", { name: "Edit note", exact: true }).click();
   await page.getByLabel("Note", { exact: true }).fill("Updated independent journal");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
@@ -113,28 +116,34 @@ test("linked journal edits appear on Board and task deletion preserves the note"
   await task.getByRole("button", { name: "Confirm deletion", exact: true }).click();
   await expect(task).toHaveCount(0);
   await page.goto("/notes");
+  await page.getByRole("button", { name: /^Updated independent journal/ }).click();
   await expect(page.getByRole("article")).toContainText("Updated independent journal");
   expect(harness.saved.notes[0].taskIds).toEqual([]);
   expect(errors).toEqual([]);
 });
 
 test("list view groups by status, shows detail, and changes status", async ({ page, harness }) => {
+  harness.saved.todos.push({ ...harness.saved.todos[0], id: "40000000-0000-4000-8000-000000000003", title: "Second fixture todo", status: "IN_PROGRESS" });
   await page.goto("/board");
-  // Verify list groups by status (groups appear as text in the list)
-  await expect(page.locator(".ld-group")).toContainText("Blocked");
-  await expect(page.locator(".ld-group")).toContainText("Doing");
-  // Select a todo
-  const fixture = page.getByRole("button", { name: "Fixture todo" }).first();
-  await fixture.click();
-  // Verify detail shows
-  await expect(page.getByRole("heading", { name: "Fixture todo", level: 2 })).toBeVisible();
-  // Verify facts are shown
-  await expect(page.getByRole("term", { name: "Priority" })).toBeVisible();
-  await expect(page.getByRole("term", { name: "Due date" })).toBeVisible();
-  await expect(page.getByRole("term", { name: "Owners" })).toBeVisible();
-  // Change status via button
-  const blockedButton = page.getByRole("button", { name: "Blocked", exact: true });
-  await blockedButton.click();
-  // Verify status change request was sent
-  expect(harness.writes.some((write) => write.body.status === "BLOCKED")).toBeTruthy();
+  const list = page.getByRole("region", { name: "Todos" });
+  // Rows are grouped under status headers, in status order.
+  await expect(list.locator(".ld-group")).toHaveText(["Blocked", "Doing"]);
+  await expect(list.getByRole("button", { name: /Fixture todo/ }).first()).toContainText("Blocked");
+  await list.getByRole("button", { name: /^Fixture todo/ }).click();
+  const detail = page.getByRole("region", { name: "Todo details" });
+  await expect(detail.getByRole("heading", { name: "Fixture todo", level: 2 })).toBeVisible();
+  await expect(detail.getByRole("term").filter({ hasText: "Priority" })).toBeVisible();
+  await expect(detail.getByRole("term").filter({ hasText: "Due date" })).toBeVisible();
+  await expect(detail.getByRole("term").filter({ hasText: "Owners" })).toBeVisible();
+  const status = detail.getByRole("group", { name: "Status" });
+  await expect(status.getByRole("button", { name: "Blocked", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await status.getByRole("button", { name: "Doing", exact: true }).click();
+  await expect(detail.getByRole("status")).toContainText("Fixture todo moved to Doing.");
+  expect(harness.writes.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/todos/${harness.saved.todos[0].id}`, body: { expectedVersion: 1, status: "IN_PROGRESS" } });
+  await expect(status.getByRole("button", { name: "Doing", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Phones show one pane at a time; go back to the list to see the regrouped rows.
+  const back = page.getByRole("button", { name: "← Todos" });
+  if (await back.isVisible()) await back.click();
+  await expect(list.locator(".ld-group")).toHaveText(["Doing"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
