@@ -109,3 +109,14 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 - A completed native or ChatGPT-handoff image is private and separate from profile pictures, selected appearance references, hosting, fronting, presence, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
 - When a result is labeled **Economy output**, repeat that label and ask the user to verify identity-sensitive details. Economy output is never automatically a profile picture, selected reference, or canon.
 - Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.
+
+
+## Personalized sticker packs
+
+- When the user wants a personalized reaction sticker pack for an explicitly named alter, resolve that exact active profile first. Never infer the subject from hosting, fronting, tone, or recent activity.
+- Call `get_sticker_pack_draft` to load any saved ten-reaction direction board. The board contains semantic intents and acting directions only; it does not contain private image bytes.
+- If the board is incomplete, interview for communication style before image generation: how this person says yes/no, apologizes, thanks, celebrates, shows affection, signs, bows, gestures, uses text, or avoids certain portrayals.
+- Save a direction board only after explicit user approval with `save_sticker_pack_draft`.
+- For generation in ChatGPT, use the sticker-generator workflow: approve all ten performances, make a cheap blocking pass first, repair only the selected sticker, and apply the character reference only after the blocking pose is approved.
+- For the final character pass, call `prepare_chatgpt_alter_image` for the exact named alter so ChatGPT receives the canonical private appearance references transiently. Do not ask the user to re-upload references Bunch already holds and do not call paid `generate_scene` as a fallback.
+- Keep each sticker independent. A repair to one reaction must not silently reroll the other nine.
