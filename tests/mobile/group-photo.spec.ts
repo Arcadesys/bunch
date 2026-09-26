@@ -103,8 +103,9 @@ test("finisher shows progress, a saved image and the same result after reopening
   await expect(page.getByRole("button", { name: "Finishing photo…", exact: true })).toBeDisabled();
   await expect(page.getByRole("img", { name: "Finished group photo", exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("link", { name: "Download finished photo" })).toBeVisible();
-  await page.getByRole("button", { name: "← Group photo" }).click();
-  await page.getByRole("button", { name: /Scene 1/ }).click();
+  // Start or reopen another scene: the saved-scenes list reopens it from the server.
+  await page.goto("/group-photo");
+  await page.getByRole("button", { name: /^Scene 1/ }).click();
   const image = page.getByRole("img", { name: "Finished group photo", exact: true });
   await expect(image).toBeVisible();
   expect(await image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(800);

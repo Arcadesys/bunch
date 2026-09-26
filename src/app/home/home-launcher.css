@@ -1,4 +1,6 @@
-.home-launcher-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(18rem, .95fr); gap: 1.5rem; width: min(100%, 76rem); margin: 0 auto; }
+.home-launcher-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1.5rem; width: min(100%, 76rem); margin: 0 auto; }
+.home-launcher-layout > .home-launcher-main { flex: 2 1 22rem; min-width: 0; }
+.home-launcher-layout > .home-right-now { flex: 1 1 14rem; min-width: 0; }
 .home-launcher-main > header { padding: 1.4rem .35rem .8rem; }
 .home-launcher-main h1 { max-width: 18ch; margin-bottom: .25rem; font-size: clamp(2rem, 4.4vw, 3.25rem); font-weight: 800; letter-spacing: -.035em; }
 .home-launcher-main > header p { margin: 0; color: var(--muted); font-size: 1.2rem; }

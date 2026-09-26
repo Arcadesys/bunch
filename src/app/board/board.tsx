@@ -492,7 +492,7 @@ export function Board({ view = "list" }: { view?: "list" | "board" }) {
           {error} <button className="button button-secondary" onClick={() => void load()}>Retry Board</button>
         </p>
       )}
-      <p ref={feedback} className={styles.status} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
+      <p ref={feedback} className={`command-notice ${styles.status}`} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
     </>
   );
   return (

@@ -235,7 +235,7 @@ export function NoteJournal() {
   const detailShown = isFormOpen || Boolean(current);
   const noticeText = state === "loading" ? "Loading private notes…" : busy ? "Saving…" : notice;
   // Exactly one live notice, in whichever pane is showing (phones show one pane at a time).
-  const statusNotice = <p ref={feedback} role="status" aria-live="polite" className={styles.statusNotice}>{noticeText}</p>;
+  const statusNotice = <p ref={feedback} role="status" aria-live="polite" className={`command-notice ${styles.statusNotice}`}>{noticeText}</p>;
 
   const listStatus = <>
     {detailShown ? null : statusNotice}
@@ -283,10 +283,12 @@ export function NoteJournal() {
         className={styles.layout}
         count={notes.length ? `${notes.length} saved` : undefined}
         search={{ label: "Search notes", placeholder: "Search notes", value: searchQuery, onChange: setSearchQuery }}
-        newAction={{ label: "Leave a note", onClick: () => { setDraft(emptyDraft()); setIsFormOpen(true); select(null); }, pressed: isFormOpen }}
+        newAction={{ label: "Leave a note", onClick: () => { setDraft((current) => (current.id ? emptyDraft() : current)); setIsFormOpen(true); select(null); }, pressed: isFormOpen }}
         rows={rows}
         selectedId={selectedId}
-        onSelect={select}
+        // Choosing a saved note, or going back to the list, closes the form; an unsaved
+        // new-note draft is kept for "Leave a note".
+        onSelect={(id) => { setIsFormOpen(false); select(id); }}
         listStatus={listStatus}
         listTools={<button type="button" className="button button-secondary" disabled={state === "loading" || busy} onClick={reload}>Refresh notes</button>}
         detailOpen={isFormOpen}

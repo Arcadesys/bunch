@@ -1,6 +1,5 @@
 .gallery-detail-image {
   width: 100%;
-  margin-bottom: 1.5rem;
 }
 
 .gallery-detail-image img {
@@ -11,8 +10,11 @@
 }
 
 .profile-photos-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
   gap: 1rem;
   margin-top: 1.5rem;
 }
@@ -45,8 +47,8 @@
   color: #e8e8ec;
   padding: 0.35rem 0.6rem;
   border-radius: 0.3rem;
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.8rem;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -70,3 +72,39 @@
 .ld-tools .button {
   width: 100%;
 }
+
+.gallery-detail-image img { max-height: 70vh; object-fit: contain; }
+
+.gallery-photo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gallery-photo-count {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.gallery-photo-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gallery-photo-nav .button,
+.detail-actions .button { min-height: 48px; }
+
+.gallery-empty,
+.gallery-alert { display: grid; gap: 0.5rem; justify-items: start; }
+.gallery-empty h2 { margin: 0; color: var(--ink); font-size: 1rem; }
+.gallery-empty p, .gallery-alert p { margin: 0; }
+
+.generated-gallery { display: contents; }
+
+.profile-photo-caption { display: grid; gap: 0.1rem; margin: 0; }
+.profile-photo-caption span { color: var(--muted); font-size: 0.85rem; }
+.profile-photo-actions .button { min-height: 48px; }

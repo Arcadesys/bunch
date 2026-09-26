@@ -22,6 +22,7 @@ test("pilot account cannot see operator allowance controls", async ({ page }) =>
   await page.route("**/api/v1/account", r => r.fulfill({ json: { data: { state: "ACTIVE", role: "FRIEND", canShareGallery: false } } }));
   await page.route("**/api/v1/account/image-allowances", r => { queried = true; return r.fulfill({ status: 403, json: {} }); });
   await page.goto("/account");
+  await page.getByRole("button", { name: "Your private system account" }).click();
   await expect(page.getByText("Account status: ACTIVE")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pilot image allowances" })).toHaveCount(0);
   expect(queried).toBe(false);

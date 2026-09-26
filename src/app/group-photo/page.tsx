@@ -1,6 +1,7 @@
 "use client";
 import { ImageAllowanceNotice } from "@/app/image-allowance";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AppNavigation } from "@/app/app-navigation";
 import { ListDetail, useListSelection, type ListRow } from "@/app/list-detail";
 import { type ArrangeAction, type GroupPhotoProject, type GroupPhotoRender } from "@/domain/group-photo";
@@ -41,6 +42,7 @@ export default function GroupPhotoPage() {
   const [dragPosition, setDragPosition] = useState<{ id: string; x: number; y: number } | null>(null);
   const finishRequest = useRef<{ id: string; version: number } | null>(null);
   const [recent, setRecent] = useState<SceneRecord[]>([]);
+  const [recentLoaded, setRecentLoaded] = useState(false);
   const [finisherAvailable, setFinisherAvailable] = useState<boolean | null>(null);
   const [photoError, setPhotoError] = useState(false);
   const [imageAllowance, setImageAllowance] = useState<ImageAllowance | null>(null);
@@ -51,8 +53,9 @@ export default function GroupPhotoPage() {
   const rendering = latestRender?.state === "QUEUED" || latestRender?.state === "RUNNING";
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Use ?project= URL parameter for selected scene
-  const ids = useMemo(() => recent.map(r => r.id), [recent]);
+  // ?project= keeps the open scene in the address. Until saved scenes load, an
+  // empty list keeps that id from being replaced by the first row.
+  const ids = useMemo(() => recentLoaded ? recent.map(r => r.id) : [], [recent, recentLoaded]);
   const [selectedSceneId, selectScene] = useListSelection(ids, { param: "project" });
 
   const loadPeople = useCallback(async () => {
@@ -70,13 +73,18 @@ export default function GroupPhotoPage() {
       const payload = await response.json();
       setRecent(Array.isArray(payload.data) ? payload.data : []);
       setFinisherAvailable(typeof payload.meta?.finisherAvailable === "boolean" ? payload.meta.finisherAvailable : null);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setRecentLoaded(true));
   }, []);
 
-  // Load the selected scene from URL parameter
+  // Open the selected scene (a row, a reload, or a ?project= link). A scene that
+  // was just created is already open, so it is not read again.
+  const openProjectId = useRef<string | null>(null);
+  useEffect(() => { openProjectId.current = project?.id ?? null; }, [project?.id]);
   useEffect(() => {
-    if (!selectedSceneId) return;
+    if (!selectedSceneId || openProjectId.current === selectedSceneId) return;
     saving.current = true;
+    // A different scene: its people and requests start fresh.
+    setSelectedPersonId(null); finishRequest.current = null;
     void (async () => {
       try {
         const response = await fetch(`/api/v1/group-photos/${encodeURIComponent(selectedSceneId)}`, { headers: demoHeaders });
@@ -146,7 +154,8 @@ export default function GroupPhotoPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(message(payload, "Unable to analyze that backplate."));
       setProject(payload.data);
-      setRecent(prev => [{ id: payload.data.id, createdAt: payload.data.createdAt }, ...prev]);
+      openProjectId.current = payload.data.id;
+      setRecent(prev => [{ id: payload.data.id, createdAt: payload.data.createdAt }, ...prev.filter(scene => scene.id !== payload.data.id)]);
       selectScene(payload.data.id);
       setCreating(false);
       setPreviewUrl(objectUrl);
@@ -213,6 +222,7 @@ export default function GroupPhotoPage() {
         <label>Choose a JPEG, PNG, or WebP photo<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" required /></label>
         <button className="button" disabled={busy} type="submit">{busy ? "Opening scene…" : "Use this scene"}</button>
       </form>
+      <p className="group-photo-notice" role="status">{notice}</p>
     </article>
   );
 
@@ -275,25 +285,22 @@ export default function GroupPhotoPage() {
         {finisherAvailable === false && <p className="photo-finisher-unavailable">Photo finishing is not connected yet. You can keep arranging and saving this scene.</p>}
       </section>
     </article>
-  ) : null;
+  ) : selectedSceneId ? <article className="detail-card"><h2>Saved scene</h2><p className="group-photo-notice" role="status">{notice === "Choose a place for everybody." ? "Opening this scene…" : notice}</p></article> : null;
 
   return <main className="app-page">
     <AppNavigation current="GROUP_PHOTO" />
     <ListDetail
       title="Group photo"
+      count={recent.length ? `${recent.length} ${recent.length === 1 ? "scene" : "scenes"}` : undefined}
+      intro={<p>Choose a place for everybody. Finished photos also appear in the <Link href="/gallery/generated">Photo gallery</Link>.</p>}
       newAction={{ label: "Start a new scene", onClick: () => setCreating(true), pressed: creating }}
       rows={rows}
-      selectedId={selectedSceneId}
-      onSelect={(id) => {
-        if (id) {
-          setCreating(false);
-          selectScene(id);
-        } else {
-          setCreating(false);
-        }
-      }}
-      listStatus={recent.length === 0 ? <div className="ld-intro"><p role="status">{notice}</p></div> : null}
+      selectedId={creating ? null : selectedSceneId}
+      onSelect={(id) => { setCreating(false); selectScene(id); }}
+      listStatus={recentLoaded && recent.length === 0 ? <p className="ld-intro">No saved scenes yet. Start with a real photo.</p> : null}
+      detailLabel="Scene"
       detailOpen={creating}
+      emptyDetail={uploadForm}
     >
       {detailContent}
     </ListDetail>

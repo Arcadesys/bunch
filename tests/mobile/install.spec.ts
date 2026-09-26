@@ -3,7 +3,9 @@ import { test, expect } from "./fixtures";
 test("phone installation guide is discoverable, readable, and links back to catch-up", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/install");
+  await page.goto("/options");
+  await page.getByRole("button", { name: /^Install on your phone/ }).click();
+  await page.getByRole("link", { name: /Install on your phone/ }).click();
   await expect(page).toHaveURL(/\/install$/);
   await expect(page).toHaveTitle(/Bunch/);
   await expect(page.getByRole("heading", { name: "Add Bunch to your home screen" })).toBeVisible();
@@ -23,12 +25,20 @@ test("phone installation guide is discoverable, readable, and links back to catc
 });
 
 test("browser install prompt survives navigation and cancellation offers manual instructions", async ({ page }) => {
-  await page.goto("/install");
+  await page.goto("/options");
+  await page.getByRole("button", { name: /^Appearance/ }).click();
+  await page.getByRole("button", { name: "Daylight", exact: true }).click();
   await page.evaluate(() => {
     const event = new Event("beforeinstallprompt", { cancelable: true });
     Object.assign(event, { prompt: async () => {}, userChoice: Promise.resolve({ outcome: "dismissed" }) });
     window.dispatchEvent(event);
   });
+  // Phones show one pane at a time; return to the options list first.
+  const back = page.getByRole("button", { name: "← Options" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("button", { name: /^Install on your phone/ }).click();
+  await page.getByRole("link", { name: /Install on your phone/ }).click();
+  await expect(page).toHaveURL(/\/install$/);
   await page.getByRole("button", { name: "Install Bunch", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Installation cancelled");
   await expect(page.getByRole("button", { name: "Install Bunch", exact: true })).toHaveCount(0);

@@ -43,6 +43,8 @@ export type ListDetailProps = {
   listStatus?: ReactNode;
   /** Extra controls under the heading (filters, refresh buttons). */
   listTools?: ReactNode;
+  /** Shown after the rows (e.g. a "Load more" button). */
+  listFooter?: ReactNode;
   /** Accessible name of the detail region. Defaults to the title. */
   detailLabel?: string;
   /** Shown in the detail pane when nothing is selected on wide screens. */
@@ -63,7 +65,7 @@ function Avatar({ avatar }: { avatar: NonNullable<ListRow["avatar"]> }) {
   </span>;
 }
 
-export function ListDetail({ title, count, intro, search, newAction, rows, selectedId, onSelect, listStatus, listTools, detailLabel, emptyDetail, children, detailOpen, className }: ListDetailProps) {
+export function ListDetail({ title, count, intro, search, newAction, rows, selectedId, onSelect, listStatus, listTools, listFooter, detailLabel, emptyDetail, children, detailOpen, className }: ListDetailProps) {
   const open = Boolean(selectedId) || Boolean(detailOpen);
   return <div className={`list-detail ${className ?? ""}`} data-detail-open={open ? "true" : "false"}>
     <section className="ld-list" aria-label={title}>
@@ -98,6 +100,7 @@ export function ListDetail({ title, count, intro, search, newAction, rows, selec
           return items;
         })}
       </ul> : null}
+      {listFooter}
     </section>
     <section className="ld-detail" aria-label={detailLabel ?? title}>
       <button type="button" className="ld-back" onClick={() => onSelect(null)}>← {title}</button>
