@@ -51,7 +51,7 @@ export const stickerPackViewSchema = z.object({
   communicationProfile: z.string().nullable(),
   status: stickerPackStatusSchema,
   slots: stickerSlotsSchema,
-  telegramUrl: z.string().url().nullable(),
+  telegramUrl: z.string().url().regex(/^https:\/\/t\.me\/addstickers\/[A-Za-z0-9_]+$/).nullable(),
   version: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -64,7 +64,7 @@ export const saveStickerPackSchema = z.object({
   communicationProfile: z.string().trim().max(5000).nullable().default(null),
   status: stickerPackStatusSchema.default("DRAFT"),
   slots: stickerSlotsSchema,
-  telegramUrl: z.string().url().nullable().default(null),
+  telegramUrl: z.string().url().regex(/^https:\/\/t\.me\/addstickers\/[A-Za-z0-9_]+$/).nullable().default(null),
 }).strict();
 export type SaveStickerPackInput = z.infer<typeof saveStickerPackSchema>;
 
