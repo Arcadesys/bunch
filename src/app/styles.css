@@ -2098,3 +2098,23 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .private-reference-card { min-width: 0; margin: 0; padding: .5rem; border: 2px solid var(--line); border-radius: 8px; background: var(--surface); }
 .private-reference-card img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; background: var(--paper); }
 .private-reference-card figcaption { margin-top: .45rem; font-size: .85rem; line-height: 1.35; overflow-wrap: anywhere; }
+
+
+/* Sticker Lab: performance-first direction board for personalized reaction packs. */
+.sticker-lab { max-width: 1500px; }
+.sticker-person-summary { display:flex; gap:1rem; align-items:center; margin-top:1rem; }
+.sticker-person-summary img { width:140px; height:140px; object-fit:contain; border:3px solid var(--line); border-radius:12px; background:var(--paper); }
+.sticker-progress { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.75rem; margin-bottom:1rem; padding:.75rem; border-left:8px solid var(--accent); background:var(--wash); }
+.sticker-board { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:1rem; margin:1rem 0; }
+.sticker-card { min-width:0; padding:1rem; border:3px solid var(--line); border-radius:14px; background:var(--surface); }
+.sticker-card header { display:flex; align-items:center; gap:.75rem; margin-bottom:.8rem; }
+.sticker-card header h2 { margin:0; font-size:1.25rem; }
+.sticker-card header small { color:var(--muted); }
+.sticker-emoji { display:grid; place-items:center; width:3rem; height:3rem; border:2px solid var(--line); border-radius:12px; font-size:1.6rem; background:var(--wash); }
+.sticker-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; }
+.sticker-actions { position:sticky; bottom:0; z-index:5; display:flex; flex-wrap:wrap; gap:.7rem; padding:1rem; border:3px solid var(--line); background:var(--surface); box-shadow:0 -10px 30px rgb(0 0 0 / 30%); }
+@media (max-width:600px) {
+  .sticker-person-summary { align-items:flex-start; flex-direction:column; }
+  .sticker-fields { grid-template-columns:minmax(0,1fr); }
+  .sticker-actions .button { width:100%; }
+}

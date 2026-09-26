@@ -3,6 +3,7 @@
 // for another owner's records by naming them.
 
 import { compositionGuidance } from "@/domain/group-photo";
+import { defaultStickerPack, stickerPackDraftSchema } from "@/domain/sticker-pack";
 import { connectPrivateSystemTool, registerDemoSystemTool } from "./demo-mcp-server";
 import { ACCOUNT_PROFILE_TOOL_NAME, accountProfileId, accountProfileTool } from "./mcp-account-profile";
 import { furrySceneInputSchema, imagePromptInputSchema, imagePromptResultSchema } from "@/domain/image-prompt";
@@ -430,6 +431,36 @@ export function createMcpServer(ownerId: string, serviceOverride?: ReturnType<ty
 
   server.registerTool("save_system_note", { title: "Save private note", description: "Use this only when the user explicitly asks to send a private note into System. Optionally link it to an alter or coverage period, and include actorAlterId only when the user explicitly identifies who the note is from.", inputSchema: noteSchema.shape, outputSchema: noteOutputSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async (input) => ({ structuredContent: { note: await repository.saveNote(ownerId, noteSchema.parse(input)) }, content: [{ type: "text", text: "Saved the private note to System." }] }));
   server.registerTool("save_system_preference", { title: "Save private preference", description: "Use this only when the user explicitly asks to save a private System preference. It stores the key and value in the user's backend record.", inputSchema: preferenceSchema.shape, outputSchema: preferenceOutputSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async (input) => { const value = preferenceSchema.parse(input); return { structuredContent: { preference: await repository.savePreference(ownerId, value.key, value.value) }, content: [{ type: "text", text: "Saved the private preference to System." }] }; });
+  server.registerTool("get_sticker_pack_draft", {
+    title: "Get private sticker pack direction",
+    description: "Read the saved ten-reaction sticker direction board for one explicitly selected person. This returns acting directions and semantic slots, not private image bytes. Use it when the user asks to continue or generate that person's sticker pack.",
+    inputSchema: { alterId: uuidSchema },
+    outputSchema: { pack: stickerPackDraftSchema },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ alterId }) => {
+    const alter = await service.getAlter(ownerId, alterId);
+    if (alter.archivedAt) throw new Error("Profile is archived.");
+    const saved = (await repository.listPreferences(ownerId)).find(item => item.key === `stickers.v1.${alterId}`);
+    let pack = defaultStickerPack(alterId);
+    if (saved) {
+      try { pack = stickerPackDraftSchema.parse(JSON.parse(saved.value)); }
+      catch { /* recover to a clean draft rather than expose malformed private state */ }
+    }
+    return { structuredContent: { pack }, content: [{ type: "text", text: `Loaded the private ten-reaction direction board for ${alter.name}.` }] };
+  });
+  server.registerTool("save_sticker_pack_draft", {
+    title: "Save private sticker pack direction",
+    description: "Save an explicitly approved ten-reaction sticker direction board for one person. Use this only after the user asks to save the board; it stores directions, not generated image bytes.",
+    inputSchema: stickerPackDraftSchema.shape,
+    outputSchema: { pack: stickerPackDraftSchema },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (input) => {
+    const pack = stickerPackDraftSchema.parse(input);
+    const alter = await service.getAlter(ownerId, pack.alterId);
+    if (alter.archivedAt) throw new Error("Profile is archived.");
+    await repository.savePreference(ownerId, `stickers.v1.${pack.alterId}`, JSON.stringify(pack));
+    return { structuredContent: { pack }, content: [{ type: "text", text: `Saved the private ten-reaction direction board for ${alter.name}.` }] };
+  });
 
   server.registerTool("suggest_coverage_draft", { title: "Create coverage draft", description: "Use this when the user asks for a suggested flexible coverage period. It creates an unconfirmed draft from prior confirmed history, an optional manual check-in, and only explicitly passed short ChatGPT context. That context is never retained.", inputSchema: draftSchema.shape, outputSchema: coverageOutputSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async (input) => { const draftInput = draftSchema.parse(input); const confirmed = await repository.confirmedDuring(ownerId, "0001-01-01", "9999-12-31"); const suggestion = suggestCoverage(draftInput, confirmed); const draft = await repository.createDraft(ownerId, { alterId: suggestion.alterId, startsOn: draftInput.startsOn, endsOn: draftInput.endsOn, reasons: suggestion.reasons }); return { structuredContent: { draft }, content: [{ type: "text", text: "Created an unconfirmed coverage draft with inspectable reasons." }] }; });
   server.registerTool("resolve_coverage_draft", { title: "Confirm, change, or reject coverage draft", description: "Use this only after the user has inspected a specific coverage draft and explicitly requests a confirm, change, or reject action. Only confirmation sends a record into later history.", inputSchema: resolveDraftSchema.shape, outputSchema: coverageOutputSchema.shape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, async (input) => { const resolution = resolveDraftSchema.parse(input); const draft = await repository.resolveDraft(ownerId, resolution.draftId, resolution.result, resolution.alterId); return { structuredContent: { draft }, content: [{ type: "text", text: resolution.result === "CONFIRMED" ? "Confirmed coverage is now recorded history." : "The draft was rejected and is excluded from history." }] }; });
