@@ -257,3 +257,15 @@ export const test = base.extend<{ harness: Harness }>({
 });
 
 export { expect };
+
+/**
+ * The section list is a sidebar at 1100px and wider and a drawer behind the
+ * "Open sections" button below that. Returns the visible section navigation.
+ */
+export async function openSections(page: import("@playwright/test").Page) {
+  const menu = page.getByRole("button", { name: "Open sections" });
+  if (await menu.isVisible()) await menu.click();
+  const nav = page.getByRole("navigation", { name: "Bunch navigation" });
+  await expect(nav).toBeVisible();
+  return nav;
+}
