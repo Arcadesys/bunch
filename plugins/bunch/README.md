@@ -24,6 +24,12 @@ Other systems cannot access your data. The hosting operator has technical admini
 
 Invitations are closed unless the operator has opened them. Installing this package does not by itself grant membership.
 
+## Personalized reaction stickers
+
+With the Bunch plugin installed, ask to make a reaction sticker pack for one explicitly named person. The sticker skill loads that person's saved communication guidance, keeps ten semantic reactions as an editable creative contract, blocks the acting cheaply in ChatGPT, repairs only the selected sticker, and applies Bunch's selected private appearance references only after the poses are approved. It never chooses a subject from hosting/fronting state and never uses Bunch-native paid image generation as a ChatGPT fallback.
+
+The Bunch web app also exposes the same creative board at `/stickers`. After a final Telegram pack is published, its add-pack URL can be saved with the person's board.
+
 ## Demo system
 
 The same hosted `/mcp` endpoint supports a read-only default walkthrough without sign-in. Ask for `get_demo_system` to fetch Fenton, Benny, Dot, fictional history, and shared tasks from Bunch. Nothing is stored locally or written to a real system. To use your own records, call `connect_private_system`, complete OAuth, and refresh the tool list. Invalid credentials remain errors; they never select demo data.

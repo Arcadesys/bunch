@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type PeopleTool = "people" | "gallery" | "group-photo" | "images" | "profile-gallery";
+type PeopleTool = "people" | "gallery" | "group-photo" | "images" | "profile-gallery" | "stickers";
 
 export function PeopleToolsNav({ current }: { current: PeopleTool }) {
   const links = [
@@ -9,6 +9,7 @@ export function PeopleToolsNav({ current }: { current: PeopleTool }) {
     ["profile-gallery", "/gallery", "Profile photos"],
     ["group-photo", "/group-photo", "Group Photo"],
     ["images", "/images", "Create Images"],
+    ["stickers", "/stickers", "Stickers"],
   ] as const;
   return <nav className="tool-tabs" aria-label="People and pictures">
     {links.map(([id, href, label]) => <Link key={id} href={href} aria-current={current === id ? "page" : undefined}>{label}</Link>)}

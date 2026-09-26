@@ -17,6 +17,8 @@ files = [
     '.mcp.json',
     'skills/system-companion/SKILL.md',
     'skills/system-companion/agents/openai.yaml',
+    'skills/bunch-sticker-pack/SKILL.md',
+    'skills/bunch-sticker-pack/agents/openai.yaml',
     'README.md',
     'assets/bunch-barrel-monkeys.png',
 ]
@@ -34,8 +36,10 @@ compat_server = compat_mcp.get('mcpServers', {}).get('bunch', {})
 require(portable_server.get('type') == 'streamable-http', 'Portable MCP server must use streamable-http')
 require(compat_server.get('type') == 'http', 'Compatibility MCP server must use http')
 require(portable_server.get('url') == compat_server.get('url') == 'https://system.thearcades.me/mcp', 'Hosted MCP URLs do not match')
-require((plugin / files[4]).read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'Plugin skill is stale')
-require((plugin / files[5]).read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale')
+require((plugin / 'skills/system-companion/SKILL.md').read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'System Companion skill is stale')
+require((plugin / 'skills/system-companion/agents/openai.yaml').read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale')
+require((plugin / 'skills/bunch-sticker-pack/SKILL.md').read_bytes() == (root / 'skills/bunch-sticker-pack/SKILL.md').read_bytes(), 'Sticker pack skill is stale')
+require((plugin / 'skills/bunch-sticker-pack/agents/openai.yaml').read_bytes() == (root / 'skills/bunch-sticker-pack/agents/openai.yaml').read_bytes(), 'Sticker pack OpenAI agent config is stale')
 for name in files:
     source = plugin / name
     require(source.is_file() and not source.is_symlink(), f'Unsafe or missing plugin file: {name}')

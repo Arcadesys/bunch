@@ -50,6 +50,28 @@ Around that: profiles, notes, todos, decisions, important threads, a private
 image gallery with shareable links, and a catch-up view that shows an arriving
 profile what changed since they were last around.
 
+## Personalized sticker studio
+
+Bunch can keep one ten-reaction creative board per active person at
+`/stickers`. The board starts from ten semantic intents such as yes, thanks,
+sorry, love, and bye, but the actual acting is individualized: a gesture may be
+signed, culturally specific, deadpan, theatrical, tail-led, text-free, or
+anything else the person would really use.
+
+The normal ChatGPT workflow deliberately separates acting from likeness:
+
+1. choose the person explicitly
+2. interview for communication style and approve all ten performances
+3. save the prompt board in Bunch
+4. make cheap pose-blocking images in ChatGPT
+5. repair only the selected sticker while the other nine stay frozen
+6. apply Bunch's selected private appearance references through the existing
+   secure ChatGPT image handoff
+7. save the confirmed Telegram add-pack URL back to Bunch after publication
+
+This route does not infer the subject from hosting or fronting and does not use
+Bunch-native paid image generation as a ChatGPT fallback.
+
 ## The MCP surface
 
 The endpoint is `/mcp`, following the Apps SDK interactive-decoupled pattern.
@@ -64,6 +86,7 @@ so both paths enforce the same rules.
 - `get_current_presence`, `set_system_host` — hosting and fronting as independent lifecycles
 - `save_system_note`, `save_system_preference` — explicit assistant-to-app handoffs
 - `prepare_private_image_upload` — a profile-bound, one-minute capability used only to move a selected image into private storage
+- `get_sticker_pack`, `list_sticker_packs`, `save_sticker_pack` — read and persist the explicit ten-reaction creative contract for one selected person, including the final Telegram add-pack URL after confirmed publication
 - `suggest_coverage_draft` + `resolve_coverage_draft` — an inspectable, confirmed-only history gate
 - `get_recorded_coverage` — confirmed history only
 

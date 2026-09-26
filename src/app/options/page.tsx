@@ -13,6 +13,7 @@ export default function OptionsPage() {
       ["/decisions", "Decisions", "Recorded decisions and next actions."],
       ["/profiles#coverage-heading", "Coverage records", "Drafts and confirmed responsibility records."],
       ["/gallery", "Private gallery", "Browse stored profile images."],
+      ["/stickers", "Sticker studio", "Direct personalized reaction packs for one person at a time."],
     ].map(([href, title, detail]) => <Link className="option-card" key={href} href={href}><h2>{title}</h2><p>{detail}</p><span aria-hidden="true">Open →</span></Link>)}</div>
     <ThemeControl />
     <section className="panel"><h2>Account</h2><p>Your records require sign-in. They are not published or indexed.</p><a className="button" href="/auth/login">Sign in with Google</a><a className="button button-secondary" href="/auth/logout">Sign out</a></section>

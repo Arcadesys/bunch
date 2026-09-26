@@ -490,6 +490,25 @@ export const alterAppearanceReference = pgTable("alter_appearance_reference", {
   foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "alter_appearance_reference_owner_alter_fk" }).onDelete("cascade"),
   foreignKey({ columns: [table.ownerId, table.imageId], foreignColumns: [privateImage.ownerId, privateImage.id], name: "alter_appearance_reference_owner_image_fk" }).onDelete("cascade"),
 ]);
+export const alterStickerPack = pgTable("alter_sticker_pack", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  alterId: uuid("alter_id").notNull(),
+  communicationProfile: text("communication_profile"),
+  status: text("status").notNull().default("DRAFT"),
+  slots: jsonb("slots").notNull(),
+  telegramUrl: text("telegram_url"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("alter_sticker_pack_owner_alter_key").on(table.ownerId, table.alterId),
+  foreignKey({ columns: [table.ownerId, table.alterId], foreignColumns: [alterProfile.ownerId, alterProfile.id], name: "alter_sticker_pack_owner_alter_fk" }).onDelete("cascade"),
+  check("alter_sticker_pack_status_check", sql`${table.status} in ('DRAFT','APPROVED','PUBLISHED')`),
+  check("alter_sticker_pack_version_check", sql`${table.version} > 0`),
+  index("alter_sticker_pack_owner_updated_idx").on(table.ownerId, table.updatedAt),
+]);
+
 export const pilotUpload=pgTable("pilot_upload",{
   storageKey:text("storage_key").primaryKey(),ownerId:text("owner_id").notNull().references(()=>pilotAccount.ownerId),bytes:bigint("bytes",{mode:"number"}).notNull(),state:text("state").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[index("pilot_upload_owner").on(t.ownerId)]);
