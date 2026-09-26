@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { GeneratedGalleryPage, GeneratedPhoto } from "@/domain/generated-gallery";
 import { DeleteImageButton } from "../delete-image-button";
+import { PhotoAlbum, type AlbumPhoto } from "../photo-album";
 
 async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
   const response = await fetch(`/api/v1/generated-images${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store" });
@@ -12,22 +12,35 @@ async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
   return response.json();
 }
 
-function PhotoCard({ photo, onDeleted }: { photo: GeneratedPhoto; onDeleted: () => void }) {
-  const [failed, setFailed] = useState(false);
-  const caption = photo.description.length > 120 ? `${photo.description.slice(0, 117)}…` : photo.description;
-  return <li className="generated-photo-card">
-    <a className="generated-photo-preview" href={photo.imageUrl} aria-label={`Open full image: ${caption}`}>
-      {failed ? <span>Preview unavailable. Open the full image to try again.</span> : <Image src={photo.imageUrl} alt={caption} width={photo.width ?? 1024} height={photo.height ?? 1024} unoptimized onError={() => setFailed(true)} />}
-    </a>
-    <div className="generated-photo-caption">
-      <p className="eyebrow">{photo.kind === "group" ? "Group photo" : "Generated image"}</p>
-      <h2>{caption}</h2>
-      {caption !== photo.description && <details><summary>Read full prompt</summary><p>{photo.description}</p></details>}
-      <p><time dateTime={photo.createdAt}>{new Date(photo.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></p>
-      <div className="actions"><a className="button button-secondary" href={photo.imageUrl}>View full image</a><a className="button button-secondary" href={photo.sourceUrl}>Reopen scene</a><a className="button button-secondary" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a><a className="button button-secondary" href={`/images?repairKind=${photo.kind === "scene" ? "native" : "group"}&repairId=${photo.id}`}>Repair this image</a></div>
-      <DeleteImageButton url={`/api/v1/account/generated-images/${encodeURIComponent(photo.id)}?kind=${photo.kind}`} label={`${photo.kind === "group" ? "group photo" : "generated image"}: ${caption}`} onDeleted={onDeleted} />
-    </div>
-  </li>;
+/** A tile needs a glanceable name, not the whole prompt: cut at the first clause. */
+function shortTitle(photo: GeneratedPhoto) {
+  if (photo.kind === "group") return "Group photo";
+  const firstClause = photo.description.split(/[,.;\n]/, 1)[0].trim() || photo.description;
+  if (firstClause.length <= 60) return firstClause;
+  const cut = firstClause.slice(0, 58);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 30 ? cut.lastIndexOf(" ") : 58).trimEnd()}…`;
+}
+
+function toAlbumPhoto(photo: GeneratedPhoto, onDeleted: () => void): AlbumPhoto {
+  const title = shortTitle(photo);
+  const kind = photo.kind === "group" ? "Group photo" : "Made in Images";
+  const date = new Date(photo.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" });
+  return {
+    key: `${photo.kind}-${photo.id}`,
+    src: photo.imageUrl,
+    alt: photo.description,
+    title,
+    meta: photo.kind === "group" ? date : `${kind} · ${date}`,
+    details: photo.kind === "scene" && photo.description !== title ? photo.description : undefined,
+    width: photo.width ?? undefined,
+    height: photo.height ?? undefined,
+    actions: <>
+      <a className="button" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a>
+      <a className="button button-secondary" href={photo.sourceUrl}>{photo.kind === "group" ? "Reopen group photo" : "Reopen scene"}</a>
+      <a className="button button-secondary" href={`/images?repairKind=${photo.kind === "scene" ? "native" : "group"}&repairId=${photo.id}`}>Repair this image</a>
+      <DeleteImageButton url={`/api/v1/account/generated-images/${encodeURIComponent(photo.id)}?kind=${photo.kind}`} label={`${photo.kind === "group" ? "group photo" : "generated image"}: ${title}`} onDeleted={onDeleted} />
+    </>,
+  };
 }
 
 export function GeneratedGallery() {
@@ -55,11 +68,16 @@ export function GeneratedGallery() {
     finally { setBusy(false); }
   }
 
+  const album = photos.map(photo => toAlbumPhoto(photo, () => {
+    setPhotos(current => current.filter(existing => !(existing.kind === photo.kind && existing.id === photo.id)));
+    setNotice("The image was permanently deleted.");
+  }));
+
   return <section aria-label="Saved photos" aria-busy={busy}>
-    <p role="status">{busy ? "Loading photos…" : loaded ? `${notice ? `${notice} ` : ""}${photos.length} saved photo${photos.length === 1 ? "" : "s"} shown${nextCursor ? " · more available" : ""}.` : ""}</p>
+    <p role="status" className="album-status">{busy ? "Loading photos…" : loaded ? `${notice ? `${notice} ` : ""}${photos.length} photo${photos.length === 1 ? "" : "s"}${nextCursor ? " so far" : ""}.` : ""}</p>
     {error && <div className="notice" role="alert"><p>{error}</p>{error.startsWith("Sign in") && <a className="button" href="/auth/login?returnTo=%2Fgallery%2Fgenerated">Sign in</a>}</div>}
-    {loaded && photos.length === 0 && <div className="panel"><h2>No generated photos yet</h2><p>Images you create in Images or Group Photo will appear here when they finish.</p></div>}
-    <ul className="generated-photo-grid">{photos.map(photo => <PhotoCard key={`${photo.kind}-${photo.id}`} photo={photo} onDeleted={() => { setPhotos(current => current.filter(existing => !(existing.kind === photo.kind && existing.id === photo.id))); setNotice("The image was permanently deleted."); }} />)}</ul>
-    {(nextCursor || error) && <button className="button" disabled={busy} onClick={() => void loadMore()}>{busy ? "Loading…" : error ? "Try again" : "Load older photos"}</button>}
+    {loaded && photos.length === 0 && <div className="panel"><h2>No photos yet</h2><p>Images you make in Images or Group Photo land here when they finish.</p><a className="button" href="/images">Make an image</a></div>}
+    {photos.length > 0 && <PhotoAlbum photos={album} label="Your photos, newest first" />}
+    {(nextCursor || error) && <button className="button album-more" disabled={busy} onClick={() => void loadMore()}>{busy ? "Loading…" : error ? "Try again" : "Show older photos"}</button>}
   </section>;
 }
