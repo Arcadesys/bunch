@@ -1,0 +1,13 @@
+interface:
+  display_name: "Bunch Sticker Pack"
+  short_description: "Personalized ten-reaction sticker packs from Bunch people"
+  default_prompt: "Use $bunch-sticker-pack to build a personalized ten-reaction sticker pack for an explicitly selected Bunch person. Interview for communication style, save the approved board, block poses cheaply in ChatGPT, repair one sticker at a time, and use Bunch's private appearance references only for the final character pass."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "system-companion"
+      description: "Authenticated Bunch MCP server for sticker boards and private appearance-reference handoff"
+      transport: "streamable_http"
+      url: "https://system.thearcades.me/mcp"
+policy:
+  allow_implicit_invocation: true
