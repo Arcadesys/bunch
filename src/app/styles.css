@@ -1834,9 +1834,6 @@ body:has(.switch-dock) { padding-bottom: 0; }
 .tool-header { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: start; padding: .75rem 0 1.2rem; }
 .tool-header h1 { margin-bottom: .2rem; }
 .tool-header p { margin: 0; color: var(--muted); }
-.tool-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; padding-bottom: .75rem; border-bottom: 1px solid var(--border); }
-.tool-tabs a { display: inline-flex; align-items: center; min-height: 48px; padding: .4rem .7rem; border: 2px solid transparent; border-radius: 9px; font-weight: 750; text-decoration: none; }
-.tool-tabs a:hover, .tool-tabs a[aria-current="page"] { border-color: var(--accent); background: var(--subdued); }
 
 .appearance-studio { margin: 1rem 0 1.5rem; padding: 1.1rem; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .appearance-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 1rem; }

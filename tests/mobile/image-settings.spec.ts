@@ -7,6 +7,7 @@ test("operator can set zero or restore the pilot default", async ({ page }) => {
     return r.fulfill({ json: { data: [{ id: "synthetic-pilot", name: "Test pilot", role: "FRIEND", state: "ACTIVE", override: null }] } });
   });
   await page.goto("/account");
+  await page.getByRole("button", { name: "Image allowance" }).click();
   const limit = page.getByRole("spinbutton", { name: /Test pilot/ });
   await limit.fill("0");
   await page.getByRole("button", { name: "Save allowance for Test pilot" }).click();

@@ -123,6 +123,7 @@ test("account share controls create links and revoke with an idempotency key", a
   await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
   await page.getByRole("link", { name: "Account & privacy", exact: false }).press("Enter");
   await expect(page).toHaveURL(/\/account$/);
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByRole("heading", { name: "Share a read-only photo gallery" })).toBeVisible();
   await page.getByLabel("Link lifetime").selectOption("1w");
   await page.getByRole("button", { name: "Create gallery link" }).click();
@@ -148,8 +149,10 @@ test("existing owner can create and keyboard-copy a link without accepting an in
     return route.fulfill({ json: { data: writes.length ? [{ id: "fixture", expiresAt: null }] : [] } });
   });
   await page.goto("/account");
+  await page.getByRole("button", { name: "Your private system account" }).click();
   await expect(page.getByText("Account status: Existing system account")).toBeVisible();
   await expect(page.getByLabel("Invitation code")).toHaveCount(0);
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByText(/whole system’s profile names and all gallery photos/)).toBeVisible();
   await page.getByRole("button", { name: "Create gallery link", exact: true }).press("Enter");
   const copy = page.getByRole("button", { name: "Copy link", exact: true });
@@ -218,6 +221,7 @@ test("owner enables fronting on an existing stable link and visitors see refresh
   await page.getByText("More places", { exact: true }).click();
   await page.getByRole("navigation", { name: "More places" }).getByRole("link", { name: "Options", exact: true }).click();
   await page.getByRole("link", { name: "Account & privacy", exact: false }).click();
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Share current fronting on this link" }).press("Enter");
   await expect(page.getByText("Current fronting: Shared", { exact: true })).toBeVisible();
@@ -237,6 +241,7 @@ test("owner enables fronting on an existing stable link and visitors see refresh
   await page.getByRole("button", { name: "Refresh shared gallery" }).click();
   await expect(current).toContainText("This does not mean nobody is fronting.");
   await page.goto("/account");
+  await page.getByRole("button", { name: "Gallery sharing" }).click();
   await page.getByRole("button", { name: "Stop sharing current fronting" }).click();
   await expect(page.getByText("Current fronting: Not shared", { exact: true })).toBeVisible();
   await page.goto("/gallery/share/stable");

@@ -85,6 +85,9 @@ test("a prompt-only mock render queues, completes, decodes, and reloads", async 
     page.getByText("No private images generated here yet."),
   ).toBeVisible();
   await page
+    .getByRole("button", { name: "+ New image" })
+    .click();
+  await page
     .getByRole("textbox", { name: "Describe the image" })
     .fill("A quiet synthetic studio scene");
   await page.getByRole("button", { name: "Generate private image" }).click();
@@ -231,7 +234,7 @@ test("repair preserves the original, shows allowance, and reopens both images", 
   });
   await page.route("**/api/v1/native-scenes/renders/*/image", route => route.fulfill({ contentType: "image/png", body: imageFixture }));
   await page.goto("/images");
-  await expect(page.getByRole("heading", { name: "Images", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create images", exact: true })).toBeVisible();
   await expect(page.getByText("9 of 10 image uses remaining")).toBeVisible();
   await page.getByRole("button", { name: "Repair this image", exact: true }).click();
   const correction = page.getByRole("textbox", { name: "Describe the correction" });

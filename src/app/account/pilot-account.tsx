@@ -15,7 +15,9 @@ type Account = {
   usedBytes: number;
   quotaBytes: number;
 };
-export function PilotAccount({ join = false }: { join?: boolean }) {
+type AccountSectionId = "account" | "privacy" | "retention" | "laptop" | "gallery" | "invitations" | "images" | "delete";
+
+export function PilotAccount({ join = false, selectedSection }: { join?: boolean; selectedSection?: AccountSectionId | null }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [message, setMessage] = useState("");
   const [token, setToken] = useState("");
@@ -168,6 +170,211 @@ export function PilotAccount({ join = false }: { join?: boolean }) {
       setBusy(false);
     }
   }
+  // When used in the new ListDetail structure, render only the selected section
+  if (selectedSection !== undefined) {
+    return (
+      <article className="detail-card">
+        {selectedSection === "account" && (
+          <>
+            <h2>Your private system account</h2>
+            <p>
+              One login holds your system’s alters, notes, tasks, images, and recorded
+              hosting/fronting periods.
+            </p>
+            {message && (
+              <p role="status" className="pilot-notice">
+                {message}
+              </p>
+            )}
+            {!loaded ? (
+              <p>Loading account…</p>
+            ) : !account ? (
+              <p>
+                <a href="/auth/login?returnTo=%2Fjoin">Sign in with Google</a>. Keep
+                your invitation code to paste after signing in.
+              </p>
+            ) : (
+              <>
+                <p>
+                  <strong>
+                    Account status: {account.state === "LEGACY" ? "Existing system account" : account.state.replaceAll("_", " ")}
+                  </strong>
+                </p>
+                {account.state === "NOT_ENROLLED" ? (
+                  <form onSubmit={accept}>
+                    <label>
+                      Invitation code
+                      <input
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        required
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <label>
+                      System display name
+                      <input
+                        name="displayName"
+                        required
+                        maxLength={120}
+                        autoComplete="off"
+                      />
+                    </label>
+                    {!account.emailVerified && (
+                      <p>Verify your Google account email before accepting.</p>
+                    )}
+                    <label className="pilot-check">
+                      <input type="checkbox" name="privacy" required />I understand
+                      the privacy and recovery information above.
+                    </label>
+                    <button disabled={busy || !account.emailVerified}>
+                      Accept invitation
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <h3>{account.displayName || "Account"}</h3>
+                    {account.state === "ACTIVE" && (
+                      <>
+                        <p>
+                          Image storage: {(account.usedBytes / 1048576).toFixed(1)} MB
+                          {account.role === "FRIEND"
+                            ? ` of ${(account.quotaBytes / 1048576).toFixed(0)} MB`
+                            : ""}
+                          .
+                        </p>
+                        <p>
+                          <a href="/profiles">Add or manage alter profiles</a>
+                        </p>
+                      </>
+                    )}
+                    {account.state === "LEGACY" && <p>Your existing system and records are available. No pilot invitation or re-enrollment is needed. <a href="/profiles">Manage your profiles</a>.</p>}
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {selectedSection === "privacy" && (
+          <>
+            <h2>Who can access your data?</h2>
+            <p>
+              Other systems cannot access your records. The hosting operator can
+              technically access stored data for administration. This is not
+              end-to-end encryption.
+            </p>
+            <p>
+              Your connected ChatGPT or Codex account receives the records you
+              request. Bunch does not automatically receive your conversation
+              history. Generated catch-up summaries are saved privately for 30 days,
+              with their dates and coverage gaps. Raw transcripts are not saved.
+            </p>
+          </>
+        )}
+        {selectedSection === "retention" && (
+          <>
+            <h2>How catch-up and deletion work</h2>
+            <p>
+              Deletion removes live records and images. The pilot requires
+              encrypted recovery copies that expire within seven days. A minimal
+              deletion record remains to prevent accidental reactivation.
+            </p>
+          </>
+        )}
+        {selectedSection === "laptop" && (
+          <>
+            <h2>Laptop reference credentials</h2>
+            <p>
+              Create a credential for one laptop and an explicit set of profiles. The plaintext credential is shown once. Revocation takes effect on the next request.
+            </p>
+            <a href="/account/reference-credentials" className="button">Manage laptop reference credentials</a>
+          </>
+        )}
+        {selectedSection === "gallery" && account && account.canShareGallery && (
+          <>
+            <h2>Gallery sharing</h2>
+            <GalleryShareControls />
+          </>
+        )}
+        {selectedSection === "invitations" && account && account.canManageTenantInvitations && (
+          <>
+            <h2>System invitations</h2>
+            <TenantInvitationControls />
+          </>
+        )}
+        {selectedSection === "images" && (
+          <>
+            <h2>Image allowance</h2>
+            {account?.role === "OPERATOR" && account.state === "ACTIVE" && <ImageAllowanceSettings />}
+          </>
+        )}
+        {selectedSection === "delete" && (
+          <>
+            <h2>Delete this system’s account</h2>
+            <p>
+              This permanently removes this system’s live records and
+              images. Export first if you want a copy. Access stops as
+              soon as deletion starts.
+            </p>
+            {account && ["ACTIVE", "REVOKED"].includes(account.state) && (
+              <>
+                <button onClick={() => void exportRecords()} disabled={busy} className="button">
+                  Export records and image list
+                </button>
+              </>
+            )}
+            {images.length > 0 && (
+              <ul>
+                {images.map((image, index) => (
+                  <li key={image.id}>
+                    <a href={image.downloadUrl}>
+                      Download original image {index + 1}
+                    </a>
+                    {(account?.state === "ACTIVE" || account?.state === "REVOKED") && (
+                      <details>
+                        <summary>Delete image {index + 1}</summary>
+                        <p>
+                          This permanently deletes this image, including its
+                          profile-picture selection.
+                        </p>
+                        <button
+                          disabled={busy}
+                          onClick={() => void removeImage(image.id)}
+                        >
+                          Confirm permanent image deletion
+                        </button>
+                      </details>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {account && account.role === "FRIEND" && account.state !== "DELETED" && (
+              <form onSubmit={erase}>
+                <label>
+                  Type DELETE MY SYSTEM
+                  <input
+                    name="confirmation"
+                    required
+                    pattern="DELETE MY SYSTEM"
+                    autoComplete="off"
+                  />
+                </label>
+                <button disabled={busy}>
+                  {account.state === "DELETING"
+                    ? "Retry deletion"
+                    : "Permanently delete my system"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </article>
+    );
+  }
+
+  // Legacy mode: render full page with all sections
   return (
     <main className="pilot-page">
       <nav aria-label="Account navigation">

@@ -2,6 +2,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AppNavigation } from "../app-navigation";
+import { ListDetail, useListSelection, initials as getInitials } from "../list-detail";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import styles from "./board.module.css";
 type Status = TodoView["status"];
@@ -11,6 +12,15 @@ const cols: [string, Status[], Status][] = [
   ["Blocked", ["BLOCKED"], "BLOCKED"],
   ["Done", ["DONE"], "DONE"],
 ];
+const statusOrder: Status[] = ["BLOCKED", "IN_PROGRESS", "INBOX", "OPEN", "DONE", "CANCELLED"];
+const statusLabels: Record<Status, string> = {
+  BLOCKED: "Blocked",
+  IN_PROGRESS: "Doing",
+  INBOX: "To-do (inbox)",
+  OPEN: "To-do",
+  DONE: "Done",
+  CANCELLED: "Cancelled",
+};
 async function list<T>(path: string) {
   const all: T[] = [];
   let cursor: string | undefined;
@@ -29,6 +39,14 @@ async function list<T>(path: string) {
   } while (cursor);
   return all;
 }
+function getInitialView() {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") === "board" ? "board" : "list";
+  }
+  return "list";
+}
+
 export function Board() {
   const [todos, setTodos] = useState<TodoView[]>([]),
     [notes, setNotes] = useState<NoteView[]>([]),
@@ -40,7 +58,8 @@ export function Board() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [deleting, setDeleting] = useState<string>(),
-    [drafts, setDrafts] = useState<Record<string, string>>({});
+    [drafts, setDrafts] = useState<Record<string, string>>({}),
+    [view] = useState<"list" | "board">(getInitialView());
   const title = useRef<HTMLInputElement>(null),
     receipts = useRef(new Map<string, string>()),
     focusAfterMove = useRef<string | undefined>(undefined),
@@ -198,8 +217,41 @@ export function Board() {
   useEffect(() => {
     if (notice && notice !== "Loading Board…" && notice !== "Board loaded.") feedback.current?.scrollIntoView({ block: "nearest" });
   }, [notice]);
-  return (
-    <main className={styles.shell}>
+
+  // List view hooks (called unconditionally for proper hook ordering)
+  const todoIds = todos.map((t) => t.id);
+  const [selectedId, select] = useListSelection(todoIds);
+  const current = todos.find((t) => t.id === selectedId);
+
+  const openCount = todos.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length;
+
+  const listRows = statusOrder.flatMap((status) => {
+    const todosForStatus = todos.filter((t) => t.status === status);
+    if (todosForStatus.length === 0) return [];
+    return todosForStatus.map((t) => {
+      const priorityLabel = t.priority === "HIGH" ? "High" : t.priority === "LOW" ? "Low" : "Normal";
+      const meta = [priorityLabel, t.dueOn].filter(Boolean).join(" · ");
+      const badge =
+        status === "BLOCKED"
+          ? { label: "Blocked", tone: "danger" as const }
+          : status === "IN_PROGRESS"
+          ? { label: "Doing", tone: "also" as const }
+          : undefined;
+      return {
+        id: t.id,
+        title: t.title,
+        meta,
+        snippet: t.details,
+        badge,
+        muted: ["DONE", "CANCELLED"].includes(status),
+        group: statusLabels[status],
+      };
+    });
+  });
+
+  if (view === "board") {
+    return (
+      <main className={styles.shell}>
       <AppNavigation current="BOARD" />
       <section className={styles.main}>
         <header className={styles.hero}>
@@ -382,6 +434,151 @@ export function Board() {
           </>
         )}
       </section>
+    </main>
+    );
+  }
+
+  // List view
+  return (
+    <main className="app-page">
+      <AppNavigation current="BOARD" />
+      <ListDetail
+        title="Todos"
+        count={openCount ? `${openCount} open` : undefined}
+        rows={listRows}
+        selectedId={selectedId}
+        onSelect={select}
+        listStatus={
+          loadState === "loading" ? (
+            <div className="ld-intro"><p role="status">Loading todos…</p></div>
+          ) : loadState === "unauthorized" ? (
+            <div className="ld-intro"><p role="status"><a href="/auth/login">Sign in to view your saved Board</a></p></div>
+          ) : loadState === "error" ? (
+            <div className="ld-intro"><p role="status">{error}</p><button className="button button-secondary" onClick={() => void load()}>Retry Board</button></div>
+          ) : null
+        }
+        listTools={
+          <a href="/board?view=board" className="button button-secondary" style={{ display: "inline-block", marginTop: "0.5rem" }}>
+            Board view
+          </a>
+        }
+      >
+        {current && loadState === "ready" ? (
+          <article className="detail-card">
+            <h2>{current.title}</h2>
+            <div role="group" aria-label="Status">
+              {(["BLOCKED", "IN_PROGRESS", "INBOX", "OPEN", "DONE", "CANCELLED"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={current.status === s}
+                  onClick={() => void change(current, { status: s === "INBOX" ? "OPEN" : s }, `Status changed to ${statusLabels[s]}.`)}
+                  disabled={busy}
+                >
+                  {statusLabels[s]}
+                </button>
+              ))}
+            </div>
+            <dl className="detail-facts">
+              <div><dt>Priority</dt><dd>{current.priority === "HIGH" ? "High" : current.priority === "LOW" ? "Low" : "Normal"}</dd></div>
+              <div><dt>Due date</dt><dd>{current.dueOn || "No due date"}</dd></div>
+              <div><dt>Owners</dt><dd>{names(current)}</dd></div>
+            </dl>
+            {current.details && <p>{current.details}</p>}
+            <div>
+              <strong>Checklist · {current.checklist.filter((x) => x.completed).length}/{current.checklist.length}</strong>
+            </div>
+            {current.noteIds.length > 0 && (
+              <div>
+                <strong>Linked notes</strong>
+                <div>
+                  {notes
+                    .filter((n) => current.noteIds.includes(n.id))
+                    .map((n) => (
+                      <div key={n.id} style={{ marginTop: "0.5rem" }}>
+                        <a href="/notes">{n.body} →</a>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+              <button
+                disabled={busy}
+                onClick={() => void change(current, { status: current.status === "DONE" ? "OPEN" : "DONE" }, `Task ${current.status === "DONE" ? "reopened" : "completed"}.`)}
+              >
+                {current.status === "DONE" ? "Reopen todo" : "Complete todo"}
+              </button>
+              <button disabled={busy}>
+                Edit task
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  if (deleting === current.id) {
+                    void change(
+                      current,
+                      {},
+                      "Task permanently deleted.",
+                      `/api/v1/todos/${current.id}`,
+                      "DELETE",
+                    );
+                  } else setDeleting(current.id);
+                }}
+              >
+                {deleting === current.id ? "Confirm deletion" : "Delete task"}
+              </button>
+            </div>
+            {deleting === current.id && (
+              <p style={{ fontWeight: "900", borderLeft: "0.35rem solid var(--line)", paddingLeft: "0.6rem" }}>
+                This permanently deletes this task and unlinks its notes.
+              </p>
+            )}
+          </article>
+        ) : null}
+      </ListDetail>
+      {loadState === "ready" && (
+        <div style={{ padding: "1rem", borderTop: "1px solid var(--line)", maxWidth: "52rem" }}>
+          <h2>Add a todo</h2>
+          <form onSubmit={create} style={{ display: "grid", gap: "0.8rem" }}>
+            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
+              Title
+              <input ref={title} name="title" required maxLength={500} style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
+              Details <span style={{ fontWeight: "400" }}>optional</span>
+              <textarea name="details" rows={3} style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
+              Priority
+              <select name="priority" defaultValue="NORMAL" style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }}>
+                <option value="LOW">Low</option>
+                <option value="NORMAL">Normal</option>
+                <option value="HIGH">High</option>
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem", fontWeight: "800" }}>
+              Due date <span style={{ fontWeight: "400" }}>optional</span>
+              <input name="dueOn" type="date" style={{ minHeight: "2.75rem", padding: "0.4rem 0.6rem" }} />
+            </label>
+            <fieldset style={{ display: "grid", gap: "0.35rem", fontWeight: "800", border: "none", padding: 0, margin: 0 }}>
+              <legend style={{ padding: 0, margin: 0 }}>Assign to</legend>
+              {profiles.map((p) => (
+                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                  <input name="owners" type="checkbox" value={p.id} style={{ width: "1.35rem", height: "1.35rem" }} />
+                  {p.name}
+                </label>
+              ))}
+            </fieldset>
+            <button className="command-button" disabled={busy} style={{ minHeight: "2.75rem" }}>
+              Save todo
+            </button>
+            <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+              <p ref={feedback} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 }

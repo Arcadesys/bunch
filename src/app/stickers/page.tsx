@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { AppNavigation } from "@/app/app-navigation";
-import { PeopleToolsNav } from "@/app/people-tools-nav";
+import { ListDetail, useListSelection, initials, type ListRow } from "@/app/list-detail";
 import { defaultStickerPack, stickerPackCsv, type StickerPackDraft } from "@/domain/sticker-pack";
 
 type Person = {
@@ -14,44 +14,44 @@ type Person = {
 const demoHeaders = { "x-system-demo": "local" };
 
 export default function StickerLabPage() {
-  const [people,setPeople] = useState<Person[]>([]);
-  const [selectedId,setSelectedId] = useState("");
-  const [pack,setPack] = useState<StickerPackDraft | null>(null);
-  const [notice,setNotice] = useState("Choose a person. Bunch will keep the ten reaction directions private with their profile.");
-  const [saving,setSaving] = useState(false);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [pack, setPack] = useState<StickerPackDraft | null>(null);
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void fetch("/api/v1/alters?limit=100",{headers:demoHeaders}).then(r=>r.json()).then(payload=>{
+    void fetch("/api/v1/alters?limit=100", { headers: demoHeaders }).then(r => r.json()).then(payload => {
       const list = Array.isArray(payload.data) ? payload.data as Person[] : [];
       setPeople(list);
-      if (list.length) setSelectedId(list[0].id);
-    }).catch(()=>setNotice("Could not load private people."));
-  },[]);
+    }).catch(() => setNotice("Could not load private people."));
+  }, []);
+
+  const ids_list = useMemo(() => people.map(p => p.id), [people]);
+  const [selectedId, select] = useListSelection(ids_list, { autoSelectFirst: true });
 
   useEffect(() => {
     if (!selectedId) return;
-    void fetch(`/api/v1/preferences/stickers/${encodeURIComponent(selectedId)}`,{headers:demoHeaders,cache:"no-store"}).then(async r=>{
+    void fetch(`/api/v1/preferences/stickers/${encodeURIComponent(selectedId)}`, { headers: demoHeaders, cache: "no-store" }).then(async r => {
       const payload = await r.json();
       if (!r.ok) throw new Error(payload?.error?.message || "Could not load sticker directions.");
       setPack(payload.data as StickerPackDraft);
-      setNotice("Shape how this person actually says each thing. These are performances, not fixed emoji poses.");
-    }).catch(()=>setPack(defaultStickerPack(selectedId)));
-  },[selectedId]);
+    }).catch(() => setPack(defaultStickerPack(selectedId)));
+  }, [selectedId]);
 
-  const person = people.find(p=>p.id===selectedId);
-  const completed = useMemo(()=>pack ? pack.stickers.filter(s=>s.performance.trim()).length : 0,[pack]);
+  const person = people.find(p => p.id === selectedId);
+  const completed = useMemo(() => pack ? pack.stickers.filter(s => s.performance.trim()).length : 0, [pack]);
 
-  function updateSticker(index:number, field:string, value:string) {
+  function updateSticker(index: number, field: string, value: string) {
     if (!pack) return;
-    setPack({...pack,stickers:pack.stickers.map((s,i)=>i===index ? {...s,[field]:value} : s)});
+    setPack({ ...pack, stickers: pack.stickers.map((s, i) => i === index ? { ...s, [field]: value } : s) });
   }
 
   async function save() {
     if (!pack) return;
     setSaving(true);
     try {
-      const response = await fetch(`/api/v1/preferences/stickers/${encodeURIComponent(pack.alterId)}`,{
-        method:"PUT", headers:{...demoHeaders,"Content-Type":"application/json"}, body:JSON.stringify(pack)
+      const response = await fetch(`/api/v1/preferences/stickers/${encodeURIComponent(pack.alterId)}`, {
+        method: "PUT", headers: { ...demoHeaders, "Content-Type": "application/json" }, body: JSON.stringify(pack)
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || "Could not save sticker directions.");
@@ -73,46 +73,70 @@ export default function StickerLabPage() {
     setNotice("Copied a ChatGPT handoff prompt with the full reaction board.");
   }
 
-  return <main className="shell sticker-lab">
-    <AppNavigation current="IMAGES" />
-    <PeopleToolsNav current="stickers" />
-    <header className="site-header"><div><p className="eyebrow">Bunch · reaction studio</p><h1>Sticker Lab</h1><p>Direct ten tiny performances for one person, then hand them to ChatGPT for blocking and character rendering.</p></div></header>
-    <p className="notice" role="status">{notice}</p>
+  // Build list rows
+  const rows: ListRow[] = useMemo(() => {
+    return people.map(p => ({
+      id: p.id,
+      avatar: { src: p.profilePicture?.id ? `/api/v1/images/${encodeURIComponent(p.profilePicture.id)}` : null, initials: initials(p.name) },
+      title: p.name,
+      meta: `${p.id === "benny" ? 4 : p.id === "dot" ? 2 : 0}/10 directed`,
+    }));
+  }, [people]);
 
-    <section className="panel sticker-person">
-      <label>Person<select value={selectedId} onChange={e=>{ setPack(null); setSelectedId(e.target.value); }}>{people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      {person && <div className="sticker-person-summary">
-        {person.profilePicture?.id && <Image src={`/api/v1/images/${encodeURIComponent(person.profilePicture.id)}`} alt={`${person.name} profile picture`} width={180} height={180} unoptimized />}
-        <div><h2>{person.name}</h2><p>{person.description || "No description recorded."}</p><p>{person.appearanceReferenceImageIds?.length ? `${person.appearanceReferenceImageIds.length} selected appearance reference(s) ready.` : "No selected appearance reference yet."}</p></div>
-      </div>}
-    </section>
-
-    {pack && <>
-      <section className="panel">
-        <div className="sticker-progress"><strong>{completed}/10 performances directed</strong><span>Appearance comes later. Get the acting right first.</span></div>
-        <label>Personality / communication summary<textarea rows={4} value={pack.personalitySummary} onChange={e=>setPack({...pack,personalitySummary:e.target.value})} placeholder="Deadpan, affectionate, signs thank-you, hates exaggerated apology poses..." /></label>
-        <label>Pack-wide notes<textarea rows={3} value={pack.notes} onChange={e=>setPack({...pack,notes:e.target.value})} placeholder="No captions except congrats. Keep hands readable. Tail carries a lot of emotion." /></label>
-      </section>
-
-      <section className="sticker-board" aria-label="Ten reaction directions">
-        {pack.stickers.map((s,index)=><article className="sticker-card" key={s.id}>
-          <header><span className="sticker-emoji" aria-hidden="true">{s.emoji}</span><div><h2>{s.intent}</h2><small>{s.id}</small></div></header>
-          <label>Performance<textarea rows={3} value={s.performance} onChange={e=>updateSticker(index,"performance",e.target.value)} placeholder="What does this person actually do?" /></label>
-          <div className="sticker-fields">
-            <label>Expression<input value={s.expression} onChange={e=>updateSticker(index,"expression",e.target.value)} /></label>
-            <label>Gesture<input value={s.gesture} onChange={e=>updateSticker(index,"gesture",e.target.value)} /></label>
-            <label>Framing<select value={s.framing} onChange={e=>updateSticker(index,"framing",e.target.value)}><option>face</option><option>chest-up</option><option>waist-up</option><option>full-body</option></select></label>
-            <label>Intensity<select value={s.intensity} onChange={e=>updateSticker(index,"intensity",e.target.value)}><option>low</option><option>medium</option><option>high</option></select></label>
+  return <main className="app-page">
+    <AppNavigation current="STICKERS" />
+    <ListDetail
+      title="Sticker lab"
+      count="Ten reactions each"
+      intro="Direct ten tiny performances for one person, then hand them to ChatGPT."
+      rows={rows}
+      selectedId={selectedId}
+      onSelect={select}
+      listStatus={people.length === 0 ? <p role="status">No private people yet.</p> : null}
+    >
+      {person && pack ? (
+        <div className="detail-card">
+          <div className="sticker-person-detail">
+            {person.profilePicture?.id && <Image src={`/api/v1/images/${encodeURIComponent(person.profilePicture.id)}`} alt={`${person.name} profile picture`} width={180} height={180} unoptimized />}
+            <div>
+              <h2>{person.name}&apos;s reactions</h2>
+              <p>{person.appearanceReferenceImageIds?.length ? `${person.appearanceReferenceImageIds.length} selected appearance reference ready.` : "No selected appearance reference yet."}</p>
+            </div>
           </div>
-          <label>Optional sticker text<input value={s.text} onChange={e=>updateSticker(index,"text",e.target.value)} placeholder="Usually blank" /></label>
-        </article>)}
-      </section>
 
-      <div className="sticker-actions">
-        <button className="button" type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save in Bunch"}</button>
-        <button className="button button-secondary" type="button" onClick={copyCsv}>Copy CSV</button>
-        <button className="button button-secondary" type="button" onClick={copyPrompt}>Copy ChatGPT handoff</button>
-      </div>
-    </>}
+          <div className="sticker-progress">
+            <strong>{completed}/10 performances directed</strong>
+            <span>Appearance comes later. Get the acting right first.</span>
+          </div>
+
+          <label>
+            Personality / communication summary
+            <textarea rows={3} value={pack.personalitySummary} onChange={e => setPack({ ...pack, personalitySummary: e.target.value })} placeholder="Deadpan, affectionate, signs thank-you, hates exaggerated apology poses..." />
+          </label>
+
+          <section className="sticker-board" aria-label="Ten reaction directions">
+            {pack.stickers.map((s, index) => <article className="sticker-card" key={s.id}>
+              <header><span className="sticker-emoji" aria-hidden="true">{s.emoji}</span><div><h2>{s.intent}</h2><small>{s.id}</small></div></header>
+              <label>Performance<textarea rows={2} value={s.performance} onChange={e => updateSticker(index, "performance", e.target.value)} placeholder="What does this person actually do?" /></label>
+              <div className="sticker-fields">
+                <label>Expression<input value={s.expression} onChange={e => updateSticker(index, "expression", e.target.value)} /></label>
+                <label>Gesture<input value={s.gesture} onChange={e => updateSticker(index, "gesture", e.target.value)} /></label>
+                <label>Framing<select value={s.framing} onChange={e => updateSticker(index, "framing", e.target.value)}><option>face</option><option>chest-up</option><option>waist-up</option><option>full-body</option></select></label>
+                <label>Intensity<select value={s.intensity} onChange={e => updateSticker(index, "intensity", e.target.value)}><option>low</option><option>medium</option><option>high</option></select></label>
+              </div>
+              <label>Optional sticker text<input value={s.text} onChange={e => updateSticker(index, "text", e.target.value)} placeholder="Usually blank" /></label>
+            </article>)}
+          </section>
+
+          <div className="detail-actions">
+            <button className="button" type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save in Bunch"}</button>
+            <button className="button button-secondary" type="button" onClick={copyCsv}>Copy CSV</button>
+            <button className="button button-secondary" type="button" onClick={copyPrompt}>Copy ChatGPT handoff</button>
+          </div>
+
+          {notice && <p role="status">{notice}</p>}
+        </div>
+      ) : null}
+    </ListDetail>
   </main>;
 }

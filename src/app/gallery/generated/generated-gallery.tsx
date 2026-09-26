@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useMemo, useEffect, useState } from "react";
 import type { GeneratedGalleryPage, GeneratedPhoto } from "@/domain/generated-gallery";
+import { ListDetail, useListSelection, type ListRow } from "@/app/list-detail";
 import { DeleteImageButton } from "../delete-image-button";
-import { PhotoAlbum, type AlbumPhoto } from "../photo-album";
+import "../gallery.css";
 
 async function fetchPage(cursor?: string): Promise<GeneratedGalleryPage> {
   const response = await fetch(`/api/v1/generated-images${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store" });
@@ -21,28 +23,6 @@ function shortTitle(photo: GeneratedPhoto) {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 30 ? cut.lastIndexOf(" ") : 58).trimEnd()}…`;
 }
 
-function toAlbumPhoto(photo: GeneratedPhoto, onDeleted: () => void): AlbumPhoto {
-  const title = shortTitle(photo);
-  const kind = photo.kind === "group" ? "Group photo" : "Made in Images";
-  const date = new Date(photo.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" });
-  return {
-    key: `${photo.kind}-${photo.id}`,
-    src: photo.imageUrl,
-    alt: photo.description,
-    title,
-    meta: photo.kind === "group" ? date : `${kind} · ${date}`,
-    details: photo.kind === "scene" && photo.description !== title ? photo.description : undefined,
-    width: photo.width ?? undefined,
-    height: photo.height ?? undefined,
-    actions: <>
-      <a className="button" href={photo.imageUrl} download={`bunch-${photo.id}.jpg`}>Download</a>
-      <a className="button button-secondary" href={photo.sourceUrl}>{photo.kind === "group" ? "Reopen group photo" : "Reopen scene"}</a>
-      <a className="button button-secondary" href={`/images?repairKind=${photo.kind === "scene" ? "native" : "group"}&repairId=${photo.id}`}>Repair this image</a>
-      <DeleteImageButton url={`/api/v1/account/generated-images/${encodeURIComponent(photo.id)}?kind=${photo.kind}`} label={`${photo.kind === "group" ? "group photo" : "generated image"}: ${title}`} onDeleted={onDeleted} />
-    </>,
-  };
-}
-
 export function GeneratedGallery() {
   const [photos, setPhotos] = useState<GeneratedPhoto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -50,6 +30,7 @@ export function GeneratedGallery() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
     fetchPage().then(page => { if (active) { setPhotos(page.data); setNextCursor(page.meta.nextCursor); setLoaded(true); } })
@@ -68,16 +49,67 @@ export function GeneratedGallery() {
     finally { setBusy(false); }
   }
 
-  const album = photos.map(photo => toAlbumPhoto(photo, () => {
-    setPhotos(current => current.filter(existing => !(existing.kind === photo.kind && existing.id === photo.id)));
-    setNotice("The image was permanently deleted.");
-  }));
+  const rows: ListRow[] = useMemo(() => photos.map(photo => {
+    const title = shortTitle(photo);
+    const kind = photo.kind === "group" ? "Group photo" : "Made in Images";
+    const date = new Date(photo.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" });
+    return {
+      id: `${photo.kind}-${photo.id}`,
+      thumb: photo.imageUrl,
+      title,
+      meta: photo.kind === "group" ? date : `${kind} · ${date}`,
+    };
+  }), [photos]);
 
-  return <section aria-label="Saved photos" aria-busy={busy}>
-    <p role="status" className="album-status">{busy ? "Loading photos…" : loaded ? `${notice ? `${notice} ` : ""}${photos.length} photo${photos.length === 1 ? "" : "s"}${nextCursor ? " so far" : ""}.` : ""}</p>
-    {error && <div className="notice" role="alert"><p>{error}</p>{error.startsWith("Sign in") && <a className="button" href="/auth/login?returnTo=%2Fgallery%2Fgenerated">Sign in</a>}</div>}
-    {loaded && photos.length === 0 && <div className="panel"><h2>No photos yet</h2><p>Images you make in Images or Group Photo land here when they finish.</p><a className="button" href="/images">Make an image</a></div>}
-    {photos.length > 0 && <PhotoAlbum photos={album} label="Your photos, newest first" />}
-    {(nextCursor || error) && <button className="button album-more" disabled={busy} onClick={() => void loadMore()}>{busy ? "Loading…" : error ? "Try again" : "Show older photos"}</button>}
-  </section>;
+  const ids = useMemo(() => rows.map(row => row.id), [rows]);
+  const [selectedId, select] = useListSelection(ids);
+  const current = photos.find(p => `${p.kind}-${p.id}` === selectedId);
+
+  const listStatus = busy || !loaded
+    ? <div className="ld-intro" role="status">{busy ? "Loading photos…" : ""}</div>
+    : error
+    ? <div className="ld-intro" role="alert">
+        <p>{error}</p>
+        {error.startsWith("Sign in") && <a className="button" href="/auth/login?returnTo=%2Fgallery%2Fgenerated">Sign in</a>}
+      </div>
+    : loaded && photos.length === 0
+    ? <div className="ld-intro"><p>No photos yet. Images you make in Images or Group Photo land here when they finish.</p></div>
+    : null;
+
+  const listTools = nextCursor || error ? <div className="ld-tools">
+    <button className="button" disabled={busy} onClick={() => void loadMore()}>{busy ? "Loading…" : error ? "Try again" : "Load older photos"}</button>
+  </div> : null;
+
+  return <ListDetail
+    title="Gallery"
+    count={photos.length ? `${photos.length} photo${photos.length === 1 ? "" : "s"}${nextCursor ? " so far" : ""}` : undefined}
+    intro={<p>Images from Create images and Group photo, newest first.</p>}
+    rows={rows}
+    selectedId={selectedId}
+    onSelect={select}
+    listStatus={listStatus}
+    listTools={listTools}>
+    {current ? <article className="detail-card" id={`photo-${selectedId}`}>
+      <div className="gallery-detail-image">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={current.imageUrl} alt={current.description} />
+      </div>
+      <h2>{shortTitle(current)}</h2>
+      <span className="detail-eyebrow">{current.kind === "group" ? "Group photo" : "Made in Images"} · {new Date(current.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" })}</span>
+      <div className="detail-actions">
+        <a className="button" href={current.imageUrl} download={`bunch-${current.id}.jpg`}>Download</a>
+        <a className="button button-secondary" href={current.sourceUrl}>{current.kind === "group" ? "Reopen group photo" : "Reopen scene"}</a>
+        <a className="button button-secondary" href={`/images?repairKind=${current.kind === "scene" ? "native" : "group"}&repairId=${current.id}`}>Repair this image</a>
+        <DeleteImageButton url={`/api/v1/account/generated-images/${encodeURIComponent(current.id)}?kind=${current.kind}`} label={`${current.kind === "group" ? "group photo" : "generated image"}: ${shortTitle(current)}`} onDeleted={() => {
+          setPhotos(p => p.filter(ph => !(ph.kind === current.kind && ph.id === current.id)));
+          setNotice("The image was permanently deleted.");
+        }} />
+      </div>
+      {current.kind === "scene" && current.description !== shortTitle(current) && <div className="detail-callout">
+        <span className="detail-eyebrow">Full prompt</span>
+        <p>{current.description}</p>
+      </div>}
+      {notice && <p role="status">{notice}</p>}
+    </article> : null}
+  </ListDetail>;
 }

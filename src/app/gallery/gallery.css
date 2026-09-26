@@ -1,0 +1,72 @@
+.gallery-detail-image {
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+.gallery-detail-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 0.5rem;
+}
+
+.profile-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.profile-photo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-photo-image-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  aspect-ratio: 1;
+}
+
+.profile-photo-image-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-picture-label {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  background-color: rgba(255, 60, 172, 0.9);
+  color: #e8e8ec;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.profile-photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-photo-actions .button {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.ld-tools {
+  padding: 1rem 0 0 0;
+  margin-top: 1rem;
+  border-top: 1px solid rgba(182, 179, 198, 0.2);
+}
+
+.ld-tools .button {
+  width: 100%;
+}

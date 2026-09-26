@@ -4,7 +4,7 @@ test("board creates, moves, links, and keeps cancellation recoverable", async ({
   page,
   harness,
 }, info) => {
-  await page.goto("/board");
+  await page.goto("/board?view=board");
   await expect(page.getByRole("heading", { name: "To-do" })).toBeVisible();
   await page.getByLabel("Title", { exact: true }).fill("Kanban test task");
   await page.getByRole("button", { name: "Save todo", exact: true }).click();
@@ -33,7 +33,7 @@ test("board creates, moves, links, and keeps cancellation recoverable", async ({
 });
 
 test("board retries a lost create response once and focuses the moved card", async ({ page, harness }, info) => {
-  await page.goto("/board");
+  await page.goto("/board?view=board");
   harness.loseRecordResponse = true;
   await page.getByLabel("Title", { exact: true }).fill("Receipt retry task");
   await page.getByRole("button", { name: "Save todo", exact: true }).click();
@@ -57,7 +57,7 @@ test("board edits, checks off, removes, deletes, and retains a failed checklist 
   page,
   harness,
 }) => {
-  await page.goto("/board");
+  await page.goto("/board?view=board");
   const task = page.getByRole("article").filter({ hasText: "Fixture todo" });
   await task.getByRole("button", { name: "Edit task" }).click();
   await page.getByLabel("Task title").fill("Edited fixture todo");
@@ -96,7 +96,7 @@ test("board edits, checks off, removes, deletes, and retains a failed checklist 
 test("linked journal edits appear on Board and task deletion preserves the note", async ({ page, harness }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/board");
+  await page.goto("/board?view=board");
   const task = page.getByRole("article").filter({ hasText: "Fixture todo" });
   await task.getByText("Linked notes (0)", { exact: true }).click();
   await task.getByLabel("Fixture note", { exact: true }).check();
@@ -107,7 +107,7 @@ test("linked journal edits appear on Board and task deletion preserves the note"
   await page.getByLabel("Note", { exact: true }).fill("Updated independent journal");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Note updated.");
-  await page.goto("/board");
+  await page.goto("/board?view=board");
   await expect(task.locator("blockquote")).toHaveText("Updated independent journal");
   await task.getByRole("button", { name: "Delete task", exact: true }).click();
   await task.getByRole("button", { name: "Confirm deletion", exact: true }).click();
@@ -116,4 +116,25 @@ test("linked journal edits appear on Board and task deletion preserves the note"
   await expect(page.getByRole("article")).toContainText("Updated independent journal");
   expect(harness.saved.notes[0].taskIds).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("list view groups by status, shows detail, and changes status", async ({ page, harness }) => {
+  await page.goto("/board");
+  // Verify list groups by status (groups appear as text in the list)
+  await expect(page.locator(".ld-group")).toContainText("Blocked");
+  await expect(page.locator(".ld-group")).toContainText("Doing");
+  // Select a todo
+  const fixture = page.getByRole("button", { name: "Fixture todo" }).first();
+  await fixture.click();
+  // Verify detail shows
+  await expect(page.getByRole("heading", { name: "Fixture todo", level: 2 })).toBeVisible();
+  // Verify facts are shown
+  await expect(page.getByRole("term", { name: "Priority" })).toBeVisible();
+  await expect(page.getByRole("term", { name: "Due date" })).toBeVisible();
+  await expect(page.getByRole("term", { name: "Owners" })).toBeVisible();
+  // Change status via button
+  const blockedButton = page.getByRole("button", { name: "Blocked", exact: true });
+  await blockedButton.click();
+  // Verify status change request was sent
+  expect(harness.writes.some((write) => write.body.status === "BLOCKED")).toBeTruthy();
 });

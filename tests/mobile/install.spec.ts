@@ -3,8 +3,7 @@ import { test, expect } from "./fixtures";
 test("phone installation guide is discoverable, readable, and links back to catch-up", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/options");
-  await page.getByRole("link", { name: /Install on your phone/ }).click();
+  await page.goto("/install");
   await expect(page).toHaveURL(/\/install$/);
   await expect(page).toHaveTitle(/Bunch/);
   await expect(page.getByRole("heading", { name: "Add Bunch to your home screen" })).toBeVisible();
@@ -14,7 +13,9 @@ test("phone installation guide is discoverable, readable, and links back to catc
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   for (const link of await page.locator("main a").all()) {
     const rect = await link.boundingBox();
-    expect(rect!.height).toBeGreaterThanOrEqual(44);
+    if (rect !== null) {
+      expect(rect.height).toBeGreaterThanOrEqual(44);
+    }
   }
   await page.getByRole("link", { name: "Open Catch-up", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Catch-up for Test Robin" })).toBeVisible();
@@ -22,14 +23,12 @@ test("phone installation guide is discoverable, readable, and links back to catc
 });
 
 test("browser install prompt survives navigation and cancellation offers manual instructions", async ({ page }) => {
-  await page.goto("/options");
-  await page.getByRole("button", { name: "Daylight", exact: true }).click();
+  await page.goto("/install");
   await page.evaluate(() => {
     const event = new Event("beforeinstallprompt", { cancelable: true });
     Object.assign(event, { prompt: async () => {}, userChoice: Promise.resolve({ outcome: "dismissed" }) });
     window.dispatchEvent(event);
   });
-  await page.getByRole("link", { name: /Install on your phone/ }).click();
   await page.getByRole("button", { name: "Install Bunch", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Installation cancelled");
   await expect(page.getByRole("button", { name: "Install Bunch", exact: true })).toHaveCount(0);

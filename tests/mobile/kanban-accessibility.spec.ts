@@ -4,7 +4,7 @@ for (const route of ["board", "notes"]) {
   test(`${route} preserves readable layout and controls with enlarged text`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
-    await page.goto(`/${route}`);
+    await page.goto(route === "board" ? "/board?view=board" : `/${route}`);
     await expect(page.getByRole("button", { name: route === "board" ? "Save todo" : "Save note", exact: true })).toBeVisible();
     for (const theme of ["light", "dark"]) {
       await page.evaluate(value => { document.documentElement.dataset.theme = value; document.documentElement.style.fontSize = "40px"; }, theme);
