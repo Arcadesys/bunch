@@ -100,6 +100,8 @@ export class StickerPackService {
 
   async save(ownerId: string, alterId: string, raw: SaveStickerPackInput, source: RecordSource) {
     const input = saveStickerPackSchema.parse(raw);
+    if (input.status !== "DRAFT" && input.slots.some((slot) => !slot.performance.trim()))
+      throw new SystemError("VALIDATION_ERROR", "Every approved sticker needs a performance.");
     if (input.status === "PUBLISHED" && !input.telegramUrl)
       throw new SystemError("VALIDATION_ERROR", "A published sticker pack needs its Telegram add-pack URL.");
     if (input.status !== "PUBLISHED" && input.telegramUrl)
