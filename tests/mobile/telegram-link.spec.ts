@@ -76,6 +76,7 @@ test("Telegram connect uses a full-page authorization redirect and disconnected 
   const normalSpacing = await page.locator(".telegram-link-controls").evaluate(element => ({ panel: Number.parseFloat(getComputedStyle(element).paddingLeft), root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), button: getComputedStyle(element.querySelector(".button")!).paddingLeft }));
   expect(normalSpacing.panel).toBe(normalSpacing.root * 1.25);
   expect(normalSpacing.button).toBe("16px");
+  await expect(page.getByRole("button", { name: "Connect Telegram" })).toHaveText("Connect Telegram");
   await expect(page).not.toHaveURL(/telegram_intent/);
   await page.getByRole("button", { name: "Connect Telegram" }).click();
   await expect(page).toHaveURL(/\/mock-telegram-consent$/);
@@ -140,6 +141,7 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   await page.evaluate(() => { document.documentElement.dataset.highContrast = "on"; });
   const enlargedText = await page.addStyleTag({ content: "html { font-size: 400% !important; }" });
   const dock = page.locator(".switch-dock");
+  await expect(page.locator("html")).toHaveAttribute("data-large-text", "true");
   if (info.project.name !== "desktop") await expect(dock).toHaveAttribute("data-flow", "document");
   await expect(page.getByText("Connecting does not approve or publish a pack.")).toBeVisible();
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
@@ -178,18 +180,40 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   expect(positions.buttonTop).toBeLessThan(positions.viewportHeight);
   expect(positions.buttonWidth).toBeGreaterThanOrEqual(56);
   expect(positions.dockBottom <= positions.buttonTop || positions.buttonBottom <= positions.dockTop).toBe(true);
-  const connectLabelLines = await connect.evaluate(element => {
-    const text = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())!;
-    const range = document.createRange(); range.selectNodeContents(text);
-    return range.getClientRects().length;
+  await expect(connect).toHaveAccessibleName("Connect Telegram");
+  expect(await connect.evaluate(element => element instanceof HTMLElement ? element.innerText : "")).toBe("Connect");
+  await expect(connect.locator(".telegram-action-platform")).toBeHidden();
+  const labelMetrics = await connect.evaluate(element => {
+    const textNode = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())!;
+    const text = textNode.textContent ?? "";
+    const style = getComputedStyle(element);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
+    context.font = style.font;
+    const measureVisibleWord = (word: string) => {
+      const start = text.indexOf(word);
+      const range = document.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, start + word.length);
+      const rects = [...range.getClientRects()].map(rect => ({ x: rect.x, y: rect.y, width: rect.width }));
+      return { measuredWidth: context.measureText(word).width, rects };
+    };
+    const visibleWord = measureVisibleWord("Connect");
+    const contentWidth = element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+    return { font: style.font, fontSize: style.fontSize, buttonWidth: element.getBoundingClientRect().width, contentWidth, viewportWidth: document.documentElement.clientWidth, visibleWord };
   });
-  expect(connectLabelLines).toBeLessThanOrEqual(2);
+  const labelDiagnostic = JSON.stringify(labelMetrics);
+  console.info(`[telegram-link] ${info.project.name} enlarged-label metrics ${labelDiagnostic}`);
+  await test.info().attach("telegram-large-text-label-metrics", { body: labelDiagnostic, contentType: "application/json" });
+  expect(Number.parseFloat(labelMetrics.fontSize), labelDiagnostic).toBeGreaterThanOrEqual(60.8);
+  expect(labelMetrics.visibleWord.rects, labelDiagnostic).toHaveLength(1);
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(connect).toBeFocused();
   const focusStyle = await connect.evaluate(element => getComputedStyle(element).outlineStyle);
   expect(focusStyle).not.toBe("none");
   await page.screenshot({ path: info.outputPath("telegram-400-percent-controls.png"), fullPage: false });
-  await enlargedText.evaluate(element => element.remove());
+  await enlargedText.evaluate(element => element.parentNode?.removeChild(element));
+  await expect(page.locator("html")).not.toHaveAttribute("data-large-text");
   if (info.project.name !== "desktop") await expect(dock).toHaveAttribute("data-flow", "fixed");
 });

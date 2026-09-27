@@ -2273,12 +2273,15 @@ body:has(.app-shell-nav) { padding-bottom: 7rem; }
 body:has(.app-shell-nav .switch-dock[data-flow="document"]) { padding-bottom: 1rem; }
 .app-page:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { padding-bottom: 1rem; }
 html:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { scroll-padding-bottom: 1rem; }
-body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .telegram-link-controls {
-  grid-template-columns: minmax(0, 1fr); min-width: 0; padding: clamp(12px, 3vw, 24px);
+/* Root text above 32px consumes room through rem-based panel gutters. Keep
+   account controls full-width at that setting; all text stays at user size. */
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .ld-detail { padding-inline: 4px; }
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls {
+  grid-template-columns: minmax(0, 1fr); min-width: 0; margin-inline: -4px; padding: 4px 0;
 }
-body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .telegram-link-controls .button {
-  min-width: 0; padding: 4px; overflow-wrap: break-word;
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-actions { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls .button {
+  width: 100%; min-width: 0; padding: 4px 0; overflow-wrap: break-word;
 }
-@media (max-width: 759px) {
-  body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .ld-detail { padding-inline: 12px; }
-}
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls .button:focus-visible { outline-offset: -7px; }
+:root[data-large-text="true"] .telegram-link-controls .telegram-action-platform { display: none; }

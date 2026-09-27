@@ -121,7 +121,9 @@ export function TelegramLinkControls({ confirmationId, errorCode, intent }: { co
       </div>
     </> : <>
       <p>No Telegram account is connected.</p>
-      <button className="button" disabled={busy} onClick={() => void connect()}>Connect Telegram</button>
+      <button className="button" aria-label="Connect Telegram" disabled={busy} onClick={() => void connect()}>
+        Connect<span className="telegram-action-platform"> Telegram</span>
+      </button>
     </>}
   </section>;
 }

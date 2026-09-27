@@ -151,7 +151,10 @@ export function SwitchDock() {
       frame = requestAnimationFrame(() => {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
         const viewport = window.visualViewport;
-        const nextSignature = `${window.innerWidth}x${window.innerHeight}:${viewport?.width ?? ""}x${viewport?.height ?? ""}x${viewport?.scale ?? ""}:${getComputedStyle(document.documentElement).fontSize}`;
+        const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+        const nextSignature = `${window.innerWidth}x${window.innerHeight}:${viewport?.width ?? ""}x${viewport?.height ?? ""}x${viewport?.scale ?? ""}:${rootFontSize}`;
+        if (rootFontSize > 32) document.documentElement.dataset.largeText = "true";
+        else delete document.documentElement.dataset.largeText;
         if (signature !== nextSignature) {
           signature = nextSignature;
           inFlow = false;
@@ -172,6 +175,7 @@ export function SwitchDock() {
       window.visualViewport?.removeEventListener("resize", measure);
       cancelAnimationFrame(frame);
       delete element.dataset.flow;
+      delete document.documentElement.dataset.largeText;
     };
   }, []);
 
