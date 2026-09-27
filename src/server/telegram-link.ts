@@ -134,6 +134,23 @@ function safeEqual(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+function parseTelegramUserId(value: unknown): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string" || value.length > 16 || !/^[1-9]\d*$/.test(value)) return null;
+  const parsed = BigInt(value);
+  return parsed <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(parsed) : null;
+}
+
+function telegramIdRepresentation(value: unknown): "number" | "string" | "missing" | "null" | "boolean" | "object" | "other" {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  if (typeof value === "number") return "number";
+  if (typeof value === "string") return "string";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "object") return "object";
+  return "other";
+}
+
 function safeJoseDiagnostic(error: unknown): { category: string; claim?: string } | null {
   if (!(error instanceof Error)) return null;
   const code = (error as Error & { code?: unknown }).code;
@@ -224,6 +241,7 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
   let failureCategory = "unexpected_failure";
   let failureClaim: string | undefined;
   let providerStatus: number | undefined;
+  let failureIdRepresentation: ReturnType<typeof telegramIdRepresentation> | undefined;
   try {
     // The verifier was read while the transaction row lock was held; the stored copy was erased before leaving that transaction.
     const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: cfg.callbackUrl, client_id: cfg.clientId, code_verifier: transaction.code_verifier });
@@ -243,23 +261,28 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
       if (diagnostic) { failureCategory = diagnostic.category; failureClaim = diagnostic.claim; }
       throw error;
     }
-    const claims = verified.payload as typeof verified.payload & { id?: number; name?: string; preferred_username?: string; nonce?: string };
+    const claims = verified.payload as typeof verified.payload & { id?: unknown; name?: string; preferred_username?: string; nonce?: string };
     failureStage = "oidc_claim_validation";
     const nowSeconds = Math.floor(Date.now() / 1000);
     const invalidClaim = typeof claims.iat !== "number" || !Number.isFinite(claims.iat) || claims.iat > nowSeconds + 30 ? "iat" :
       typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= claims.iat ? "exp" :
       !claims.nonce || !safeEqual(String(claims.nonce), transaction.nonce) ? "nonce" :
-      typeof claims.sub !== "string" || !claims.sub ? "sub" :
-      typeof claims.id !== "number" || !Number.isSafeInteger(claims.id) || claims.id <= 0 ? "id" : null;
-    if (invalidClaim) { failureCategory = "claim_validation_failed"; failureClaim = invalidClaim === "id" ? undefined : invalidClaim; throw new Error("identity claims invalid"); }
+      typeof claims.sub !== "string" || !claims.sub ? "sub" : null;
+    if (invalidClaim) { failureCategory = "claim_validation_failed"; failureClaim = invalidClaim; throw new Error("identity claims invalid"); }
+    const telegramUserId = parseTelegramUserId(claims.id);
+    if (telegramUserId === null) {
+      failureCategory = "claim_validation_failed";
+      failureIdRepresentation = telegramIdRepresentation(claims.id);
+      throw new Error("identity claims invalid");
+    }
     failureStage = "bot_identity_verification";
     failureCategory = "bot_identity_unavailable";
     const bot = await botIdentity(cfg);
     let botAccess = false;
     try {
-      const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getChat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: claims.id }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000) });
+      const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getChat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: telegramUserId }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000) });
       const body = await response.json() as { ok?: boolean; result?: { id?: number; type?: string } };
-      botAccess = response.ok && body.ok === true && body.result?.id === claims.id && body.result?.type === "private";
+      botAccess = response.ok && body.ok === true && body.result?.id === telegramUserId && body.result?.type === "private";
     } catch { /* no provider text or error objects escape */ }
     if (transaction.owner_id !== ownerId) return safeError("session_mismatch");
     const confirmation = opaque();
@@ -273,7 +296,7 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
       result = await finalize.query(
         `update telegram_link_transaction set confirmation_hash=$2,status='AWAITING_CONFIRMATION',telegram_issuer=$3,telegram_subject=$4,telegram_user_id=$5,display_name=$6,username=$7,bot_access=$8,expires_at=now()+interval '10 minutes'
          where state_hash=$1 and owner_id=$9 and status='EXCHANGING' and code_verifier='' returning state_hash`,
-        [sha(state), sha(confirmation), ISSUER, claims.sub, String(claims.id), typeof claims.name === "string" ? claims.name.slice(0, 256) : null,
+        [sha(state), sha(confirmation), ISSUER, claims.sub, String(telegramUserId), typeof claims.name === "string" ? claims.name.slice(0, 256) : null,
           typeof claims.preferred_username === "string" ? claims.preferred_username.slice(0, 64) : null, botAccess, ownerId],
       );
       await finalize.query("commit");
@@ -282,7 +305,7 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
     return accountPage(origin, "telegram_confirmation", confirmation);
   } catch {
     // Keep provider errors, token material, claims, and account identifiers out of logs.
-    console.error("[telegram-link] callback failed", { stage: failureStage, category: failureCategory, ...(failureClaim ? { claim: failureClaim } : {}), ...(providerStatus !== undefined ? { providerStatus } : {}) });
+    console.error("[telegram-link] callback failed", { stage: failureStage, category: failureCategory, ...(failureClaim ? { claim: failureClaim } : {}), ...(failureIdRepresentation ? { idRepresentation: failureIdRepresentation } : {}), ...(providerStatus !== undefined ? { providerStatus } : {}) });
     try { await pool.query("update telegram_link_transaction set status='FAILED',code_verifier='',nonce='' where state_hash=$1 and status='EXCHANGING'", [sha(state)]); } catch { /* remain generic */ }
     return safeError("telegram_identity_invalid");
   }
