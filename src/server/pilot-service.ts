@@ -479,10 +479,12 @@ export class PilotService {
       }
       if (
         a.state !== "ACTIVE" ||
-        (a.role === "FRIEND" &&
-          (!p.friends_enabled || !p.uploads_enabled || !freshEvidence(p)))
+        (a.role === "FRIEND" && !p.friends_enabled)
       )
         throw unavailable();
+      // Readiness evidence gates invitations, not continued use by active accounts.
+      if (a.role === "FRIEND" && !p.uploads_enabled)
+        throw new SystemError("STORAGE_UNAVAILABLE", "Image uploads are temporarily paused. Your Bunch account is still active. Try again later.");
       const used = Number(
         (
           await c.query(

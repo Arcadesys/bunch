@@ -25,6 +25,11 @@ integration("image allowance shares atomic admission, accounts for failures, and
     await pool.query("insert into pilot_account(owner_id,role) values($1,'FRIEND'),($2,'OPERATOR'),($3,'FRIEND')", [owner, operator, other]);
     await pool.query("update pilot_policy set gate_enabled=true,friends_enabled=true,uploads_enabled=true,capacity_verified_at=now(),recovery_verified_at=now()");
     const allowance = new ImageAllowanceService(pool);
+    await pool.query("update pilot_policy set capacity_verified_at=now()-interval '10 days',recovery_verified_at=now()-interval '10 days'");
+    await allowance.storagePreflight(pool, owner);
+    await pool.query("update pilot_policy set uploads_enabled=false");
+    await assert.rejects(allowance.storagePreflight(pool, owner), /storage is currently unavailable/);
+    await pool.query("update pilot_policy set uploads_enabled=true,capacity_verified_at=now(),recovery_verified_at=now()");
     assert.equal((await allowance.read(owner)).limit, 10);
     assert.equal((await allowance.read(operator)).limit, 20);
     await assert.rejects(allowance.setLimit(owner, owner, 100), /Only the active/);
