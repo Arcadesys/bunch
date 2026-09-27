@@ -127,7 +127,14 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
     const missingExpiry = await startTelegramLink(ownerA, null, null);
     assertConfiguredStart(missingExpiry);
     const invalidClaims = credentials(missingExpiry.authorizationUrl, "code-no-exp", { sub: "missing-exp-sub", id: 111222333, missingExp: true });
-    const invalidCallback = await callbackTelegramLink(new Request(invalidClaims.callbackUrl), ownerA, missingExpiry.session);
+    const callbackLogs: unknown[][] = [];
+    const priorConsoleError = console.error;
+    console.error = (...args: unknown[]) => { callbackLogs.push(args); };
+    let invalidCallback: Response;
+    try { invalidCallback = await callbackTelegramLink(new Request(invalidClaims.callbackUrl), ownerA, missingExpiry.session); }
+    finally { console.error = priorConsoleError; }
+    assert.deepEqual(callbackLogs, [["[telegram-link] callback failed", { stage: "oidc_token_verification", category: "jose_claim_invalid", claim: "exp" }]]);
+    assert.doesNotMatch(JSON.stringify(callbackLogs), /code-no-exp|missing-exp-sub|111222333/);
     assert.equal(new URL(invalidCallback.headers.get("location")!).searchParams.get("telegram_error"), "telegram_identity_invalid");
     assert.equal((await pool.query("select status from telegram_link_transaction where state_hash=$1", [sha(invalidClaims.state)])).rows[0].status, "FAILED");
     const good = credentials(start.authorizationUrl, "code-good", { sub: "oidc-sub-is-not-the-numeric-id", id: 987654321 });

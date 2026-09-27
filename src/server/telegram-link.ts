@@ -134,6 +134,27 @@ function safeEqual(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+function safeJoseDiagnostic(error: unknown): { category: string; claim?: string } | null {
+  if (!(error instanceof Error)) return null;
+  const code = (error as Error & { code?: unknown }).code;
+  const categories: Record<string, string> = {
+    ERR_JWS_SIGNATURE_VERIFICATION_FAILED: "jose_signature_invalid",
+    ERR_JOSE_ALG_NOT_ALLOWED: "jose_algorithm_not_allowed",
+    ERR_JWT_CLAIM_VALIDATION_FAILED: "jose_claim_invalid",
+    ERR_JWT_EXPIRED: "jose_token_expired",
+    ERR_JWT_INVALID: "jose_token_invalid",
+    ERR_JWS_INVALID: "jose_token_invalid",
+    ERR_JWKS_NO_MATCHING_KEY: "jose_key_not_found",
+    ERR_JWKS_MULTIPLE_MATCHING_KEYS: "jose_key_ambiguous",
+    ERR_JWKS_TIMEOUT: "jose_key_timeout",
+    ERR_JWK_INVALID: "jose_key_invalid",
+  };
+  if (typeof code !== "string" || !Object.hasOwn(categories, code)) return null;
+  const claim = (error as Error & { claim?: unknown }).claim;
+  const safeClaims = ["iss", "aud", "exp", "iat", "sub", "nonce"];
+  return { category: categories[code], ...(code === "ERR_JWT_CLAIM_VALIDATION_FAILED" && typeof claim === "string" && safeClaims.includes(claim) ? { claim } : {}) };
+}
+
 export async function startTelegramLink(ownerId: string, browserSession: string | null, intent: string | null) {
   const cfg = config();
   if (!cfg) return { state: "disabled" as const };
@@ -199,29 +220,51 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
   const code = url.searchParams.get("code");
   const cfg = config();
   if (!code || !cfg) return safeError("invalid_request");
+  let failureStage = "token_exchange_request";
+  let failureCategory = "unexpected_failure";
+  let failureClaim: string | undefined;
+  let providerStatus: number | undefined;
   try {
     // The verifier was read while the transaction row lock was held; the stored copy was erased before leaving that transaction.
     const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: cfg.callbackUrl, client_id: cfg.clientId, code_verifier: transaction.code_verifier });
     const tokenResponse = await fetch(TOKEN_ENDPOINT, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}` }, body: form, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000) });
+    failureStage = "token_exchange_response";
+    if (!tokenResponse.ok) providerStatus = tokenResponse.status;
     const tokenBody = await tokenResponse.json() as { id_token?: string };
     await pool.query("update telegram_link_transaction set code_verifier='' where state_hash=$1", [sha(state)]);
-    if (!tokenResponse.ok || !tokenBody.id_token) throw new Error("token exchange failed");
-    const verified = await jwtVerify(tokenBody.id_token, JWKS, { issuer: ISSUER, audience: cfg.clientId, algorithms: ["RS256"], clockTolerance: 5, requiredClaims: ["exp", "iat", "sub", "nonce"] });
+    if (!tokenResponse.ok) { failureCategory = "provider_token_rejected"; throw new Error("token exchange failed"); }
+    if (!tokenBody.id_token) { failureCategory = "provider_id_token_missing"; throw new Error("token response invalid"); }
+    providerStatus = undefined;
+    failureStage = "oidc_token_verification";
+    let verified;
+    try { verified = await jwtVerify(tokenBody.id_token, JWKS, { issuer: ISSUER, audience: cfg.clientId, algorithms: ["RS256"], clockTolerance: 5, requiredClaims: ["exp", "iat", "sub", "nonce"] }); }
+    catch (error) {
+      const diagnostic = safeJoseDiagnostic(error);
+      if (diagnostic) { failureCategory = diagnostic.category; failureClaim = diagnostic.claim; }
+      throw error;
+    }
     const claims = verified.payload as typeof verified.payload & { id?: number; name?: string; preferred_username?: string; nonce?: string };
+    failureStage = "oidc_claim_validation";
     const nowSeconds = Math.floor(Date.now() / 1000);
-    if (typeof claims.iat !== "number" || !Number.isFinite(claims.iat) || claims.iat > nowSeconds + 30 ||
-        typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= claims.iat ||
-        !claims.nonce || !safeEqual(String(claims.nonce), transaction.nonce) || typeof claims.sub !== "string" || !claims.sub ||
-        typeof claims.id !== "number" || !Number.isSafeInteger(claims.id) || claims.id <= 0) throw new Error("identity claims invalid");
+    const invalidClaim = typeof claims.iat !== "number" || !Number.isFinite(claims.iat) || claims.iat > nowSeconds + 30 ? "iat" :
+      typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= claims.iat ? "exp" :
+      !claims.nonce || !safeEqual(String(claims.nonce), transaction.nonce) ? "nonce" :
+      typeof claims.sub !== "string" || !claims.sub ? "sub" :
+      typeof claims.id !== "number" || !Number.isSafeInteger(claims.id) || claims.id <= 0 ? "id" : null;
+    if (invalidClaim) { failureCategory = "claim_validation_failed"; failureClaim = invalidClaim === "id" ? undefined : invalidClaim; throw new Error("identity claims invalid"); }
+    failureStage = "bot_identity_verification";
+    failureCategory = "bot_identity_unavailable";
     const bot = await botIdentity(cfg);
     let botAccess = false;
     try {
       const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getChat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: claims.id }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000) });
       const body = await response.json() as { ok?: boolean; result?: { id?: number; type?: string } };
-      botAccess = response.ok && body.ok === true && body.result?.id === claims.id && body.result.type === "private";
+      botAccess = response.ok && body.ok === true && body.result?.id === claims.id && body.result?.type === "private";
     } catch { /* no provider text or error objects escape */ }
     if (transaction.owner_id !== ownerId) return safeError("session_mismatch");
     const confirmation = opaque();
+    failureStage = "confirmation_persistence";
+    failureCategory = "confirmation_persistence_failed";
     const finalize = await pool.connect();
     let result;
     try {
@@ -238,6 +281,8 @@ export async function callbackTelegramLink(request: Request, ownerId: string | n
     if (!result.rowCount) return safeError("transaction_replayed");
     return accountPage(origin, "telegram_confirmation", confirmation);
   } catch {
+    // Keep provider errors, token material, claims, and account identifiers out of logs.
+    console.error("[telegram-link] callback failed", { stage: failureStage, category: failureCategory, ...(failureClaim ? { claim: failureClaim } : {}), ...(providerStatus !== undefined ? { providerStatus } : {}) });
     try { await pool.query("update telegram_link_transaction set status='FAILED',code_verifier='',nonce='' where state_hash=$1 and status='EXCHANGING'", [sha(state)]); } catch { /* remain generic */ }
     return safeError("telegram_identity_invalid");
   }
