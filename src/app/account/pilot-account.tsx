@@ -19,6 +19,31 @@ type Account = {
 };
 type AccountSectionId = "account" | "privacy" | "retention" | "telegram" | "laptop" | "gallery" | "invitations" | "images" | "delete";
 
+const MEBIBYTE = 1024 * 1024;
+function formatMiB(bytes: number) {
+  return `${(bytes / MEBIBYTE).toFixed(1)} MiB`;
+}
+
+function StoredImageStorage({ account }: { account: Account }) {
+  if (account.state !== "ACTIVE") return null;
+  const used = Math.max(0, account.usedBytes);
+  const hasQuota = account.role === "FRIEND" && account.quotaBytes > 0;
+  const quota = hasQuota ? account.quotaBytes : 0;
+  const remaining = hasQuota ? Math.max(0, quota - used) : 0;
+  return <section className="stored-image-storage" aria-labelledby="stored-image-storage-heading">
+    <h3 id="stored-image-storage-heading">Image storage</h3>
+    <p>Storage includes profile photos and generated photos. Generating an image uses separate image credits; deleting a stored image frees storage but does not return credits.</p>
+    {hasQuota ? <>
+      <meter min={0} max={quota} value={Math.min(used, quota)} aria-label="Image storage used" aria-valuetext={`${formatMiB(used)} used of ${formatMiB(quota)}`} />
+      <p className="stored-image-storage-total">Used <strong>{formatMiB(used)}</strong> of <strong>{formatMiB(quota)}</strong>. <strong>{formatMiB(remaining)}</strong> remaining.</p>
+    </> : account.role === "OPERATOR" ? <p className="stored-image-storage-total">Used <strong>{formatMiB(used)}</strong>. No per-account storage quota applies to the hosting operator.</p> : <p className="stored-image-storage-total">No image storage is available for this account.</p>}
+    <nav className="stored-image-storage-links" aria-label="Manage stored images">
+      <Link className="button button-secondary" href="/gallery">Manage profile photos</Link>
+      <Link className="button button-secondary" href="/gallery/generated">Manage generated photos</Link>
+    </nav>
+  </section>;
+}
+
 /** `sections` shows the account as a split view (the Account screen); otherwise it is the single join page. */
 export function PilotAccount({ join = false, sections = false }: { join?: boolean; sections?: boolean }) {
   const [account, setAccount] = useState<Account | null>(null);
@@ -293,13 +318,7 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
                   <h3>{account.displayName || "Account"}</h3>
                   {account.state === "ACTIVE" && (
                     <>
-                      <p>
-                        Image storage: {(account.usedBytes / 1048576).toFixed(1)} MB
-                        {account.role === "FRIEND"
-                          ? ` of ${(account.quotaBytes / 1048576).toFixed(0)} MB`
-                          : ""}
-                        .
-                      </p>
+                      <StoredImageStorage account={account} />
                       <p>
                         <a href="/profiles">Add or manage alter profiles</a>
                       </p>
@@ -508,13 +527,7 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
               <h2>{account.displayName || "Account"}</h2>
               {account.state === "ACTIVE" && (
                 <>
-                  <p>
-                    Image storage: {(account.usedBytes / 1048576).toFixed(1)} MB
-                    {account.role === "FRIEND"
-                      ? ` of ${(account.quotaBytes / 1048576).toFixed(0)} MB`
-                      : ""}
-                    .
-                  </p>
+                  <StoredImageStorage account={account} />
                   <p>
                     <a href="/profiles">Add or manage alter profiles</a>
                   </p>

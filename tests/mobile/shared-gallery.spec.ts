@@ -63,20 +63,24 @@ test("shared gallery renders a selected profile image once and loads the dialog 
 test("shared gallery pauses hidden polling and coalesces refresh triggers", async ({ page }) => {
   await page.clock.install();
   let metadataRequests = 0;
+  let completedRequests = 0;
   let holdNext = false;
   let releasePending: (() => void) | undefined;
   await page.route("**/api/public/gallery/polling", async (route) => {
-    metadataRequests += 1;
+    const requestNumber = ++metadataRequests;
     if (holdNext) {
       holdNext = false;
       await new Promise<void>((resolve) => { releasePending = resolve; });
     }
-    return route.fulfill({ json: gallery });
+    await route.fulfill({ json: { ...gallery, alters: [{ ...gallery.alters[0], name: `Polling response ${requestNumber}` }] } });
+    completedRequests += 1;
   });
   await page.goto("/gallery/share/polling");
   await expect.poll(() => metadataRequests).toBeGreaterThan(0);
-  await page.waitForTimeout(50);
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect.poll(() => completedRequests).toBe(metadataRequests);
   const initialRequests = metadataRequests;
+  await expect(page.getByText(`Polling response ${initialRequests}`, { exact: true })).toBeVisible();
 
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
@@ -94,11 +98,19 @@ test("shared gallery pauses hidden polling and coalesces refresh triggers", asyn
   await page.getByRole("button", { name: "Refresh shared gallery" }).click();
   await page.getByRole("button", { name: "Refresh shared gallery" }).click();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.clock.fastForward(30_000);
+  // Keep the pending response well below its 10-second abort timeout while refresh triggers coalesce.
+  await page.clock.fastForward(1_000);
   expect(metadataRequests).toBe(initialRequests + 1);
 
   releasePending?.();
   await expect.poll(() => metadataRequests).toBe(initialRequests + 2);
+  await expect.poll(() => completedRequests).toBe(initialRequests + 2);
+  await expect(page.getByText(`Polling response ${initialRequests + 2}`, { exact: true })).toBeVisible();
+
+  await page.clock.fastForward(30_000);
+  await expect.poll(() => metadataRequests).toBe(initialRequests + 3);
+  await expect.poll(() => completedRequests).toBe(initialRequests + 3);
+  await expect(page.getByText(`Polling response ${initialRequests + 3}`, { exact: true })).toBeVisible();
 });
 
 test("unavailable shared gallery is generic and does not expose token details", async ({ page }) => {

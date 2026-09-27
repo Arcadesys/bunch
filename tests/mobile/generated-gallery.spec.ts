@@ -11,7 +11,26 @@ test("gallery shows photo tiles, preserves them on older-page failure, retries a
   });
   await page.route("**/api/v1/native-scenes/renders/*/image", route => route.fulfill({ contentType: "image/png", body: pixel }));
   await page.goto("/gallery/generated");
-  await expect((await openSections(page)).getByRole("link", { name: "Gallery", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveTitle("Generated photos — Bunch");
+  await expect(page.getByRole("heading", { name: "Generated photos", exact: true })).toBeVisible();
+  const nav = await openSections(page);
+  const generatedLink = nav.getByRole("link", { name: "Generated photos", exact: true });
+  await expect(generatedLink).toHaveAttribute("aria-current", "page");
+  const profileNavLink = nav.getByRole("link", { name: "Profile photos", exact: true });
+  await expect(profileNavLink).toHaveAttribute("href", "/gallery");
+  const introProfileLink = page.getByRole("link", { name: "Profile photos", exact: true }).last();
+  await expect(introProfileLink).toHaveAttribute("href", "/gallery");
+  if (page.viewportSize()?.width === 320) {
+    for (let step = 0; step < 24; step += 1) {
+      if (await generatedLink.evaluate(link => link === document.activeElement)) break;
+      await page.keyboard.press("Tab");
+    }
+    await expect(generatedLink).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(profileNavLink).toBeFocused();
+    expect((await profileNavLink.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    expect(await profileNavLink.evaluate(link => getComputedStyle(link).outlineWidth)).toBe("3px");
+  }
   const closeSections = page.getByRole("button", { name: "Close sections" });
   if (await closeSections.isVisible()) await closeSections.click();
   const tile = page.getByRole("button", { name: /^Synthetic scene photo latest/ });
@@ -19,7 +38,7 @@ test("gallery shows photo tiles, preserves them on older-page failure, retries a
   const preview = tile.locator("img");
   await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
   // One control per tile: the tile itself. Actions live in the photo pane.
-  const list = page.getByRole("region", { name: "Gallery" });
+  const list = page.getByRole("region", { name: "Generated photos" });
   await expect(list.getByRole("link", { name: "Download" })).toHaveCount(0);
   await page.getByRole("button", { name: "Show older photos" }).click();
   await expect(list.getByRole("alert")).toContainText("Could not load");
@@ -80,6 +99,7 @@ test("gallery distinguishes an empty gallery from sign-in failure", async ({ pag
   signedIn = true;
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("heading", { name: "No photos yet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View Profile photos" })).toHaveAttribute("href", "/gallery");
 });
 
 test("gallery deletes a photo only after confirmation and explains a refusal", async ({ page }) => {
@@ -111,6 +131,6 @@ test("gallery deletes a photo only after confirmation and explains a refusal", a
   await expect(keep).toBeVisible();
   // The deleted photo's tile is gone, so focus lands on the remaining tile rather than the page.
   await expect(keep).toBeFocused();
-  await expect(page.getByRole("region", { name: "Gallery" }).getByRole("status")).toHaveText("The image was permanently deleted. 1 photo.");
+  await expect(page.getByRole("region", { name: "Generated photos" }).getByRole("status")).toHaveText("The image was permanently deleted. 1 photo.");
   expect(deletes).toEqual(["DELETE /api/v1/account/generated-images/gone?kind=group", "DELETE /api/v1/account/generated-images/gone?kind=group"]);
 });

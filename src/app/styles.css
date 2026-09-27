@@ -2254,6 +2254,15 @@ body:has(.app-shell-nav) { padding-bottom: 7rem; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .detail-callout { padding: .7rem .85rem; border: 1px solid rgb(255 138 0 / 30%); border-left: 4px solid var(--bunch-pink); border-radius: 10px; background: #14142a; }
 
+.stored-image-storage { width: 100%; border: 3px solid var(--line); border-radius: 12px; padding: 1rem; background: var(--surface); color: var(--ink); }
+.stored-image-storage h3 { margin: 0; font-size: 1.25rem; line-height: 1.35; }
+.stored-image-storage p { max-width: 68ch; line-height: 1.6; }
+.stored-image-storage meter { display: block; width: 100%; height: 1.5rem; margin: .75rem 0; accent-color: var(--accent); }
+.stored-image-storage-total { font-size: 1.1rem; }
+.stored-image-storage-links { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+.stored-image-storage-links .button { min-height: 52px; display: inline-flex; align-items: center; justify-content: center; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .stored-image-storage-links { display: grid; grid-template-columns: minmax(0, 1fr); } .stored-image-storage-links .button { width: 100%; } }
+
 :root[data-high-contrast="on"] .app-topbar, :root[data-high-contrast="on"] .app-sidebar, :root[data-high-contrast="on"] .ld-list { background: #000; border-color: #fff; }
 :root[data-high-contrast="on"] .ld-row[aria-current="true"], :root[data-high-contrast="on"] .app-sidebar a[aria-current="page"] { border-color: #fff; background: #000; }
 :root[data-high-contrast="on"] .ld-row-meta, :root[data-high-contrast="on"] .ld-count, :root[data-high-contrast="on"] .app-sidebar a { color: #fff; }

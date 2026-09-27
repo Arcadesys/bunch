@@ -29,7 +29,7 @@ export const NAV_GROUPS: readonly { label: string; items: readonly { id: AppPage
   ] },
   { label: "People", items: [
     { id: "PROFILES", href: "/profiles", label: "People" },
-    { id: "GALLERY", href: "/gallery/generated", label: "Gallery" },
+    { id: "GALLERY", href: "/gallery/generated", label: "Generated photos" },
     { id: "PHOTOS", href: "/gallery", label: "Profile photos" },
     { id: "GROUP_PHOTO", href: "/group-photo", label: "Group photo" },
     { id: "IMAGES", href: "/images", label: "Create images" },

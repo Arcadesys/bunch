@@ -4,7 +4,7 @@ import { AppNavigation } from "@/app/app-navigation";
 import { GeneratedGallery } from "./generated-gallery";
 
 export const metadata: Metadata = {
-  title: "Photo gallery — Bunch",
+  title: "Generated photos — Bunch",
   description: "Your private generated images and group photos.",
   robots: { index: false, follow: false },
 };
