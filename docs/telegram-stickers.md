@@ -1,6 +1,6 @@
 # Hosted Telegram sticker uploader
 
-The authenticated Bunch MCP server exposes `prepare_telegram_sticker_pack` and
+The authenticated Bunch MCP server exposes `connect_telegram_account`, `prepare_telegram_sticker_pack`, and
 `publish_telegram_sticker_pack`. The `upload-telegram-stickers` skill is available
 through MCP `skills/list`, `skills/get`, and `resources/read`, and in the portable
 Bunch plugin package. Eligible signed-in users connect Telegram from Account &
@@ -15,8 +15,8 @@ Original bytes are uploaded without conversion. For supplied local files, use th
 existing private image upload flow first; this version does not import a ZIP.
 A saved sticker direction board is metadata, not a set of rendered images.
 
-Preparation reads the configured Telegram bot identity and verifies the configured
-owner is an accessible private chat. It uploads no images. Its 15-minute signed
+Preparation reads the shared Telegram bot identity and verifies the authenticated
+owner’s confirmed Telegram connection is an accessible private chat. It uploads no images. Its 15-minute signed
 approval binds the authenticated Bunch owner, Telegram user, bot, title, slug,
 ordered image IDs, emoji, keywords and SHA-256 hashes. The publish call requires
 `confirmPublicUpload: true`, reauthorizes and rereads every image, checks the
@@ -36,6 +36,10 @@ Configure one application bot with `TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_OIDC_CLIENT_ID`, and `TELEGRAM_OIDC_CLIENT_SECRET` in server-only
 secrets. Never ask a user for a bot token or numeric Telegram ID. Users link their
 own account through Telegram Login and confirm the returned account in Bunch.
+When preparation says linking is required, call `connect_telegram_account` with
+`{}` and open its returned private URL in the same Bunch account. The prepare
+error itself contains no connection URL. Keep the login tab open through approval
+and verify the connected state before retrying preparation.
 If Telegram requires bot access, the Account & Privacy panel offers a Start link
 and a recheck action. The app does not send an automatic direct message.
 
@@ -56,16 +60,16 @@ hosting or fronting.
 - `existing_unverified`: that name exists. Nothing was uploaded, appended,
   replaced or deleted. Its contents are not asserted to match the selected files.
 
-Names include the slug, Telegram owner ID and required bot suffix. They are
+Names include the slug, an opaque destination namespace, and required bot suffix. They are
 limited to 64 characters; long slugs can be truncated, so review the returned
 name before publication. The name provides safe existence checks across retries,
 not a content-identity guarantee. Concurrent requests can race to creation; only
 one can create a given name and an API rejection remains an error. Never append
 or switch names automatically after uncertainty. Choose a new slug only for an
 explicitly requested new version. Rate limits return a delay without automatically
-replaying the write. No publication receipt or credentials are persisted in the
-Bunch database; the structured result is the receipt and Telegram is read back
-for verification.
+replaying the write. Publication attempts persist their status and content binding in the Bunch
+database so ambiguous outcomes can be reconciled without creating another pack.
+Bot credentials remain server-side; Telegram is read back for verification.
 
 ## Verification
 
@@ -75,7 +79,7 @@ src/server/system-skill.test.ts src/server/mcp-server.test.ts`, `npm run lint`,
 The tests cover MCP transport, PNG decoding, cross-owner and expired/tampered
 approval, changed bytes, multipart mapping, safe errors, same-name retries and
 skill packaging. They fake Telegram; they do not prove authenticated publication.
-For a live acceptance test, configure the intended owner, prepare a small pack,
+For a live acceptance test, link and confirm the intended account, prepare a small pack,
 obtain publication authorization, publish, verify `created_verified`, then open
 the returned Telegram pack. Do not use private character assets for an unsolicited
 live test.
