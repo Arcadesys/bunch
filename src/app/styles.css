@@ -1402,6 +1402,15 @@ input:not([type="checkbox"]):not([type="hidden"]), textarea, select { min-width:
 .pilot-page input:not([type=checkbox]) { background: var(--surface); color: var(--ink); border: 2px solid var(--line); }
 .pilot-page a { color: var(--accent); }
 .tenant-invitation-controls { border: 4px solid var(--line); border-left: 12px solid var(--accent); background: var(--surface); padding: 1.25rem; }
+.telegram-link-controls { display: grid; gap: 1rem; border: 4px solid var(--line); padding: 1.25rem; background: var(--surface); }
+.app-page:has(.telegram-link-controls) { padding-bottom: 9rem; }
+html:has(.telegram-link-controls) { scroll-padding-bottom: 9rem; }
+.telegram-link-controls h2, .telegram-link-controls h3, .telegram-link-controls p { margin-block: 0; overflow-wrap: anywhere; }
+.telegram-link-controls .button { min-height: 56px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.telegram-link-actions { display: flex; flex-wrap: wrap; gap: 1rem; }
+.telegram-bot-access { display: grid; gap: 1rem; border: 3px solid var(--line); padding: 1rem; }
+.telegram-error { border-width: 4px; font-weight: 800; }
+@media (max-width: 600px) { .telegram-link-actions { display: grid; } .telegram-link-actions .button { width: 100%; } }
 .tenant-invitation-list { list-style: none; padding: 0; display: grid; gap: 1rem; }
 .tenant-invitation-list li { border: 3px solid var(--line); padding: 1rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
 .tenant-invitation-list p { margin: 0; }
@@ -1736,6 +1745,7 @@ h1, .command-hero h1 { color: var(--ink); }
   body:has(.switch-dock) { padding-bottom: 5.5rem; }
   .switch-dock { inset-inline: 12px; bottom: 12px; }
   .switch-dock-action { padding-inline: .7rem; }
+  .switch-dock[data-flow="document"] .switch-dock-action { flex: 1 1 100%; min-width: 0; margin-left: 0; padding-inline: clamp(8px, 2vw, 12px); white-space: normal; overflow-wrap: break-word; justify-content: center; }
   .switch-dock-action kbd { display: none; }
   .switch-dock-modal { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
   .switch-dock-panel { flex-direction: column; }
@@ -2252,3 +2262,23 @@ body:has(.app-shell-nav) { padding-bottom: 7rem; }
 .app-shell-nav .switch-dock-logged, .app-shell-nav .switch-dock-notice { position: static; width: auto; }
 @media (min-width: 760px) { .ld-list { min-height: calc(100vh - 64px); } }
 @media (min-width: 1100px) { .ld-list { min-height: 100vh; } }
+
+/* Large user text can turn the fixed presence dock into a page-sized overlay.
+   Switch to normal document flow at that point; the observer keeps the choice
+   stable until viewport dimensions or text size change. */
+.app-shell-nav .switch-dock[data-flow="document"] {
+  position: relative; inset: auto; z-index: auto; grid-row: auto; align-self: stretch;
+  width: 100%; min-width: 0; max-width: none; margin: 0;
+}
+body:has(.app-shell-nav .switch-dock[data-flow="document"]) { padding-bottom: 1rem; }
+.app-page:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { padding-bottom: 1rem; }
+html:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { scroll-padding-bottom: 1rem; }
+body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .telegram-link-controls {
+  grid-template-columns: minmax(0, 1fr); min-width: 0; padding: clamp(12px, 3vw, 24px);
+}
+body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .telegram-link-controls .button {
+  min-width: 0; padding: 4px; overflow-wrap: break-word;
+}
+@media (max-width: 759px) {
+  body:has(.switch-dock[data-flow="document"]) .app-page:has(.telegram-link-controls) .ld-detail { padding-inline: 12px; }
+}

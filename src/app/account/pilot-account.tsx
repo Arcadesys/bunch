@@ -1,10 +1,11 @@
 "use client";
 import { ImageAllowanceSettings } from "./image-allowance-settings";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ListDetail, useListSelection, type ListRow } from "../list-detail";
 import { GalleryShareControls } from "./gallery-share-controls";
 import { TenantInvitationControls } from "./tenant-invitation-controls";
+import { TelegramLinkControls } from "./telegram-link-controls";
 
 type Account = {
   state: string;
@@ -16,7 +17,7 @@ type Account = {
   usedBytes: number;
   quotaBytes: number;
 };
-type AccountSectionId = "account" | "privacy" | "retention" | "laptop" | "gallery" | "invitations" | "images" | "delete";
+type AccountSectionId = "account" | "privacy" | "retention" | "telegram" | "laptop" | "gallery" | "invitations" | "images" | "delete";
 
 /** `sections` shows the account as a split view (the Account screen); otherwise it is the single join page. */
 export function PilotAccount({ join = false, sections = false }: { join?: boolean; sections?: boolean }) {
@@ -25,6 +26,13 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [telegramReturn] = useState(() => {
+    if (typeof window === "undefined") return { confirmationId: null, errorCode: null, intent: null };
+    const params = new URLSearchParams(window.location.search);
+    return { confirmationId: params.get("telegram_confirmation"), errorCode: params.get("telegram_error"), intent: params.get("telegram_intent") };
+  });
+  const openTelegramAfterLoad = Boolean(telegramReturn.confirmationId || telegramReturn.errorCode || telegramReturn.intent);
+  const telegramAutoOpenConsumed = useRef(false);
   const [images, setImages] = useState<
     Array<{ id: string; downloadUrl: string }>
   >([]);
@@ -178,6 +186,7 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
   const sectionRows: ListRow[] = [
     { id: "account", title: "Your private system account", meta: statusLabel },
     { id: "privacy", title: "Who can access your data?", meta: "Privacy" },
+    ...(account && !["NOT_ENROLLED", "DELETED"].includes(account.state) ? [{ id: "telegram", title: "Telegram account", meta: "Private connection" }] : []),
     { id: "retention", title: "How catch-up and deletion work", meta: "Retention" },
     ...(account?.state === "ACTIVE" ? [{ id: "laptop", title: "Laptop reference credentials", meta: "Working Monkey" }] : []),
     ...(account?.canShareGallery ? [{ id: "gallery", title: "Gallery sharing", meta: "Read-only links" }] : []),
@@ -188,8 +197,25 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
   const sectionIds = sectionRows.map(row => row.id).join(" ");
   // Until the account loads, the permitted sections are unknown; an empty list keeps a saved ?id= from being replaced.
   const ids = useMemo(() => loaded ? sectionIds.split(" ") : [], [loaded, sectionIds]);
-  const [selectedId, select] = useListSelection(ids);
+  // A callback or MCP intent must select Telegram instead of racing the wide-screen first-row default.
+  const [selectedId, select] = useListSelection(ids, { autoSelectFirst: !openTelegramAfterLoad });
   const section = ids.includes(selectedId ?? "") ? selectedId as AccountSectionId : null;
+
+  useEffect(() => {
+    if (!openTelegramAfterLoad) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("telegram_confirmation");
+    url.searchParams.delete("telegram_error");
+    url.searchParams.delete("telegram_intent");
+    window.history.replaceState(window.history.state, "", url);
+  }, [openTelegramAfterLoad]);
+
+  useEffect(() => {
+    if (sections && loaded && openTelegramAfterLoad && ids.includes("telegram") && !telegramAutoOpenConsumed.current) {
+      telegramAutoOpenConsumed.current = true;
+      select("telegram");
+    }
+  }, [sections, loaded, openTelegramAfterLoad, ids, select]);
 
   useEffect(() => {
     // Links to #tenant-invitations-heading open the invitations section.
@@ -314,6 +340,7 @@ export function PilotAccount({ join = false, sections = false }: { join?: boolea
             deletion record remains to prevent accidental reactivation.
           </p>
         </> : null}
+        {section === "telegram" ? <TelegramLinkControls {...telegramReturn} /> : null}
         {section === "laptop" ? <>
           <h2>Laptop reference credentials</h2>
           <p>

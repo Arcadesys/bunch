@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { readFile } from "node:fs/promises";
-import { TelegramStickerService, TelegramRequestError, configuredTelegramAccount, telegramApi, telegramPackName, telegramPackSchema, validateTelegramPng, type TelegramCall } from "./telegram-stickers";
+import { TelegramStickerService, TelegramConnectionChangedError, TelegramRequestError, configuredTelegramAccount, telegramApi, telegramPackName, telegramPackSchema, validateTelegramPng, type TelegramCall } from "./telegram-stickers";
 import { registerTelegramStickerTools } from "./telegram-sticker-mcp";
 import { TELEGRAM_STICKER_SKILL_TEXT, TELEGRAM_STICKER_SKILL_URI } from "./telegram-sticker-skill";
 import { registerSystemSkill } from "./system-skill";
@@ -16,13 +16,14 @@ const account = { token: "123456:abcdefghijklmnopqrstuvwxyz", userId: 123 };
 const png = () => sharp({ create: { width: 512, height: 512, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } }).png().toBuffer();
 async function harness() {
   let time = 1000;
+  let connectionRevision = 1;
   let bytes: Buffer = await png();
   let existing = false;
   let mode = "normal";
   const calls: { method: string; fields: Record<string, unknown>; files?: Uint8Array[] }[] = [];
   const api: TelegramCall = async (method, fields, files) => {
     calls.push({ method, fields, files });
-    if (method === "getMe") return { is_bot: true, username: "BunchStickersBot" };
+    if (method === "getMe") return { id: 123456, is_bot: true, username: "BunchStickersBot" };
     if (method === "getChat") return { id: 123, type: "private" };
     if (method === "getStickerSet") {
       if (!existing) throw new TelegramRequestError(400, false, undefined, true);
@@ -37,9 +38,26 @@ async function harness() {
     }
     throw new Error("Unexpected method");
   };
-  const service = new TelegramStickerService({ account: () => account, now: () => time, api: () => api,
+  const records = new Map<string, import("./telegram-stickers").TelegramAttempt>();
+  const attempts = {
+    find: async (ownerId: string, packName: string) => records.get(`${ownerId}:${packName}`) ?? null,
+    begin: async (attempt: import("./telegram-stickers").TelegramAttempt) => {
+      const key = `${attempt.ownerId}:${attempt.packName}`;
+      if (records.has(key)) return false;
+      records.set(key, attempt); return true;
+    },
+    restartFailed: async (attempt: import("./telegram-stickers").TelegramAttempt) => {
+      const key = `${attempt.ownerId}:${attempt.packName}`; const prior = records.get(key);
+      if (!prior || prior.status !== "FAILED" || prior.botId !== attempt.botId || prior.packName !== attempt.packName || prior.titleHash !== attempt.titleHash || prior.contentHash !== attempt.contentHash) return false;
+      records.set(key, { ...attempt, status: "STARTED" }); return true;
+    },
+    setStatus: async (ownerId: string, packName: string, status: import("./telegram-stickers").TelegramAttemptStatus) => {
+      const key = `${ownerId}:${packName}`; const prior = records.get(key); if (prior) records.set(key, { ...prior, status });
+    },
+  };
+  const service = new TelegramStickerService({ account: () => ({ ...account, connectionRevision }), attempts, publishBoundary: async (_owner, _revision, _id, run) => run(), now: () => time, api: () => api,
     image: async (owner, id) => { assert.equal(owner, "owner-a"); assert.equal(id, imageId); return bytes; } });
-  return { service, calls, setTime: (n: number) => { time = n; }, changeBytes: (b: Buffer) => { bytes = b; }, setExisting: () => { existing = true; }, setMode: (s: string) => { mode = s; } };
+  return { service, calls, setTime: (n: number) => { time = n; }, setRevision: (n: number) => { connectionRevision = n; }, changeBytes: (b: Buffer) => { bytes = b; }, setExisting: () => { existing = true; }, setMode: (s: string) => { mode = s; } };
 }
 
 test("preparation uploads no bytes; actual MCP round trip creates once and reads back across service calls", async () => {
@@ -55,6 +73,7 @@ test("preparation uploads no bytes; actual MCP round trip creates once and reads
     assert.equal(catalog.tools.find(t => t.name === "publish_telegram_sticker_pack")?.annotations?.openWorldHint, true);
     const prepared = await client.callTool({ name: "prepare_telegram_sticker_pack", arguments: pack });
     assert.ok(!prepared.isError);
+    assert.doesNotMatch(JSON.stringify(prepared), /\b123\b|123456/);
     assert.deepEqual(h.calls.map(c => c.method), ["getMe", "getChat"]);
     const token = String((prepared.structuredContent as Record<string, unknown>)?.approvalToken);
     const denied = await client.callTool({ name: "publish_telegram_sticker_pack", arguments: { approvalToken: token, confirmPublicUpload: false } });
@@ -102,20 +121,60 @@ test("remote failures distinguish ambiguous writes, accepted creation and rate l
     const h = await harness(); const prepared = await h.service.prepare("owner-a", pack); h.setMode(mode);
     assert.equal((await h.service.publish("owner-a", prepared.approvalToken, true)).status, status);
     assert.equal(h.calls.filter(c => c.method === "createNewStickerSet").length, 1);
+    if (mode === "timeout") {
+      assert.equal((await h.service.publish("owner-a", prepared.approvalToken, true)).status, "existing_unverified");
+      assert.equal(h.calls.filter(c => c.method === "createNewStickerSet").length, 1);
+    }
   }
   const h = await harness(); const prepared = await h.service.prepare("owner-a", pack); h.setMode("limit");
   await assert.rejects(h.service.publish("owner-a", prepared.approvalToken, true), /12 seconds/);
   assert.equal(h.calls.filter(c => c.method === "createNewStickerSet").length, 1);
+  h.setRevision(2);
+  h.setMode("normal");
+  const relinkedApproval = await h.service.prepare("owner-a", pack);
+  assert.equal((await h.service.publish("owner-a", relinkedApproval.approvalToken, true)).status, "created_verified");
+  assert.equal(h.calls.filter(c => c.method === "createNewStickerSet").length, 2);
+});
+
+test("a disconnect completed before create dispatch prevents a stale approval from reaching Telegram", async () => {
+  const h = await harness(); const prepared = await h.service.prepare("owner-a", pack);
+  let linked = true; let writes = 0;
+  const guarded = new TelegramStickerService({
+    account: () => ({ ...account, connectionRevision: 1 }), image: async () => await png(),
+    api: () => async method => {
+      if (method === "getMe") return { id: 123456, is_bot: true, username: "BunchStickersBot" };
+      if (method === "getChat") return { id: 123, type: "private" };
+      if (method === "getStickerSet") throw new TelegramRequestError(400, false, undefined, true);
+      if (method === "createNewStickerSet") { writes++; return true; }
+      throw new Error("unexpected");
+    },
+    attempts: { find: async () => null, begin: async () => true, restartFailed: async () => false, setStatus: async () => {} }, now: () => 1000,
+    publishBoundary: async (_owner, revision, userId, run) => {
+      if (!linked || revision !== 0 || userId !== 123) throw new TelegramConnectionChangedError();
+      return run();
+    },
+  });
+  linked = false;
+  await assert.rejects(guarded.publish("owner-a", prepared.approvalToken, true), /connection changed before publication/);
+  assert.equal(writes, 0);
 });
 
 test("manifest, account and actual PNG decoder validation", async () => {
   assert.throws(() => telegramPackSchema.parse({ ...pack, stickers: [...pack.stickers, ...pack.stickers] }));
   assert.throws(() => telegramPackSchema.parse({ ...pack, slug: "bad__slug" }));
   assert.throws(() => telegramPackSchema.parse({ ...pack, stickers: [{ ...pack.stickers[0], keywords: ["x".repeat(65)] }] }));
-  assert.throws(() => configuredTelegramAccount("owner", "{}"), /not configured/);
-  assert.throws(() => configuredTelegramAccount("toString", "{}"), /not configured/);
-  assert.deepEqual(configuredTelegramAccount("owner", JSON.stringify({ owner: account })), account);
-  assert.ok(telegramPackName("x".repeat(32), 9007199254740991, "LongNameForStickerPublishingBot").length <= 64);
+  const oldToken = process.env.TELEGRAM_BOT_TOKEN; const oldMap = process.env.TELEGRAM_STICKER_ACCOUNTS;
+  delete process.env.TELEGRAM_BOT_TOKEN; process.env.TELEGRAM_STICKER_ACCOUNTS = JSON.stringify({ owner: account });
+  try {
+    await assert.rejects(configuredTelegramAccount("owner"), /not configured/);
+    await assert.rejects(configuredTelegramAccount("toString"), /not configured/);
+  } finally {
+    if (oldToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = oldToken;
+    if (oldMap === undefined) delete process.env.TELEGRAM_STICKER_ACCOUNTS; else process.env.TELEGRAM_STICKER_ACCOUNTS = oldMap;
+  }
+  const safeName = telegramPackName("x".repeat(32), "abcdef0123456789", "LongNameForStickerPublishingBot");
+  assert.ok(safeName.length <= 64);
+  assert.doesNotMatch(safeName, /9007199254740991/);
   await validateTelegramPng(await png());
   await assert.rejects(validateTelegramPng(Buffer.from("invalid")));
   await assert.rejects(validateTelegramPng((await png()).subarray(0, 60)));

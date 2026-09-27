@@ -58,6 +58,11 @@ export const OWNER_TABLES = [
   "todo_assignee",
   "activity_event",
   "mutation_receipt",
+  "telegram_publication_attempt",
+  "telegram_link_transaction",
+  "telegram_link_intent",
+  "telegram_connection",
+  "telegram_connection_epoch",
   "mcp_invocation",
   "system_host",
   "presence_period",
@@ -347,7 +352,7 @@ export class PilotService {
         throw unavailable();
       const data: Record<string, unknown[]> = {};
       for (const table of OWNER_TABLES) {
-        if (table === "mutation_receipt" || table === "gallery_share" || table === "mcp_invocation") continue; // Internal retry payloads, bearer-token hashes, and usage telemetry are not user records.
+        if (table === "mutation_receipt" || table === "gallery_share" || table === "mcp_invocation" || table === "telegram_link_transaction" || table === "telegram_link_intent" || table === "telegram_connection_epoch" || table === "telegram_connection" || table === "telegram_publication_attempt") continue; // Internal retries, bearer tokens, transient authorization material, and service identifiers are not exported.
         const rows = (
           await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;
@@ -370,6 +375,13 @@ export class PilotService {
       const generatedImages = (
         await c.query("select id from native_scene_render where owner_id=$1 and state='COMPLETE' order by created_at", [ownerId])
       ).rows.map(row => ({ id: row.id, downloadUrl: `/api/v1/account/generated-images/${row.id}` }));
+      const telegram = (await c.query<{ display_name: string | null; username: string | null; bot_access: boolean; connection_revision: number; connected_at: Date }>(
+        "select display_name,username,bot_access,connection_revision,connected_at from telegram_connection where owner_id=$1", [ownerId])).rows[0];
+      if (telegram) data.telegram_connection = [{ display_name: telegram.display_name, username: telegram.username, bot_access: telegram.bot_access,
+        connection_revision: telegram.connection_revision, connected_at: telegram.connected_at }];
+      const telegramPublications = (await c.query<{ pack_name: string; status: string; created_at: Date; updated_at: Date }>(
+        "select pack_name,status,created_at,updated_at from telegram_publication_attempt where owner_id=$1 order by created_at", [ownerId])).rows;
+      if (telegramPublications.length) data.telegram_publication_attempt = telegramPublications;
       const preferences = (
         await c.query("select time_zone from app_user where id=$1", [ownerId])
       ).rows[0];
@@ -435,6 +447,7 @@ export class PilotService {
       ).rows.map((r) => r.storage_key);
       await remove(keys);
       await c.query("select set_config('app.pilot_purge',$1,true)", [ownerId]);
+      await c.query("delete from telegram_link_rate where rate_key=$1", [ownerId]);
       for (const table of OWNER_TABLES)
         await c.query(`delete from ${table} where owner_id=$1`, [ownerId]);
       // Also covers legacy tables not represented in current contracts.
