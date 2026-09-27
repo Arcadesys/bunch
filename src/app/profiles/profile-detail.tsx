@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { AlterProfile } from "@/domain/types";
 import type { AlterView } from "@/domain/contracts";
 import { initials } from "../list-detail";
@@ -17,6 +17,10 @@ type ProfileDetailProps = {
   onSaveProfile: (event: FormEvent<HTMLFormElement>, profileId: string) => void;
   onChooseProfilePicture: (profile: AlterProfile, imageId: string) => void;
   onUploadImage: (event: FormEvent<HTMLFormElement>) => void;
+  uploadNoticeFormId?: string;
+  uploadRefreshPending: boolean;
+  onReplaceUploadFile: () => void;
+  onClearUploadNotice: () => void;
   editing: boolean;
   onCancelEdit: () => void;
   saveInFlight: boolean;
@@ -38,6 +42,10 @@ export function ProfileDetail({
   onSaveProfile,
   onChooseProfilePicture,
   onUploadImage,
+  uploadNoticeFormId,
+  uploadRefreshPending,
+  onReplaceUploadFile,
+  onClearUploadNotice,
   editing,
   onCancelEdit,
   saveInFlight,
@@ -47,6 +55,9 @@ export function ProfileDetail({
 }: ProfileDetailProps) {
   const [activeTab, setActiveTab] = useState<TabType>("about");
   const tabsRef = useRef<HTMLDivElement>(null);
+  const uploadFormId = useId();
+  const pictureUploadFormId = `${uploadFormId}-picture-upload`;
+  const galleryUploadFormId = `${uploadFormId}-gallery-upload`;
 
   useEffect(() => {
     if (activeTab === "appearance" && !appearance) {
@@ -166,7 +177,10 @@ export function ProfileDetail({
             aria-selected={activeTab === tab ? "true" : "false"}
             aria-controls={`panel-${tab}`}
             tabIndex={activeTab === tab ? 0 : -1}
-            onClick={() => setActiveTab(tab as TabType)}
+            onClick={() => {
+              onClearUploadNotice();
+              setActiveTab(tab as TabType);
+            }}
           >
             {tab === "about" && "About"}
             {tab === "pictures" && "Pictures"}
@@ -287,19 +301,19 @@ export function ProfileDetail({
               ))}
             </div>
           )}
-          {profile.images.length === 0 && (
+          {profile.images.length === 0 && !uploadRefreshPending && (
             <p>No pictures yet. Add one below.</p>
           )}
-          <form onSubmit={onUploadImage} className="upload-form compact-upload">
+          <form id={pictureUploadFormId} onSubmit={onUploadImage} aria-describedby={uploadNoticeFormId === pictureUploadFormId ? "profile-upload-status" : undefined} className="upload-form compact-upload">
             <input type="hidden" name="alterId" value={profile.id} />
             <input type="hidden" name="expectedVersion" value={profile.version} />
             <input type="hidden" name="setAsProfilePicture" value="true" />
-            <label>Choose a new profile picture<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            <label>Choose a new profile picture<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={onReplaceUploadFile} /></label>
             <button className="button" type="submit" disabled={saveInFlight}>Change {profile.name}’s profile picture</button>
           </form>
-          <form onSubmit={onUploadImage} className="upload-form">
+          <form id={galleryUploadFormId} onSubmit={onUploadImage} aria-describedby={uploadNoticeFormId === galleryUploadFormId ? "profile-upload-status" : undefined} className="upload-form">
             <input type="hidden" name="alterId" value={profile.id} />
-            <label>Add an image to {profile.name}’s gallery<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            <label>Add an image to {profile.name}’s gallery<input required name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={onReplaceUploadFile} /></label>
             <button className="button button-secondary" type="submit" disabled={saveInFlight}>Store private image</button>
           </form>
         </div>
