@@ -190,6 +190,6 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   const focusStyle = await connect.evaluate(element => getComputedStyle(element).outlineStyle);
   expect(focusStyle).not.toBe("none");
   await page.screenshot({ path: info.outputPath("telegram-400-percent-controls.png"), fullPage: false });
-  await enlargedText.evaluate(element => element.remove());
+  await enlargedText.evaluate(element => element.parentNode?.removeChild(element));
   if (info.project.name !== "desktop") await expect(dock).toHaveAttribute("data-flow", "fixed");
 });
