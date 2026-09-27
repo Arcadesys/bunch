@@ -76,6 +76,7 @@ test("Telegram connect uses a full-page authorization redirect and disconnected 
   const normalSpacing = await page.locator(".telegram-link-controls").evaluate(element => ({ panel: Number.parseFloat(getComputedStyle(element).paddingLeft), root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), button: getComputedStyle(element.querySelector(".button")!).paddingLeft }));
   expect(normalSpacing.panel).toBe(normalSpacing.root * 1.25);
   expect(normalSpacing.button).toBe("16px");
+  await expect(page.getByRole("button", { name: "Connect Telegram" })).toHaveText("Connect Telegram");
   await expect(page).not.toHaveURL(/telegram_intent/);
   await page.getByRole("button", { name: "Connect Telegram" }).click();
   await expect(page).toHaveURL(/\/mock-telegram-consent$/);
@@ -179,6 +180,9 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   expect(positions.buttonTop).toBeLessThan(positions.viewportHeight);
   expect(positions.buttonWidth).toBeGreaterThanOrEqual(56);
   expect(positions.dockBottom <= positions.buttonTop || positions.buttonBottom <= positions.dockTop).toBe(true);
+  await expect(connect).toHaveAccessibleName("Connect Telegram");
+  expect(await connect.evaluate(element => element instanceof HTMLElement ? element.innerText : "")).toBe("Connect");
+  await expect(connect.locator(".telegram-action-platform")).toBeHidden();
   const labelMetrics = await connect.evaluate(element => {
     const textNode = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())!;
     const text = textNode.textContent ?? "";
@@ -186,7 +190,7 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d")!;
     context.font = style.font;
-    const measureWord = (word: string) => {
+    const measureVisibleWord = (word: string) => {
       const start = text.indexOf(word);
       const range = document.createRange();
       range.setStart(textNode, start);
@@ -194,16 +198,15 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
       const rects = [...range.getClientRects()].map(rect => ({ x: rect.x, y: rect.y, width: rect.width }));
       return { measuredWidth: context.measureText(word).width, rects };
     };
-    const words = { Connect: measureWord("Connect"), Telegram: measureWord("Telegram") };
+    const visibleWord = measureVisibleWord("Connect");
     const contentWidth = element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
-    return { font: style.font, fontSize: style.fontSize, buttonWidth: element.getBoundingClientRect().width, contentWidth, viewportWidth: document.documentElement.clientWidth, words };
+    return { font: style.font, fontSize: style.fontSize, buttonWidth: element.getBoundingClientRect().width, contentWidth, viewportWidth: document.documentElement.clientWidth, visibleWord };
   });
   const labelDiagnostic = JSON.stringify(labelMetrics);
   console.info(`[telegram-link] ${info.project.name} enlarged-label metrics ${labelDiagnostic}`);
   await test.info().attach("telegram-large-text-label-metrics", { body: labelDiagnostic, contentType: "application/json" });
-  expect(labelMetrics.words.Connect.rects, labelDiagnostic).toHaveLength(1);
-  expect(labelMetrics.words.Telegram.rects, labelDiagnostic).toHaveLength(1);
-  expect(new Set([...labelMetrics.words.Connect.rects, ...labelMetrics.words.Telegram.rects].map(rect => rect.y)).size, labelDiagnostic).toBeLessThanOrEqual(2);
+  expect(Number.parseFloat(labelMetrics.fontSize), labelDiagnostic).toBeGreaterThanOrEqual(60.8);
+  expect(labelMetrics.visibleWord.rects, labelDiagnostic).toHaveLength(1);
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(connect).toBeFocused();

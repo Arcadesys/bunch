@@ -2284,3 +2284,4 @@ html:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { scro
   width: 100%; min-width: 0; padding: 4px 0; overflow-wrap: break-word;
 }
 :root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls .button:focus-visible { outline-offset: -7px; }
+:root[data-large-text="true"] .telegram-link-controls .telegram-action-platform { display: none; }
