@@ -140,6 +140,7 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   await page.evaluate(() => { document.documentElement.dataset.highContrast = "on"; });
   const enlargedText = await page.addStyleTag({ content: "html { font-size: 400% !important; }" });
   const dock = page.locator(".switch-dock");
+  await expect(page.locator("html")).toHaveAttribute("data-large-text", "true");
   if (info.project.name !== "desktop") await expect(dock).toHaveAttribute("data-flow", "document");
   await expect(page.getByText("Connecting does not approve or publish a pack.")).toBeVisible();
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
@@ -191,5 +192,6 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   expect(focusStyle).not.toBe("none");
   await page.screenshot({ path: info.outputPath("telegram-400-percent-controls.png"), fullPage: false });
   await enlargedText.evaluate(element => element.parentNode?.removeChild(element));
+  await expect(page.locator("html")).not.toHaveAttribute("data-large-text");
   if (info.project.name !== "desktop") await expect(dock).toHaveAttribute("data-flow", "fixed");
 });
