@@ -5,6 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 import { PilotService } from "./pilot-service";
 import { SystemService } from "./system-service";
+import { SystemError } from "./system-error";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 integration(
@@ -190,6 +191,20 @@ integration(
           /cannot be reduced/,
         );
       });
+      await t.test("active accounts keep uploads after readiness evidence expires; explicit pauses still block", async () => {
+        await pool.query("update pilot_policy set capacity_verified_at=now()-interval '10 days',recovery_verified_at=now()-interval '10 days' where id");
+        await pilot.assertAccess(b);
+        await pilot.reserveUpload(b, "fixture/stale-evidence", 1024);
+        const saved = (await pool.query("select bytes,state from pilot_upload where storage_key=$1 and owner_id=$2", ["fixture/stale-evidence", b])).rows[0];
+        assert.equal(Number(saved.bytes), 1024);
+        assert.equal(saved.state, "RESERVED");
+        await assert.rejects(pilot.invite("stale@example.test"), /closed/);
+        await pool.query("update pilot_policy set uploads_enabled=false where id");
+        await pilot.assertAccess(b);
+        await assert.rejects(pilot.reserveUpload(b, "fixture/paused", 1024), (error: unknown) => error instanceof SystemError && error.code === "STORAGE_UNAVAILABLE" && error.userMessage.includes("account is still active"));
+        assert.equal((await pool.query("select count(*)::int as n from pilot_upload where storage_key='fixture/paused'")).rows[0].n, 0);
+        await pool.query("update pilot_policy set uploads_enabled=true,capacity_verified_at=now(),recovery_verified_at=now() where id");
+      });
       await t.test(
         "parallel uploads atomically enforce 50 MB including reservations",
         async () => {
@@ -224,6 +239,7 @@ integration(
             [b],
           );
           await assert.rejects(pilot.assertAccess(b));
+          await assert.rejects(pilot.reserveUpload(b, "fixture/revoked", 1024));
           await assert.rejects(
             service.createAlter(
               b,
@@ -295,13 +311,12 @@ integration(
         },
       );
       await t.test(
-        "stale capacity evidence stops new invitations and uploads",
+        "stale capacity evidence stops new invitations",
         async () => {
           await pool.query(
             "update pilot_policy set capacity_verified_at=now()-interval '8 days' where id",
           );
           await assert.rejects(pilot.invite("late@example.test"), /closed/);
-          await assert.rejects(pilot.reserveUpload(b, "fixture/late", 1024));
         },
       );
       await t.test(
