@@ -9,6 +9,8 @@ import { ProfileDetail } from "./profiles/profile-detail";
 
 type SystemState = { currentFront: unknown; profiles: AlterProfile[] };
 type PresenceData = { hosting: { alterId: string } | null; fronting: { alterId: string }[] };
+type UploadErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "ERASURE_BLOCKED" | "AUTH_UNAVAILABLE" | "UNAUTHORIZED" | "FORBIDDEN" | "RATE_LIMITED" | "QUOTA_EXCEEDED" | "STORAGE_UNAVAILABLE";
+type UploadNotice = { message: string; guidance?: string; href?: string; linkLabel?: string; formId?: string; targetId?: string; refreshOnly?: boolean };
 
 const demoHeaders = { "Content-Type": "application/json", "x-system-demo": "local" };
 
@@ -30,6 +32,8 @@ async function systemRequest(method: "GET" | "POST", body?: unknown) {
 export function ProfileManagement() {
   const [state, setState] = useState<SystemState>({ currentFront: null, profiles: [] });
   const [notice, setNotice] = useState("Loading private profiles…");
+  const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
+  const [refreshPendingNotices, setRefreshPendingNotices] = useState<Record<string, UploadNotice>>({});
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [profileSearch, setProfileSearch] = useState("");
   const [appearance, setAppearance] = useState<Record<string, Pick<AlterView, "appearanceNotes" | "appearanceReferenceImageIds" | "version">>>({});
@@ -40,16 +44,27 @@ export function ProfileManagement() {
   const [editingVersion, setEditingVersion] = useState<number | undefined>(undefined);
 
   const saveAttempt = useRef<{ body: string; url: string; requestId: string } | null>(null);
+  const pictureUploadAttempt = useRef<{
+    requestId: string;
+    targetId: string;
+    operation: string;
+    file: File;
+    expectedVersion: string;
+  } | null>(null);
 
-  const load = async (successNotice = "Private profiles loaded.") => {
+  const load = async (successNotice = "Private profiles loaded.", preserveCurrentOnError = false) => {
     try {
       const next = await systemRequest("GET");
       setState(next);
       setLoadState("ready");
       setNotice(successNotice);
+      setUploadNotice(null);
+      setRefreshPendingNotices({});
+      return true;
     } catch (error) {
-      setLoadState("error");
+      if (!preserveCurrentOnError) setLoadState("error");
       setNotice(error instanceof Error ? error.message : "Unable to load private records.");
+      return false;
     }
   };
 
@@ -120,6 +135,7 @@ export function ProfileManagement() {
   async function saveProfile(event: FormEvent<HTMLFormElement>, profileId: string) {
     event.preventDefault();
     if (saveInFlight) return;
+    setUploadNotice(null);
     setSaveInFlight(true);
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -186,34 +202,111 @@ export function ProfileManagement() {
     setSaveInFlight(true);
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    const uploadFormId = formElement.id;
+    const targetId = String(form.get("alterId") || "");
+    let profilePicture = false;
+    let requestStarted = false;
+    let responseReceived = false;
+    let responseWasOk = false;
+    setUploadNotice(null);
     try {
-      const profilePicture = form.get("setAsProfilePicture") === "true";
-      const requestId = crypto.randomUUID();
-      if (profilePicture) form.set("requestId", requestId);
+      profilePicture = form.get("setAsProfilePicture") === "true";
+      const fileInput = formElement.elements.namedItem("image");
+      const file = fileInput instanceof HTMLInputElement ? fileInput.files?.[0] : undefined;
+      if (!file) throw new Error("Choose an image before uploading.");
+      let requestId: string | undefined;
+      if (profilePicture) {
+        const expectedVersion = String(form.get("expectedVersion") || "");
+        const attempt = pictureUploadAttempt.current;
+        if (!attempt || attempt.targetId !== targetId || attempt.operation !== uploadFormId || attempt.file !== file) {
+          requestId = crypto.randomUUID();
+          pictureUploadAttempt.current = { requestId, targetId, operation: uploadFormId, file, expectedVersion };
+        } else {
+          requestId = attempt.requestId;
+          form.set("expectedVersion", attempt.expectedVersion);
+        }
+        form.set("requestId", requestId);
+      } else {
+        pictureUploadAttempt.current = null;
+      }
+      requestStarted = true;
       const response = await fetch("/api/system/images", {
         method: "POST",
         headers: {
           "x-system-demo": "local",
-          ...(profilePicture ? { "Idempotency-Key": requestId } : {}),
+          ...(profilePicture && requestId ? { "Idempotency-Key": requestId } : {}),
         },
         body: form,
       });
+      responseReceived = true;
+      responseWasOk = response.ok;
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        const code = typeof data.code === "string" ? data.code as UploadErrorCode : undefined;
+        const original = typeof data.error === "string" ? data.error : "Unable to upload image.";
+        const failure: UploadNotice = { message: original, formId: uploadFormId, targetId };
+        if (response.status === 401 || code === "UNAUTHORIZED") {
+          failure.guidance = "Sign in, then try this upload again.";
+          failure.href = "/auth/login?returnTo=%2Fprofiles";
+          failure.linkLabel = "Sign in";
+        } else if (code === "FORBIDDEN" || (!code && response.status === 403)) {
+          failure.guidance = "Check your account access before trying again.";
+          failure.href = "/account";
+          failure.linkLabel = "Open Account";
+        } else if (response.status === 503 && code === "STORAGE_UNAVAILABLE") {
+          failure.guidance = "Private uploads are paused. Try again after storage is available.";
+        } else if (response.status === 413 || code === "QUOTA_EXCEEDED") {
+          failure.guidance = "Private image storage is full. Review your account storage before trying again.";
+          failure.href = "/account";
+          failure.linkLabel = "Review Account";
+        } else if (response.status === 429 || code === "RATE_LIMITED") {
+          failure.guidance = "Wait before trying this upload again.";
+        } else if (response.status === 409 || code === "CONFLICT") {
+          failure.guidance = "This profile changed while the upload was in progress. Reload the profiles, then choose the picture again.";
+        } else if (code === "VALIDATION_ERROR" || response.status === 400) {
+          failure.guidance = "Check that the selected image is a supported file, then try again.";
+        }
+        setUploadNotice(failure);
+        return;
+      }
       formElement.reset();
-      await load(
+      if (profilePicture) pictureUploadAttempt.current = null;
+      const refreshed = await load(
         profilePicture
           ? "Profile picture changed. The previous picture remains in private history."
-          : "Image stored in the private gallery."
+          : "Image stored in the private gallery.",
+        true
       );
+      if (!refreshed) {
+        setRefreshPendingNotices((pending) => ({ ...pending, [targetId]: {
+          message: profilePicture ? "The profile picture was saved, but the profile list could not be refreshed." : "The image was saved, but the profile list could not be refreshed.",
+          guidance: "Refresh the profile list to confirm the saved image. No second upload is needed.",
+          formId: uploadFormId,
+          targetId,
+          refreshOnly: true,
+        } }));
+      }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to upload image.");
+      if (requestStarted && (!responseReceived || responseWasOk)) {
+        setRefreshPendingNotices((pending) => ({ ...pending, [targetId]: {
+          message: "The upload outcome is unknown.",
+          guidance: profilePicture
+            ? "Your selected picture is still available. Use the profile-picture button again to retry this same request, or refresh profiles."
+            : "Refresh profiles to check whether it saved before submitting again.",
+          formId: uploadFormId,
+          targetId,
+          refreshOnly: true,
+        } }));
+      } else {
+        setUploadNotice({ message: error instanceof Error ? error.message : "Unable to upload image.", guidance: "Your selected file is still available. You can try again.", formId: uploadFormId });
+      }
     } finally {
       setSaveInFlight(false);
     }
   }
 
   async function chooseProfilePicture(profile: AlterProfile, imageId: string) {
+    setUploadNotice(null);
     const requestId = crypto.randomUUID();
     try {
       const response = await fetch(`/api/v1/alters/${profile.id}/profile-picture`, {
@@ -232,6 +325,10 @@ export function ProfileManagement() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to change profile picture.");
     }
+  }
+
+  async function refreshAfterUpload() {
+    await load("Profiles refreshed.", true);
   }
 
   async function loadAppearance(profile: AlterProfile) {
@@ -256,6 +353,7 @@ export function ProfileManagement() {
     const current = appearance[profile.id];
     if (!current) return;
     if (saveInFlight) return;
+    setUploadNotice(null);
     setSaveInFlight(true);
     try {
       const requestId = crypto.randomUUID();
@@ -321,7 +419,30 @@ export function ProfileManagement() {
 
   const detailShown = creating || Boolean(currentProfile);
   // Exactly one live notice, shown in whichever pane is visible (phones show one pane at a time).
-  const statusNotice = <p className="notice profiles-notice" role="status">{notice}</p>;
+  const visibleUploadNotice = uploadNotice && (!uploadNotice.targetId || uploadNotice.targetId === currentProfile?.id) ? uploadNotice : null;
+  const visibleRefreshPendingNotice = currentProfile ? refreshPendingNotices[currentProfile.id] ?? null : null;
+  const statusNotice = (
+    <p
+      className="notice profiles-notice"
+      role="status"
+      id={visibleUploadNotice || visibleRefreshPendingNotice ? "profile-upload-status" : undefined}
+      data-upload-error={visibleUploadNotice || visibleRefreshPendingNotice ? "true" : undefined}
+    >
+      {visibleUploadNotice || visibleRefreshPendingNotice ? (
+        <>
+          {visibleUploadNotice ? <>
+            <span>{visibleUploadNotice.message}</span>
+            {visibleUploadNotice.guidance ? <> {visibleUploadNotice.guidance}</> : null}
+            {visibleUploadNotice.href ? <> <a className="button button-secondary" href={visibleUploadNotice.href}>{visibleUploadNotice.linkLabel}</a></> : null}
+          </> : null}
+          {visibleRefreshPendingNotice ? <>
+            {visibleUploadNotice ? <span>{visibleRefreshPendingNotice.message} {visibleRefreshPendingNotice.guidance}</span> : <><span>{visibleRefreshPendingNotice.message}</span> {visibleRefreshPendingNotice.guidance}</>}
+            {visibleRefreshPendingNotice.refreshOnly ? <button type="button" className="button button-secondary" onClick={() => { void refreshAfterUpload(); }}>Refresh profiles</button> : null}
+          </> : null}
+        </>
+      ) : notice}
+    </p>
+  );
 
   const rememberCreateDraft = (event: FormEvent<HTMLFormElement>) => {
     const field = event.target as HTMLInputElement | HTMLTextAreaElement;
@@ -394,6 +515,7 @@ export function ProfileManagement() {
         newAction={loadState === "ready" ? {
           label: "Add a profile",
           onClick: () => {
+            setUploadNotice(null);
             setCreating(true);
             setEditing(false);
           },
@@ -402,6 +524,7 @@ export function ProfileManagement() {
         rows={loadState === "ready" ? rows : []}
         selectedId={creating ? null : selectedId}
         onSelect={(id) => {
+          setUploadNotice(null);
           select(id);
           setCreating(false);
           setEditing(false);
@@ -428,6 +551,10 @@ export function ProfileManagement() {
                 onSaveProfile={saveProfile}
                 onChooseProfilePicture={chooseProfilePicture}
                 onUploadImage={uploadImage}
+                onReplaceUploadFile={() => { pictureUploadAttempt.current = null; setUploadNotice(null); }}
+                onClearUploadNotice={() => setUploadNotice(null)}
+                uploadNoticeFormId={visibleUploadNotice?.formId ?? visibleRefreshPendingNotice?.formId}
+                uploadRefreshPending={Boolean(visibleRefreshPendingNotice)}
                 editing={editing}
                 onCancelEdit={() => setEditing(false)}
                 saveInFlight={saveInFlight}

@@ -234,3 +234,158 @@ test("appearance references are independently selectable and usable at enlarged 
     expectedVersion: 4,
   });
 });
+
+test("picture upload failures stay with the right form and unchanged retries keep their receipt key", async ({ page }) => {
+  const requests: Array<{ key: string | undefined; body: string }> = [];
+  await page.route("**/api/system", (route) => route.fulfill({ json: { profiles, currentFront: null, assignments: [] } }));
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
+  await page.route("**/api/system/images", async (route) => {
+    requests.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataBuffer()?.toString("utf8") ?? "" });
+    const picture = requests.length === 1 || requests.length === 3;
+    return route.fulfill({
+      status: picture ? 403 : 503,
+      json: picture
+        ? { error: "Image access is unavailable for this account.", code: "FORBIDDEN" }
+        : { error: "Private image storage is currently unavailable.", code: "STORAGE_UNAVAILABLE" },
+    });
+  });
+  await page.goto("/profiles");
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  const pictureInput = page.getByLabel("Choose a new profile picture");
+  const setSameMetadataFile = (contents: string) => pictureInput.evaluate((element, value) => {
+    const file = new File([value], "same.png", { type: "image/png", lastModified: 1700000000000 });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    (element as HTMLInputElement).files = transfer.files;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, contents);
+  await setSameMetadataFile("first image");
+  const pictureButton = page.getByRole("button", { name: "Change Test Robin’s profile picture" });
+  await pictureButton.click();
+  const status = page.getByRole("status");
+  await expect(status).toContainText("Check your account access");
+  await expect(status.getByRole("link", { name: "Open Account" })).toHaveAttribute("href", "/account");
+  await expect(status).not.toContainText(/inactive/i);
+  await expect.poll(() => pictureInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(1);
+  const describedBy = await pictureInput.evaluate((input) => input.closest("form")?.getAttribute("aria-describedby"));
+  expect(describedBy).toBe("profile-upload-status");
+  const galleryForm = page.getByLabel("Add an image to Test Robin’s gallery").locator("xpath=ancestor::form");
+  await expect(galleryForm).not.toHaveAttribute("aria-describedby", "profile-upload-status");
+
+  await pictureButton.click();
+  await expect(status).toContainText("Private uploads are paused");
+  await expect(status.getByRole("link")).toHaveCount(0);
+  await expect(status).not.toContainText(/rejoin|inactive/i);
+  await expect.poll(() => pictureInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(1);
+  await expect.poll(() => requests).toHaveLength(2);
+  expect(requests[1].key).toBe(requests[0].key);
+  const multipartVersion = (body: string) => body.match(/name="expectedVersion"\r\n\r\n([^\r]+)/)?.[1];
+  expect(multipartVersion(requests[0].body)).toBe("1");
+  expect(multipartVersion(requests[1].body)).toBe(multipartVersion(requests[0].body));
+
+  await setSameMetadataFile("other image");
+  await pictureButton.click();
+  await expect.poll(() => requests).toHaveLength(3);
+  expect(requests[2].key).toBeTruthy();
+  expect(requests[2].key).not.toBe(requests[1].key);
+  expect(requests[2].body).toContain("other image");
+
+  const galleryInput = page.getByLabel("Add an image to Test Robin’s gallery");
+  await galleryInput.setInputFiles({ name: "gallery.png", mimeType: "image/png", buffer: Buffer.from("gallery image") });
+  await page.getByRole("button", { name: "Store private image" }).click();
+  await expect.poll(() => requests).toHaveLength(4);
+  expect(requests[3].key).toBeUndefined();
+  await expect.poll(() => galleryInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(1);
+});
+
+test("saved upload with a failed profile refresh offers refresh only", async ({ page }) => {
+  let reads = 0;
+  let uploads = 0;
+  await page.route("**/api/system", async (route) => {
+    reads += 1;
+    if (reads === 2) return route.fulfill({ status: 503, json: { error: "Profile refresh unavailable." } });
+    return route.fulfill({ json: { profiles, currentFront: null, assignments: [] } });
+  });
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
+  await page.route("**/api/system/images", async (route) => {
+    uploads += 1;
+    return route.fulfill({ json: { image: { id: "saved-image" } } });
+  });
+  await page.goto("/profiles");
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  const pictureInput = page.getByLabel("Choose a new profile picture");
+  await pictureInput.setInputFiles({ name: "saved.png", mimeType: "image/png", buffer: Buffer.from("saved image") });
+  await page.getByRole("button", { name: "Change Test Robin’s profile picture" }).click();
+  const status = page.getByRole("status");
+  await expect(status).toContainText("saved, but the profile list could not be refreshed");
+  await expect(status.getByRole("button", { name: "Refresh profiles" })).toBeVisible();
+  await expect(page.getByText("No pictures yet. Add one below.")).toHaveCount(0);
+  await expect.poll(() => pictureInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(0);
+  expect(uploads).toBe(1);
+  await page.getByRole("tab", { name: "About" }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  await expect(status).toContainText("saved, but the profile list could not be refreshed");
+  await expect(page.getByText("No pictures yet. Add one below.")).toHaveCount(0);
+  await page.getByLabel("Choose a new profile picture").setInputFiles({ name: "later.png", mimeType: "image/png", buffer: Buffer.from("new choice") });
+  await expect(status).toContainText("saved, but the profile list could not be refreshed");
+  await backToList(page);
+  await page.getByRole("button", { name: /Test Finch/ }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  await expect(status).not.toContainText("saved, but the profile list could not be refreshed");
+  await expect(page.getByText("No pictures yet. Add one below.")).toBeVisible();
+  await backToList(page);
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  await expect(status).toContainText("saved, but the profile list could not be refreshed");
+  await expect(page.getByText("No pictures yet. Add one below.")).toHaveCount(0);
+  await status.getByRole("button", { name: "Refresh profiles" }).click();
+  await expect(status).toHaveText("Profiles refreshed.");
+  expect(uploads).toBe(1);
+});
+
+test("lost profile-picture response retries the same saved receipt without changing expected version", async ({ page }) => {
+  const requests: Array<{ key: string | undefined; body: string }> = [];
+  let uploads = 0;
+  let reads = 0;
+  const savedProfile = {
+    ...profiles[0],
+    version: 2,
+    profilePicture: { id: "saved", storageKey: "private/test-robin/saved.png", isProfilePicture: true },
+    images: [{ id: "saved", storageKey: "private/test-robin/saved.png", isProfilePicture: true }],
+  };
+  await page.route("**/api/system/images/private/test-robin/saved.png", route => route.fulfill({
+    contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=", "base64"),
+  }));
+  await page.route("**/api/system", async (route) => {
+    reads += 1;
+    return route.fulfill({ json: { profiles: reads > 1 ? [savedProfile, profiles[1]] : profiles, currentFront: null, assignments: [] } });
+  });
+  await page.route("**/api/v1/presence/current", (route) => route.fulfill({ json: { hosting: null, fronting: [] } }));
+  await page.route("**/api/system/images", async (route) => {
+    uploads += 1;
+    requests.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataBuffer()?.toString("utf8") ?? "" });
+    if (uploads === 1) return route.abort("failed");
+    return route.fulfill({ json: { image: savedProfile.profilePicture } });
+  });
+  await page.goto("/profiles");
+  await page.getByRole("button", { name: /Test Robin/ }).click();
+  await page.getByRole("tab", { name: "Pictures" }).click();
+  const pictureInput = page.getByLabel("Choose a new profile picture");
+  await pictureInput.setInputFiles({ name: "lost.png", mimeType: "image/png", buffer: Buffer.from("receipt image") });
+  const pictureButton = page.getByRole("button", { name: "Change Test Robin’s profile picture" });
+  await pictureButton.click();
+  await expect(page.getByRole("status")).toContainText("upload outcome is unknown");
+  await expect(page.getByRole("status")).toContainText("Use the profile-picture button again");
+  await expect.poll(() => pictureInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(1);
+  await pictureButton.click();
+  await expect(page.getByRole("status")).toContainText("Profile picture changed.");
+  await expect.poll(() => requests).toHaveLength(2);
+  expect(requests[1].key).toBe(requests[0].key);
+  const multipartVersion = (body: string) => body.match(/name="expectedVersion"\r\n\r\n([^\r]+)/)?.[1];
+  expect(multipartVersion(requests[0].body)).toBe("1");
+  expect(multipartVersion(requests[1].body)).toBe(multipartVersion(requests[0].body));
+  await expect.poll(() => pictureInput.evaluate((input) => (input as HTMLInputElement).files?.length)).toBe(0);
+});

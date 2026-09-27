@@ -84,6 +84,13 @@ export async function savePrivateImage(ownerId: string, file: File): Promise<Sto
   }
 }
 
+/** Validate bounded upload metadata before hashing, then bind profile retry receipts to the exact bytes. */
+export async function privateImageUploadIdentity(file: File) {
+  validateImage(file);
+  const contentHash = createHash("sha256").update(Buffer.from(await file.arrayBuffer())).digest("hex");
+  return { contentHash, contentType: file.type };
+}
+
 async function saveLocalPrivateImage(file: File): Promise<StoredPrivateImage> {
   validateImage(file);
   await mkdir(uploadDirectory, { recursive: true });
