@@ -179,12 +179,31 @@ test("Telegram controls fit narrow viewports with enlarged text and explain publ
   expect(positions.buttonTop).toBeLessThan(positions.viewportHeight);
   expect(positions.buttonWidth).toBeGreaterThanOrEqual(56);
   expect(positions.dockBottom <= positions.buttonTop || positions.buttonBottom <= positions.dockTop).toBe(true);
-  const connectLabelLines = await connect.evaluate(element => {
-    const text = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())!;
-    const range = document.createRange(); range.selectNodeContents(text);
-    return range.getClientRects().length;
+  const labelMetrics = await connect.evaluate(element => {
+    const textNode = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())!;
+    const text = textNode.textContent ?? "";
+    const style = getComputedStyle(element);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
+    context.font = style.font;
+    const measureWord = (word: string) => {
+      const start = text.indexOf(word);
+      const range = document.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, start + word.length);
+      const rects = [...range.getClientRects()].map(rect => ({ x: rect.x, y: rect.y, width: rect.width }));
+      return { measuredWidth: context.measureText(word).width, rects };
+    };
+    const words = { Connect: measureWord("Connect"), Telegram: measureWord("Telegram") };
+    const contentWidth = element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+    return { font: style.font, fontSize: style.fontSize, buttonWidth: element.getBoundingClientRect().width, contentWidth, viewportWidth: document.documentElement.clientWidth, words };
   });
-  expect(connectLabelLines).toBeLessThanOrEqual(2);
+  const labelDiagnostic = JSON.stringify(labelMetrics);
+  console.info(`[telegram-link] ${info.project.name} enlarged-label metrics ${labelDiagnostic}`);
+  await test.info().attach("telegram-large-text-label-metrics", { body: labelDiagnostic, contentType: "application/json" });
+  expect(labelMetrics.words.Connect.rects, labelDiagnostic).toHaveLength(1);
+  expect(labelMetrics.words.Telegram.rects, labelDiagnostic).toHaveLength(1);
+  expect(new Set([...labelMetrics.words.Connect.rects, ...labelMetrics.words.Telegram.rects].map(rect => rect.y)).size, labelDiagnostic).toBeLessThanOrEqual(2);
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(connect).toBeFocused();

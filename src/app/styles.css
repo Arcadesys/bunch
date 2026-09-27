@@ -2277,9 +2277,10 @@ html:has(.telegram-link-controls):has(.switch-dock[data-flow="document"]) { scro
    account controls full-width at that setting; all text stays at user size. */
 :root[data-large-text="true"] .app-page:has(.telegram-link-controls) .ld-detail { padding-inline: 4px; }
 :root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls {
-  grid-template-columns: minmax(0, 1fr); min-width: 0; margin-inline: -4px; padding: 4px;
+  grid-template-columns: minmax(0, 1fr); min-width: 0; margin-inline: -4px; padding: 4px 0;
 }
 :root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-actions { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 :root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls .button {
-  width: 100%; min-width: 0; padding: 4px; overflow-wrap: break-word;
+  width: 100%; min-width: 0; padding: 4px 0; overflow-wrap: break-word;
 }
+:root[data-large-text="true"] .app-page:has(.telegram-link-controls) .telegram-link-controls .button:focus-visible { outline-offset: -7px; }
