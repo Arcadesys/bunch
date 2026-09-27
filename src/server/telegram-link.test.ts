@@ -41,7 +41,8 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
   delete globals.systemPool;
   const pool = getDatabasePool();
   const ownerA = `auth0:telegram-test-a-${Date.now()}`;
-  const ownerB = `${ownerA}-b`, ownerC = `${ownerA}-c`, ownerD = `${ownerA}-d`, ownerE = `${ownerA}-e`;
+  const ownerB = `${ownerA}-b`, ownerC = `${ownerA}-c`, ownerD = `${ownerA}-d`, ownerE = `${ownerA}-e`, ownerF = `${ownerA}-f`, ownerG = `${ownerA}-g`;
+  const invalidOwners: string[] = [];
   const priorEnv = {
     origin: process.env.SYSTEM_PUBLIC_ORIGIN,
     bot: process.env.TELEGRAM_BOT_TOKEN,
@@ -53,7 +54,7 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
   const jwk = await exportJWK(publicKey);
   Object.assign(jwk, { kid: "telegram-link-test", alg: "RS256", use: "sig" });
   const nonceByState = new Map<string, string>();
-  const payloadByCode = new Map<string, { sub: string; id: number; nonce: string; audience?: string; expires?: number; missingExp?: boolean; gate?: ReturnType<typeof deferred> }>();
+  const payloadByCode = new Map<string, { sub: string; id?: unknown; nonce: string; audience?: string; expires?: number; missingExp?: boolean; gate?: ReturnType<typeof deferred> }>();
   let allowBotStart = true;
   process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example.test";
   process.env.TELEGRAM_BOT_TOKEN = "123456:synthetic_test_token_never_live_000000";
@@ -86,7 +87,7 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
   }) as typeof fetch;
   const providerFetch = globalThis.fetch;
 
-  function credentials(stateUrl: string, code: string, values: { sub: string; id: number; audience?: string; expires?: number; missingExp?: boolean; gate?: ReturnType<typeof deferred> }) {
+  function credentials(stateUrl: string, code: string, values: { sub: string; id?: unknown; audience?: string; expires?: number; missingExp?: boolean; gate?: ReturnType<typeof deferred> }) {
     const auth = new URL(stateUrl);
     const state = auth.searchParams.get("state")!;
     const nonce = auth.searchParams.get("nonce")!;
@@ -94,7 +95,7 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
     payloadByCode.set(code, { ...values, nonce });
     return { state, nonce, callbackUrl: `https://bunch.example.test/api/v1/account/telegram/callback?state=${encodeURIComponent(state)}&code=${encodeURIComponent(code)}` };
   }
-  async function authorized(ownerId: string, claims: { sub: string; id: number }) {
+  async function authorized(ownerId: string, claims: { sub: string; id?: unknown }) {
     const start = await startTelegramLink(ownerId, null, null);
     assertConfiguredStart(start);
     const session = start.session;
@@ -102,6 +103,8 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
     const callback = await callbackTelegramLink(new Request(input.callbackUrl), ownerId, session);
     const redirect = new URL(callback.headers.get("location")!);
     const confirmationId = redirect.searchParams.get("telegram_confirmation")!;
+    assert.equal(callback.status, 303);
+    assert.ok(confirmationId);
     assert.equal(redirect.searchParams.has("code"), false);
     assert.equal(redirect.searchParams.has("state"), false);
     return { session, confirmationId, callback, start };
@@ -160,6 +163,42 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
     await assert.rejects(confirmTelegramLink(ownerA, session, handle), (error) => error instanceof TelegramLinkError && error.code === "transaction_replayed");
     const replay = await callbackTelegramLink(new Request(good.callbackUrl), ownerA, session);
     assert.equal(new URL(replay.headers.get("location")!).searchParams.get("telegram_error"), "transaction_replayed");
+
+    // Canonical decimal-string IDs normalize to the same stored decimal representation as numeric IDs.
+    const stringIdFlow = await authorized(ownerF, { sub: "string-id-sub", id: "987654325" });
+    await confirmTelegramLink(ownerF, stringIdFlow.session, stringIdFlow.confirmationId);
+    const stringIdRow = (await pool.query<{ telegram_user_id: string }>("select telegram_user_id from telegram_connection where owner_id=$1", [ownerF])).rows[0];
+    assert.equal(stringIdRow.telegram_user_id, "987654325");
+
+    const maximumIdFlow = await authorized(ownerG, { sub: "maximum-id-sub", id: String(Number.MAX_SAFE_INTEGER) });
+    await confirmTelegramLink(ownerG, maximumIdFlow.session, maximumIdFlow.confirmationId);
+    const maximumIdRow = (await pool.query<{ telegram_user_id: string }>("select telegram_user_id from telegram_connection where owner_id=$1", [ownerG])).rows[0];
+    assert.equal(maximumIdRow.telegram_user_id, String(Number.MAX_SAFE_INTEGER));
+
+    const invalidIds: Array<{ value?: unknown; representation: string }> = [
+      { representation: "missing" }, { value: null, representation: "null" }, { value: false, representation: "boolean" },
+      { value: {}, representation: "object" }, { value: 0, representation: "number" }, { value: -1, representation: "number" },
+      { value: 1.5, representation: "number" }, { value: Number.MAX_SAFE_INTEGER + 1, representation: "number" },
+      { value: "0", representation: "string" }, { value: "0123", representation: "string" }, { value: "-1", representation: "string" },
+      { value: "1.5", representation: "string" }, { value: "1e3", representation: "string" },
+      { value: "9007199254740992", representation: "string" },
+    ];
+    for (const [index, invalidId] of invalidIds.entries()) {
+      const invalidOwner = `${ownerA}-invalid-${index}`;
+      invalidOwners.push(invalidOwner);
+      const invalidStart = await startTelegramLink(invalidOwner, null, null);
+      assertConfiguredStart(invalidStart);
+      const input = credentials(invalidStart.authorizationUrl, `code-invalid-id-${index}`, { sub: `invalid-id-sub-${index}`, id: invalidId.value });
+      const logs: unknown[][] = [];
+      const priorError = console.error;
+      console.error = (...args: unknown[]) => { logs.push(args); };
+      let rejected: Response;
+      try { rejected = await callbackTelegramLink(new Request(input.callbackUrl), invalidOwner, invalidStart.session); }
+      finally { console.error = priorError; }
+      assert.equal(new URL(rejected.headers.get("location")!).searchParams.get("telegram_error"), "telegram_identity_invalid");
+      assert.deepEqual(logs, [["[telegram-link] callback failed", { stage: "oidc_claim_validation", category: "claim_validation_failed", idRepresentation: invalidId.representation }]]);
+      assert.doesNotMatch(JSON.stringify(logs), new RegExp(`code-invalid-id-${index}|invalid-id-sub-${index}`));
+    }
 
     // A unique Telegram identity cannot be confirmed by a second Bunch owner.
     const conflict = await authorized(ownerB, { sub: "a-different-oidc-subject", id: 987654321 });
@@ -248,7 +287,7 @@ test("Telegram linking validates OIDC, binds owner and browser, serializes unlin
     if (priorEnv.bot === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = priorEnv.bot;
     if (priorEnv.clientId === undefined) delete process.env.TELEGRAM_OIDC_CLIENT_ID; else process.env.TELEGRAM_OIDC_CLIENT_ID = priorEnv.clientId;
     if (priorEnv.clientSecret === undefined) delete process.env.TELEGRAM_OIDC_CLIENT_SECRET; else process.env.TELEGRAM_OIDC_CLIENT_SECRET = priorEnv.clientSecret;
-    for (const owner of [ownerA, ownerB, ownerC, ownerD, ownerE, `${ownerA}-stale`]) {
+    for (const owner of [ownerA, ownerB, ownerC, ownerD, ownerE, ownerF, ownerG, ...invalidOwners, `${ownerA}-stale`]) {
       try {
         await pool.query("delete from telegram_link_transaction where owner_id=$1", [owner]);
         await pool.query("delete from telegram_link_intent where owner_id=$1", [owner]);
