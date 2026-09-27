@@ -98,7 +98,7 @@ export function GeneratedGallery() {
   const listStatus = <>
     <p role="status" className="ld-intro">{busy ? "Loading photos…" : loaded ? `${notice ? `${notice} ` : ""}${photos.length} photo${photos.length === 1 ? "" : "s"}${nextCursor ? " so far" : ""}.` : ""}</p>
     {error ? <div className="ld-intro gallery-alert" role="alert"><p>{error}</p>{error.startsWith("Sign in") ? <a className="button" href="/auth/login?returnTo=%2Fgallery%2Fgenerated">Sign in</a> : null}</div> : null}
-    {loaded && photos.length === 0 ? <div className="ld-intro gallery-empty"><h2>No photos yet</h2><p>Images you make in Images or Group Photo land here when they finish.</p><Link className="button" href="/images">Make an image</Link></div> : null}
+    {loaded && photos.length === 0 ? <div className="ld-intro gallery-empty"><h2>No photos yet</h2><p>Images you make in Images or Group Photo land here when they finish. <Link href="/gallery">View Profile photos</Link>.</p><Link className="button" href="/images">Make an image</Link></div> : null}
   </>;
 
   const listFooter = nextCursor || error ? <div className="ld-tools">
@@ -107,9 +107,9 @@ export function GeneratedGallery() {
 
   return <div className="generated-gallery">
     <ListDetail
-      title="Gallery"
+      title="Generated photos"
       count={photos.length ? `${photos.length} photo${photos.length === 1 ? "" : "s"}` : undefined}
-      intro={<p>Everything you’ve made in Create images and Group photo, newest first. Only you can see these. <Link href="/images">Make an image</Link></p>}
+      intro={<p>Completed photos from Create images and Group photo, newest first. Only you can see these. <Link href="/images">Make an image</Link>. For photos saved to people’s profiles, see <Link href="/gallery">Profile photos</Link>.</p>}
       rows={rows}
       selectedId={current ? selectedId : null}
       onSelect={choose}

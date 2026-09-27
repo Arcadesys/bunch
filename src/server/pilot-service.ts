@@ -493,11 +493,16 @@ export class PilotService {
           )
         ).rows[0].n,
       );
-      if (a.role === "FRIEND" && used + bytes > Number(a.quota_bytes))
-        throw new SystemError(
-          "QUOTA_EXCEEDED",
-          "Your 50 MB image allowance is full. Delete images before uploading more.",
-        );
+      const quotaBytes = Number(a.quota_bytes);
+      if (a.role === "FRIEND" && used + bytes > quotaBytes) {
+        const remainingBytes = Math.max(0, quotaBytes - used);
+        const remainingMiB = (remainingBytes / (1024 * 1024)).toFixed(1);
+        const quotaMiB = (quotaBytes / (1024 * 1024)).toFixed(1);
+        const message = remainingBytes === 0
+          ? `Your ${quotaMiB} MiB image storage is full. Delete stored images before uploading more.`
+          : `This file is larger than the ${remainingMiB} MiB remaining in your ${quotaMiB} MiB image storage. Delete stored images to make room, then try again.`;
+        throw new SystemError("QUOTA_EXCEEDED", message);
+      }
       await c.query(
         "insert into pilot_upload(storage_key,owner_id,bytes,state) values($1,$2,$3,'RESERVED')",
         [key, ownerId, bytes],

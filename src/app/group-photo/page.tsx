@@ -292,7 +292,7 @@ export default function GroupPhotoPage() {
     <ListDetail
       title="Group photo"
       count={recent.length ? `${recent.length} ${recent.length === 1 ? "scene" : "scenes"}` : undefined}
-      intro={<p>Choose a place for everybody. Finished photos also appear in the <Link href="/gallery/generated">Photo gallery</Link>.</p>}
+      intro={<p>Choose a place for everybody. Finished photos also appear in <Link href="/gallery/generated">Generated photos</Link>.</p>}
       newAction={{ label: "Start a new scene", onClick: () => setCreating(true), pressed: creating }}
       rows={rows}
       selectedId={creating ? null : selectedSceneId}

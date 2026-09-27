@@ -90,6 +90,7 @@ integration("owners delete uploads, generated scenes and group renders with thei
     const before = Number((await pool.query("select version from alter_profile where id=$1", [alter])).rows[0].version);
     assert.deepEqual(await images.delete(owner, "upload", upload), { deleted: true });
     assert.deepEqual(removed.pop()?.sort(), ["k-upload", "k-upload-r1", "k-upload-r2", "k-upload-r2-w256", "k-upload-w256"]);
+    assert.equal(Number((await pool.query("select coalesce(sum(bytes),0) as bytes from pilot_upload where owner_id=$1", [owner])).rows[0].bytes), 0, "deleting a stored profile photo releases its quota bytes");
     assert.deepEqual(purged, [upload]);
     assert.equal(await count("private_image", upload), 0);
     assert.equal(await count("native_scene_render", uploadRepair2), 0);

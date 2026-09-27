@@ -206,11 +206,12 @@ integration(
         await pool.query("update pilot_policy set uploads_enabled=true,capacity_verified_at=now(),recovery_verified_at=now() where id");
       });
       await t.test(
-        "parallel uploads atomically enforce 50 MB including reservations",
+        "parallel uploads atomically enforce each account's 100 MiB capacity including reservations",
         async () => {
+          await pool.query("update pilot_account set quota_bytes=$2 where owner_id=$1", [a, 100 * 1048576]);
           const results = await Promise.allSettled([
-            pilot.reserveUpload(a, "fixture/a1", 30 * 1048576),
-            pilot.reserveUpload(a, "fixture/a2", 30 * 1048576),
+            pilot.reserveUpload(a, "fixture/a1", 60 * 1048576),
+            pilot.reserveUpload(a, "fixture/a2", 60 * 1048576),
           ]);
           assert.equal(
             results.filter((r) => r.status === "fulfilled").length,
@@ -225,8 +226,18 @@ integration(
                 )
               ).rows[0].n,
             ),
-            30 * 1048576,
+            60 * 1048576,
           );
+          await assert.rejects(
+            pilot.reserveUpload(a, "fixture/over-remaining", 40 * 1048576 + 1),
+            (error: unknown) => error instanceof SystemError && error.code === "QUOTA_EXCEEDED" && error.userMessage.includes("40.0 MiB remaining in your 100.0 MiB image storage"),
+          );
+          await pilot.reserveUpload(a, "fixture/exact-boundary", 40 * 1048576);
+          await assert.rejects(
+            pilot.reserveUpload(a, "fixture/over-full", 1),
+            (error: unknown) => error instanceof SystemError && error.code === "QUOTA_EXCEEDED" && error.userMessage.includes("100.0 MiB image storage is full"),
+          );
+          await pool.query("delete from pilot_upload where storage_key='fixture/exact-boundary'");
         },
       );
       await t.test(
