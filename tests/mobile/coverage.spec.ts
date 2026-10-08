@@ -113,9 +113,9 @@ test("creating a draft posts exact createDraft body", async ({ page }) => {
   const checkInSelect = page.getByRole("combobox", { name: "Manual check-in" });
   const contextTextarea = page.getByRole("textbox", { name: /Shared ChatGPT context/ });
 
-  // Set values
-  const today = new Date().toISOString().slice(0, 10);
-  await startInput.fill(today);
+  // Fixed dates keep the request-body check independent of the current day.
+  const startsOn = "2026-09-20";
+  await startInput.fill(startsOn);
   await endInput.fill("2026-09-30");
   await checkInSelect.selectOption("test-robin");
   await contextTextarea.fill("Test context for coverage");
@@ -127,7 +127,7 @@ test("creating a draft posts exact createDraft body", async ({ page }) => {
     expect.objectContaining({
       action: "createDraft",
       draft: expect.objectContaining({
-        startsOn: today,
+        startsOn,
         endsOn: "2026-09-30",
         manualAlterId: "test-robin",
         sharedContext: "Test context for coverage",
