@@ -102,6 +102,13 @@ export function chatgptAlterImageWidget(publicOrigin: string) {
     } else {
       phase('scene', 'No scene image supplied; using private appearance references only.');
     }
+    // Older widgets recorded "sent" before the host acknowledged it. Do not
+    // automatically repeat that ambiguous request when a cached card remounts.
+    if (!prior.requestKey && (prior.phase === 'sent' || prior.phase === 'complete')) {
+      fail('This earlier widget did not confirm whether generation started. Check the conversation before making another image request.');
+      text('output-detail', 'This widget did not start another image request. Earlier reference transfer and generation status are unknown.');
+      return;
+    }
     if (prior.requestKey === requestKey && (prior.phase === 'sent' || prior.phase === 'complete')) { phase('reference', 'Private references are already prepared for this request.'); phase('generation', 'The image request was sent to ChatGPT.'); text('output-detail', 'Check the conversation for the generated image. This card confirms only that the request was sent.'); return; }
     if (!window.openai?.uploadFile || !window.openai?.setWidgetState || !window.openai?.sendFollowUpMessage) {
       fail('The ChatGPT image handoff is unavailable in this host. Use the Codex saved-reference workflow or open this request in ChatGPT.');

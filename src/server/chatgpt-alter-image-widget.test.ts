@@ -137,6 +137,19 @@ test("widget does not repeat a completed handoff on remount", async () => {
   assert.equal(followUps, 1);
 });
 
+test("legacy sent state is ambiguous and never repeats automatically", async () => {
+  let uploads = 0, followUps = 0;
+  const h = harness({uploadFile: async () => { uploads++; return {fileId:"reference-file"}; }});
+  h.openai.widgetState = {phase:"sent", imageIds:["scene-file", "reference-file"], privateContent:{phase:"sent"}};
+  h.openai.sendFollowUpMessage = async () => { followUps++; };
+  sendToolResult(h);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(uploads, 0);
+  assert.equal(followUps, 0);
+  assert.match(h.element("generation-status-detail").textContent, /did not confirm whether generation started/);
+  assert.match(h.element("output-detail").textContent, /Earlier reference transfer and generation status are unknown/);
+});
+
 test("duplicate notifications while upload is pending send only one handoff", async () => {
   let release!: () => void;
   let uploads = 0, followUps = 0;
