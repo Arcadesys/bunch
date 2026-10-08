@@ -42,7 +42,7 @@ function harness(options: HarnessOptions = {}) {
 function sendToolResult(h: ReturnType<typeof harness>, overrides: Record<string, unknown> = {}) {
   h.listeners.get("message")?.({ source: h.context.window.parent, data: { method: "ui/notifications/tool-result", params: {
     structuredContent: { scene: "Colette playing this piano", identities: [{ alterName: "Colette", referenceCount: 1 }] },
-    ...overrides, _meta: { sceneImage: { file_id: "scene-file" }, referenceMedia: [{ alterName: "Colette", contentType: "image/png", src: "https://system.example/api/system/images/inline/reference?cap=secret" }] },
+    _meta: { sceneImage: { file_id: "scene-file" }, referenceMedia: [{ alterName: "Colette", contentType: "image/png", src: "https://system.example/api/system/images/inline/reference?cap=secret" }] }, ...overrides,
   } } });
 }
 
@@ -50,11 +50,11 @@ test("widget includes the approved visible copy, accessibility hooks, and no pri
   const html = chatgptAlterImageWidget("https://system.example");
   assert.match(html, /Preparing references/);
   assert.match(html, /Scene image \(optional\)/);
-  assert.match(html, /Private appearance references ready/);
-  assert.match(html, /Generating securely in ChatGPT/);
+  assert.match(html, /Private appearance references/);
+  assert.match(html, /ChatGPT image handoff/);
   assert.match(html, /use the private references only for this request/);
   assert.match(html, /Reference images are shared only for this generation/);
-  assert.match(html, /Your generated image will appear here/);
+  assert.match(html, /The generated image will appear in the conversation/);
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /\[hidden\]\{display:none!important\}/);
   assert.doesNotMatch(html, /private\?cap=|appearance-reference|Colette/);
@@ -73,13 +73,13 @@ test("widget uploads references after the scene, sets safe ordering, then follow
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(uploaded, ["reference-1.png"]);
   assert.equal(followUps, 1);
-  assert.deepEqual(Array.from((states[0] as any).imageIds), ["scene-file", "reference-file"]);
+  assert.deepEqual(Array.from((states[states.length - 1] as any).imageIds), ["scene-file", "reference-file"]);
   assert.equal(JSON.stringify(uploadOptions), JSON.stringify([{ library: false }]));
-  assert.match((states[0] as any).modelContent, /image 1 as the scene/);
+  assert.match((states[states.length - 1] as any).modelContent, /image 1 as the scene/);
   assert.match(followUpPrompt, /Do not call Bunch again/);
-  assert.equal((states[0] as any).privateContent.phase, "sent");
-  assert.match(h.element("generation-status-detail").textContent, /Generating securely/);
-  assert.equal(states.length, 1);
+  assert.equal((states[states.length - 1] as any).privateContent.phase, "sent");
+  assert.match(h.element("generation-status-detail").textContent, /request was sent/);
+  assert.equal(states.length, 3);
 });
 
 test("widget uploads references from image 1 when no scene image exists", async () => {
@@ -95,9 +95,9 @@ test("widget uploads references from image 1 when no scene image exists", async 
   } } });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(followUps, 1);
-  assert.deepEqual(Array.from(states[0].imageIds), ["reference-file"]);
-  assert.match(states[0].modelContent, /image 1 is for Colette/);
-  assert.doesNotMatch(states[0].modelContent, /scene image/);
+  assert.deepEqual(Array.from(states[states.length - 1].imageIds), ["reference-file"]);
+  assert.match(states[states.length - 1].modelContent, /image 1 is for Colette/);
+  assert.doesNotMatch(states[states.length - 1].modelContent, /scene image/);
   assert.match(followUpPrompt, /uploaded images are private appearance references/);
 });
 
@@ -114,8 +114,8 @@ test("widget preserves multiple ordered references for one alter", async () => {
     ] },
   } } });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(Array.from(states[0].imageIds), ["scene-file", "reference-1", "reference-2"]);
-  assert.match(states[0].modelContent, /image 2 is for Colette; image 3 is for Colette/);
+  assert.deepEqual(Array.from(states[states.length - 1].imageIds), ["scene-file", "reference-1", "reference-2"]);
+  assert.match(states[states.length - 1].modelContent, /image 2 is for Colette; image 3 is for Colette/);
 });
 
 test("widget fails visibly when APIs or reference transfer are unavailable", async () => {
@@ -135,4 +135,72 @@ test("widget does not repeat a completed handoff on remount", async () => {
   sendToolResult(h);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(followUps, 1);
+});
+
+test("duplicate notifications while upload is pending send only one handoff", async () => {
+  let release!: () => void;
+  let uploads = 0, followUps = 0;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const h = harness({ uploadFile: async () => { uploads++; await blocked; return {fileId: "reference-file"}; } });
+  h.openai.sendFollowUpMessage = async () => { followUps++; };
+  sendToolResult(h);
+  sendToolResult(h);
+  release();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(uploads, 1);
+  assert.equal(followUps, 1);
+});
+
+test("failed follow-up stays retryable without uploading references again", async () => {
+  let uploads = 0, followUps = 0;
+  const h = harness({ uploadFile: async () => { uploads++; return {fileId: "reference-file"}; } });
+  h.openai.sendFollowUpMessage = async () => { followUps++; if (followUps === 1) throw new Error("Host unavailable"); };
+  sendToolResult(h);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.openai.widgetState.privateContent.phase, "failed");
+  assert.match(h.element("output-detail").textContent, /already been transferred/);
+  assert.equal(h.element("retry").hidden, false);
+  sendToolResult(h); // A duplicate notification must not retry a failed request.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(followUps, 1);
+  h.element("retry").onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(uploads, 1);
+  assert.equal(followUps, 2);
+  assert.equal(h.openai.widgetState.privateContent.phase, "sent");
+  assert.equal(h.element("retry").hidden, true);
+});
+
+test("a host without the follow-up API does not transfer any references", async () => {
+  let uploads = 0;
+  const h = harness({ uploadFile: async () => { uploads++; return {fileId:"reference-file"}; } });
+  delete h.openai.sendFollowUpMessage;
+  sendToolResult(h);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(uploads, 0);
+  assert.match(h.element("generation-status-detail").textContent, /Codex saved-reference workflow/);
+  assert.match(h.element("output-detail").textContent, /No appearance references were transferred/);
+});
+
+test("widget unwraps private metadata from canonical ChatGPT envelopes", async () => {
+  for (const key of ["call_tool_result", "mcp_tool_result"]) {
+    let uploads = 0;
+    const h = harness({ uploadFile: async () => { uploads++; return {fileId:"reference-file"}; } });
+    sendToolResult(h, {_meta: {[key]: {_meta: {referenceMedia:[{alterName:"Colette", contentType:"image/png", src:"https://system.example/api/system/images/inline/ref?cap=secret"}]}}}});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(uploads, 1, key);
+    assert.equal(h.openai.widgetState.privateContent.phase, "sent");
+  }
+});
+
+test("a new request on the same widget is not suppressed by an earlier handoff", async () => {
+  let uploads = 0, followUps = 0;
+  const h = harness({ uploadFile: async () => { uploads++; return {fileId:"reference-file"}; } });
+  h.openai.sendFollowUpMessage = async () => { followUps++; };
+  sendToolResult(h);
+  await new Promise(resolve => setImmediate(resolve));
+  sendToolResult(h, {structuredContent:{scene:"Colette at a new project",identities:[{alterName:"Colette",referenceCount:1}]}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(uploads, 2);
+  assert.equal(followUps, 2);
 });
