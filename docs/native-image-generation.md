@@ -1,5 +1,29 @@
 # Native image generation
 
+## Host image generation
+
+In Codex, use `prepare_codex_alter_image`. It resolves exact active names or
+aliases and supplies ordered, permanent gallery and download routes for every
+selected appearance reference. These routes require the owner's browser
+session; they contain no capability, storage key, or image bytes. Download only
+the matching selected images through the authenticated gallery, inspect all
+local references, then use Codex's image generator with the canonical prompt.
+An optional user-supplied scene or style image stays local.
+
+`REFERENCE_DOWNLOAD_REQUIRED` confirms preparation only. It does not mean
+references reached the host or an image was generated. If authentication or a
+reference is unavailable, report the blocker without substituting another photo,
+guessing a likeness, requesting a re-upload, or starting a paid Bunch job.
+
+`prepare_chatgpt_alter_image` requires ChatGPT's mounted widget and its
+file-upload, widget-state, and follow-up APIs. It cannot transfer files in Codex.
+The widget unwraps hidden metadata envelopes, prevents concurrent duplicate
+handoffs, and records `sent` only after the follow-up succeeds. A failed handoff
+offers an explicit retry that reuses already transferred references. It reports
+partial transfer honestly and confirms the request was sent, rather than claiming
+the host has already generated an image. No output is displayed inside this
+handoff card; the host shows it in the conversation.
+
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
 For every ChatGPT named-character request such as “@Bunch draw Lucy in a cozy
