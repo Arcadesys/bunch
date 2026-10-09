@@ -5,6 +5,7 @@ import styles from "./characters.module.css";
 
 const seed = {
   name: "Valerie",
+  appearance: "",
   canon: "White cat. Investigative reporter. Protective of Clover. Avoids admitting when she is frightened.",
   voice: "Dry, precise, observant. Short sentences under stress. Rarely uses profanity.",
   recent: "She has learned the archive was altered, but she has not yet discovered who changed it.",
@@ -17,6 +18,7 @@ function normalize(value: string) {
 
 export function CharacterContextHelper() {
   const [name, setName] = useState(seed.name);
+  const [appearance, setAppearance] = useState(seed.appearance);
   const [canon, setCanon] = useState(seed.canon);
   const [voice, setVoice] = useState(seed.voice);
   const [recent, setRecent] = useState(seed.recent);
@@ -27,6 +29,9 @@ export function CharacterContextHelper() {
     const displayName = normalize(name);
     return [
       `# Character context: ${displayName}`,
+      "",
+      "## Visual identity",
+      normalize(appearance),
       "",
       "## Core canon",
       normalize(canon),
@@ -41,13 +46,14 @@ export function CharacterContextHelper() {
       normalize(constraints),
       "",
       "Use only the context above as established character truth. If a requested detail conflicts with it or is missing, flag the conflict or uncertainty instead of inventing canon.",
+      "For image work, use the approved reference image supplied separately alongside this packet. If no image is attached, do not claim to have seen one. Preserve the specified visual anchors and ask before changing them.",
     ].join("\n");
-  }, [name, canon, voice, recent, constraints]);
+  }, [name, appearance, canon, voice, recent, constraints]);
 
   async function copyPacket() {
     try {
       await navigator.clipboard.writeText(packet);
-      setStatus("Copied. Paste the packet into your harness or project instructions.");
+      setStatus("Copied. Paste the packet into your harness or project instructions. Reference images must be attached separately.");
     } catch {
       setStatus("Copy was blocked by the browser. Select the packet below and copy it manually.");
     }
@@ -55,6 +61,7 @@ export function CharacterContextHelper() {
 
   function reset() {
     setName(seed.name);
+    setAppearance(seed.appearance);
     setCanon(seed.canon);
     setVoice(seed.voice);
     setRecent(seed.recent);
@@ -66,10 +73,11 @@ export function CharacterContextHelper() {
     <section className={styles.helper} id="helper" aria-labelledby="helper-heading">
       <div className={styles.helperIntro}>
         <p className={styles.eyebrow}>Build a context packet</p>
-        <h2 id="helper-heading">One character. Four kinds of truth.</h2>
+        <h2 id="helper-heading">One character. A portable reference.</h2>
         <p>
-          Edit the example, then copy the compact packet into an AI harness, system prompt,
-          or project instruction.
+          Record appearance, canon, voice, recent developments, and what must not change.
+          Copy the packet into your AI harness or project instructions. For image work, attach
+          your chosen reference image there too. This helper copies text; it does not generate or upload images.
         </p>
       </div>
 
@@ -79,6 +87,21 @@ export function CharacterContextHelper() {
             Character name
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
+
+          <label>
+            Appearance and visual anchors
+            <textarea
+              rows={4}
+              value={appearance}
+              onChange={(event) => setAppearance(event.target.value)}
+              aria-describedby="appearance-help"
+              placeholder="Species, markings, palette, silhouette, glasses, signature accessories, and what must stay recognizable."
+            />
+          </label>
+          <p className={styles.fieldHint} id="appearance-help">
+            Separate permanent features from scene-specific choices. Leave unknown details unspecified.
+            Images above are examples; they are not automatically attached to your packet.
+          </p>
 
           <label>
             Core canon
