@@ -17,6 +17,8 @@ files = [
     '.mcp.json',
     'skills/system-companion/SKILL.md',
     'skills/system-companion/agents/openai.yaml',
+    'skills/bunch-sticker-pack/SKILL.md',
+    'skills/bunch-sticker-pack/agents/openai.yaml',
     'skills/upload-telegram-stickers/SKILL.md',
     'skills/upload-telegram-stickers/agents/openai.yaml',
     'README.md',
@@ -39,6 +41,7 @@ require(portable_server.get('url') == compat_server.get('url') == 'https://syste
 require((plugin / files[4]).read_bytes() == (root / 'skills/system-companion/SKILL.md').read_bytes(), 'Plugin skill is stale')
 require((plugin / files[5]).read_bytes() == (root / 'skills/system-companion/agents/openai.yaml').read_bytes(), 'Plugin OpenAI agent config is stale')
 for name in ['SKILL.md', 'agents/openai.yaml']:
+    require((plugin / 'skills/bunch-sticker-pack' / name).read_bytes() == (root / 'skills/bunch-sticker-pack' / name).read_bytes(), 'Bunch sticker pack skill is stale')
     require((plugin / 'skills/upload-telegram-stickers' / name).read_bytes() == (root / 'skills/upload-telegram-stickers' / name).read_bytes(), 'Telegram sticker skill is stale')
 for name in files:
     source = plugin / name
