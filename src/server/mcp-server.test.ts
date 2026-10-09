@@ -32,7 +32,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
       assert.ok(tool.outputSchema, `${tool.name} must declare outputSchema`);
-      assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
+      assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image", "prepare_telegram_sticker_pack", "publish_telegram_sticker_pack"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     const upload = byName.get("upload_private_image");
@@ -47,12 +47,16 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal(chatgptImageDescriptor?.annotations?.readOnlyHint, true);
     assert.equal(chatgptImageDescriptor?.annotations?.idempotentHint, true);
     assert.deepEqual(chatgptImageDescriptor?._meta?.["openai/fileParams"], ["sceneImage"]);
-    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v2.html");
+    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v3.html");
     assert.ok(!(chatgptImageDescriptor?.inputSchema?.required ?? []).includes("sceneImage"), "sceneImage must remain optional");
     const sceneImageInput = chatgptImageDescriptor?.inputSchema?.properties?.sceneImage as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: boolean } | undefined;
     assert.deepEqual(Object.keys(sceneImageInput?.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
     assert.deepEqual(sceneImageInput?.required?.sort(), ["download_url", "file_id"]);
     assert.equal(sceneImageInput?.additionalProperties, false);
+    const codexDescriptor = byName.get("prepare_codex_alter_image");
+    assert.equal(codexDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(codexDescriptor?._meta?.["openai/outputTemplate"], undefined);
+    assert.match(chatgptImageDescriptor?.description ?? "", /In Codex use prepare_codex_alter_image/);
     const profileDescriptor = byName.get("get_account_profile");
     assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
     assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
@@ -73,11 +77,13 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.equal(accountProfileId(ownerId), accountProfileId(ownerId), "the same account must retain its profile ID");
     assert.notEqual(accountProfileId(ownerId), accountProfileId("auth0:other-private-subject"), "different accounts must not share profile IDs");
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
-    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
+    for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render", "get_sticker_pack", "list_sticker_packs"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
     assert.equal(byName.has("prepare_furry_transform"), false);
     assert.equal(byName.has("prepare_furry_result_upload"), false);
     assert.equal(byName.get("set_alter_appearance")?.annotations?.idempotentHint, true, "appearance selection must be retry-safe");
+    assert.match(byName.get("save_sticker_pack")?.description ?? "", /after the user approves/, "sticker save must require explicit approval");
+    assert.match(byName.get("save_sticker_pack")?.description ?? "", /Never infer the alter from presence/, "sticker subject must remain explicit");
     const handoff = await client.callTool({ name: "prepare_conversation_catch_up", arguments: { alterId: "11111111-1111-4111-8111-111111111111", startAt: "2026-09-03T14:00:00-05:00", endAt: "2026-09-04T10:15:00-05:00", timeZone: "America/Chicago" } });
     assert.equal((handoff.structuredContent as { elapsedSeconds: number }).elapsedSeconds, 72900);
     assert.equal((handoff.structuredContent as { historyAccess?: string }).historyAccess, "HOST_REQUIRED");
@@ -86,7 +92,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const gallery = await client.callTool({ name: "open_private_photo_gallery", arguments: {} });
     assert.deepEqual(gallery.structuredContent, { url: "https://bunch.example/gallery" });
     for (const name of ["erase_alter", "erase_todo", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.destructiveHint, true, `${name} must be destructive`);
-    for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
+    for (const name of ["switch_current_front", "create_system_note", "create_alter", "update_alter", "archive_alter", "restore_alter", "erase_alter", "create_todo", "update_todo", "archive_todo", "restore_todo", "erase_todo", "set_note_alter", "reassign_coverage", "erase_coverage_record", "save_sticker_pack"]) assert.equal(byName.get(name)?.annotations?.idempotentHint, true, `${name} must be retry-safe`);
     for (const name of ["set_catch_up_item_state", "suggest_important_thread", "confirm_important_thread"]) {
       assert.equal(byName.get(name)?.annotations?.idempotentHint, true);
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, false);
@@ -102,7 +108,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.deepEqual(lineup._meta, { privateImages: [] });
     assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v3.html");
     const resources = await client.listResources();
-    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v2.html"));
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v3.html"));
     assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html"), "cached v1 handoffs must remain readable");
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v13.html");
     assert.ok(widget, "the v13 companion widget must be registered");
@@ -268,6 +274,14 @@ test("alter results route ChatGPT to the reference handoff without Bunch generat
     assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
     const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
     assert.ok(text(scene).startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), text(scene));
+    const codex = await client.callTool({name: "prepare_codex_alter_image", arguments: {scene: "Lucy working on AI", alterNames: ["Lucy"]}});
+    assert.equal((codex.structuredContent as {status:string}).status, "REFERENCE_DOWNLOAD_REQUIRED");
+    const codexReferences = (codex.structuredContent as {references:Array<{alterName:string;imageId:string;downloadUrl:string}>}).references;
+    assert.equal(codexReferences[0].alterName, "Lucy Arcade");
+    assert.equal(codexReferences[0].imageId, lucy.appearanceReferenceImageIds[0]);
+    assert.equal(codexReferences[0].downloadUrl, "https://bunch.example/api/system/gallery-images/" + lucy.appearanceReferenceImageIds[0]);
+    assert.doesNotMatch(JSON.stringify(codex), /cap=|storageKey/);
+    assert.match(loaded, /In Codex, call prepare_codex_alter_image/);
     const referencesOnly = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
     assert.deepEqual((referencesOnly.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
     assert.equal((referencesOnly.structuredContent as { bunchGeneration: string }).bunchGeneration, "none");
@@ -358,6 +372,35 @@ test("lineup follows pagination to include every active profile", async () => {
     assert.equal(result.isError, undefined);
     assert.deepEqual((result.structuredContent as { profiles: Array<{ name: string }> }).profiles.map(item => item.name), ["First", "Second"]);
     assert.deepEqual(calls, [{ limit: 100, cursor: undefined }, { limit: 100, cursor: "next-page" }]);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("delete_private_image is destructive, owner-scoped, and retry-safe", async () => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const calls: string[] = [];
+  const deletions = { delete: async (ownerId: string, kind: string, imageId: string) => { calls.push(`${ownerId}:${kind}:${imageId}`); return { deleted: calls.length === 1 }; } };
+  const server = createMcpServer("demo:image-delete", {} as SystemService, undefined, { listProfiles: async () => [] }, undefined, undefined, undefined, undefined, deletions);
+  const client = new Client({ name: "image-delete-test", version: "1.0.0" });
+  const imageId = "77777777-7777-4777-8777-777777777777";
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const tool = (await client.listTools()).tools.find((candidate) => candidate.name === "delete_private_image");
+    assert.equal(tool?.annotations?.destructiveHint, true);
+    assert.equal(tool?.annotations?.idempotentHint, true);
+    assert.equal(tool?.annotations?.readOnlyHint, false);
+    assert.match(tool?.description ?? "", /only after the user explicitly confirms/);
+    const first = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(first.structuredContent, { deleted: true });
+    const retry = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(retry.structuredContent, { deleted: false });
+    assert.deepEqual(calls, [`demo:image-delete:scene:${imageId}`, `demo:image-delete:scene:${imageId}`]);
+    const invalid = await client.callTool({ name: "delete_private_image", arguments: { kind: "backplate", imageId } });
+    assert.equal(invalid.isError, true);
+    assert.equal(calls.length, 2);
   } finally {
     await client.close();
     await server.close();

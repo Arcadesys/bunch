@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAuth0Client, isAuth0Configured } from "@/lib/auth0";
+import { PREVIEW_SESSION_COOKIE, previewLoginEnabled, verifyPreviewSession } from "@/server/preview-login";
 
 type BrowserAuthClient = {
   middleware(request: NextRequest): Promise<NextResponse>;
@@ -49,6 +50,20 @@ export function isE2eBrowserRequest(request: NextRequest) {
   return Boolean(subject && /^[A-Za-z0-9|:_-]{1,160}$/.test(subject));
 }
 
+// Vercel previews only: Google sign-in cannot complete there, so the test account
+// stands in. previewLoginEnabled() is false in production whatever the secret.
+function isPreviewRequest(request: NextRequest) {
+  if (!previewLoginEnabled()) return false;
+  return request.nextUrl.pathname === "/preview-login"
+    || verifyPreviewSession(request.cookies.get(PREVIEW_SESSION_COOKIE)?.value) !== null;
+}
+
+function previewLoginRedirect(request: NextRequest) {
+  const login = new URL("/preview-login", request.url);
+  login.searchParams.set("returnTo", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+  return NextResponse.redirect(login);
+}
+
 function authUnavailable() {
   return new NextResponse("Bunch sign-in is temporarily unavailable. Private pages are locked.", {
     status: 503,
@@ -60,10 +75,10 @@ export async function handleBrowserAuth(request: NextRequest, auth0: BrowserAuth
   const pathname = request.nextUrl.pathname;
 
   if (!auth0) {
-    if (isPublicBrowserPath(pathname) || isProtocolPath(pathname) || isE2eBrowserRequest(request)) {
+    if (isPublicBrowserPath(pathname) || isProtocolPath(pathname) || isE2eBrowserRequest(request) || isPreviewRequest(request)) {
       return NextResponse.next();
     }
-    return authUnavailable();
+    return previewLoginEnabled() ? previewLoginRedirect(request) : authUnavailable();
   }
 
   const authResponse = await auth0.middleware(request);
@@ -72,7 +87,8 @@ export async function handleBrowserAuth(request: NextRequest, auth0: BrowserAuth
   }
 
   const session = await auth0.getSession(request);
-  if (session?.user.sub) return authResponse;
+  if (session?.user.sub || isPreviewRequest(request)) return authResponse;
+  if (previewLoginEnabled()) return previewLoginRedirect(request);
 
   const login = new URL("/auth/login", request.url);
   login.searchParams.set("returnTo", `${pathname}${request.nextUrl.search}`);

@@ -2,14 +2,15 @@
 
 ## Contract and checkpoint
 
-- Outcome: investigation and approved follow-up implementation complete with Luna workers. Actionable upload errors, safe profile-picture retries, and profile-scoped saved/refresh-pending recovery are implemented.
-- Scope: implementation and reviewable draft PR authorized after design. No production-user records changed; no merge or production deployment.
+- Outcome: actionable upload errors, safe profile-picture retries, and separate saved/refresh-failed states, verified through persistence and rendered regressions.
+- Scope: follow-up implementation authorized after the investigation. Synthetic test owners only; no production account mutations or merge/deploy actions.
 - Route: coordinator review with two explicitly requested Luna workers, both at medium effort: access diagnosis and upload UX design. Cross-component access, storage, and UI behavior justify separate bounded inspections.
 - Source baseline: fetched `origin/main`, commit `8a06a0b671a2698cb4df2e5443ad595c55f03030`, on September 27, 2026. The working branch is older and contains unrelated edits; implementation must start from the current main in a suitable isolated checkout.
 - Evidence: screenshot, current source and regression changes, GitHub PR/check status, and Vercel deployment inspection.
 - Review complete: both Luna workers returned source-backed findings. Coordinator retained the backward-compatible top-level `code` design and medium effort because retry behavior crosses client, storage, and receipt handling. No provider usage/cost counters were available.
 - Current blocker to attributing this specific report: screenshot time and a post-deployment authenticated retry are unknown. A visible profile list does not establish current account authorization.
-- Final checkpoint: [draft PR #108](https://github.com/Arcadesys/bunch/pull/108), commit `9499d14e2a48637804c32bbb0a791045df994e38`, in `/Users/arcades/.codex/worktrees/profile-upload-retry/system-arcades-me`. GitHub verification and Vercel preview passed. Remote CI: 233 source/database tests and 382 browser tests passed; five optional browser skips. Lint/types/build/recovery/package checks passed. Rendered desktop and 320px/200% text recovery checks passed. Managed worktree is clean; local test database stopped. Remaining: user review and separately authorized merge/release; authenticated production-user retry is still unverified.
+- Execution checkpoint: branch `codex/profile-upload-retry` in managed worktree `/Users/arcades/.codex/worktrees/profile-upload-retry/system-arcades-me`. Backend, frontend, and independent review used Luna at medium effort. Implementation and local verification are complete. Browser skill/plugin unavailable; repository Playwright provided rendered validation.
+- Next step: draft PR and remote verification. Reporter timing and production retry remain unknown and separate from this completed follow-up implementation.
 
 ## Verified diagnosis
 
@@ -58,12 +59,16 @@ Run on a clean checkout based on current main. Read the relevant installed Next.
 | Upload succeeds but refresh fails | State is described as saved but refresh unverified; do not invite a second upload as if nothing saved. |
 | Rendered error on phone/desktop and enlarged text | Clear large text, high contrast, visible keyboard focus, generous targets, wrapped links, no clipped message or colour-only distinction. Error is announced once and associated with the form. |
 
-No new code tests or rendered accessibility checks were run in this investigation-only task. Browser fixtures establish UI behavior; isolated database/storage checks establish persistence; an authorized authenticated production retry establishes the reporting user's outcome. None substitutes for another.
+## Implementation checkpoint
 
-## Follow-up Gallery triage
+- Backend implementation complete: additive safe error codes, byte/type/version-bound profile receipts, owner-scoped preflight replay before storage reservation, and transactional duplicate cleanup. Legacy receipt handling remains compatible.
+- Full source/database gate passed: 233 tests, zero failures/skips, against isolated local PostgreSQL. The new full-route test uses a synthetic Blob server and verifies fresh-read persistence, full-quota replay without another PUT/reservation, payload/version/type mismatches, foreign target denial, concurrent cleanup, revoked access, and explicit upload pause.
+- Encrypted backup/recovery regression passed. Portable plugin package produced successfully.
+- Frontend complete: actionable code/status-based recovery, selected-file retention, stable picture-attempt identity, and target-scoped pending notices that survive tab/file changes and later rejected uploads. Only a successful profile read clears pending state. Ordinary gallery uncertainty prompts reconciliation instead of encouraging duplicate submission.
+- Independent Luna review found no remaining actionable issue after the pending-state corrections.
+- Lint passed with two existing template warnings; application and browser TypeScript checks passed; production build passed.
+- Browser coverage: 382 passing cases, five optional skips. The full run passed 379 and found three instances of one missing synthetic image mock in the new lost-response test. After adding that fixture, the affected test passed on all three viewports. No application change was needed for that failure.
+- Visual QA passed on desktop (1440px) and mobile (320px, 200% text): correct page/title, meaningful content, no framework overlay, no unexpected browser errors, keyboard tab selection and focused recovery action, no horizontal overflow, and recovery target heights of 54.5px / 130.4px. Screenshots saved outside the repository.
+- Remaining: draft PR/remote CI; production-user retry remains unverified. These changes have not been merged or deployed.
 
-- Outcome sought: distinguish missing completed results from the separate profile-photo collection shown by the second screenshot.
-- Route: two read-only Luna inspections, medium effort, for query and UI/error-state boundaries. No gallery files changed; PR #108 remains separate.
-- Evidence: generated-gallery.ts lists only owner-scoped COMPLETE native/group renders with stored images. Uploaded pictures and saved external/Furry results enter private_image and appear under /gallery (Profile photos). The pictured /gallery/generated view excludes that collection. Native/group completion paths update COMPLETE and storage keys together. Ordinary HTTP/network failures show errors rather than confirmed-empty state.
-- Limitation: the expected source/result and account are unknown. No query defect or production data loss is established by the screenshot. The user has been asked which category should be visible.
-- Next: for uploaded/imported pictures, clarify the generated-gallery label and provide a Profile photos link; for missing completed native/group results, trace the specific authorized result before choosing a fix. Preserve pre-existing unrelated gallery/navigation edits in the primary checkout.
+Browser fixtures establish UI behavior; isolated database/storage checks establish persistence; an authorized authenticated production retry establishes the reporting user's outcome. None substitutes for another.

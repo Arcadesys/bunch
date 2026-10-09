@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AppNavigation } from "@/app/app-navigation";
 import { GeneratedGallery } from "./generated-gallery";
-import { PeopleToolsNav } from "@/app/people-tools-nav";
 
 export const metadata: Metadata = {
   title: "Generated photos — Bunch",
@@ -11,13 +10,8 @@ export const metadata: Metadata = {
 };
 
 export default function GeneratedGalleryPage() {
-  return <main className="shell gallery-shell">
+  return <main className="app-page">
     <AppNavigation current="GALLERY" />
-    <PeopleToolsNav current="gallery" />
-    <header className="site-header">
-      <div><p className="eyebrow">Bunch · private photos</p><h1>Generated photos</h1><p>Your generated images and group photos, newest first.</p></div>
-      <div className="header-actions"><Link className="button" href="/images">Create an image</Link><Link className="button button-secondary" href="/group-photo">Create a group photo</Link><Link className="button button-secondary" href="/gallery">My gallery</Link></div>
-    </header>
     <GeneratedGallery />
   </main>;
 }

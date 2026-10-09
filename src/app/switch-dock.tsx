@@ -125,6 +125,7 @@ export function SwitchDock() {
   const [logged, setLogged] = useState<Logged | null>(null);
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const dockSection = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
@@ -134,6 +135,49 @@ export function SwitchDock() {
   const submitting = useRef(false);
   const rosterRequested = useRef(false);
   const restoreTriggerFocus = useRef(false);
+
+  // The switch dock is fixed for ordinary layouts, but a user's enlarged text
+  // can make it occupy most of a phone viewport. Move it into document flow in
+  // that case so it cannot cover the page controls below it. Keep that choice
+  // stable until the viewport or root text size changes to avoid oscillation.
+  useEffect(() => {
+    const element = dockSection.current;
+    if (!element) return;
+    let inFlow = false;
+    let signature = "";
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+        const viewport = window.visualViewport;
+        const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+        const nextSignature = `${window.innerWidth}x${window.innerHeight}:${viewport?.width ?? ""}x${viewport?.height ?? ""}x${viewport?.scale ?? ""}:${rootFontSize}`;
+        if (rootFontSize > 32) document.documentElement.dataset.largeText = "true";
+        else delete document.documentElement.dataset.largeText;
+        if (signature !== nextSignature) {
+          signature = nextSignature;
+          inFlow = false;
+        }
+        const height = element.getBoundingClientRect().height;
+        if (!inFlow && height > viewportHeight * 0.35) inFlow = true;
+        element.dataset.flow = inFlow ? "document" : "fixed";
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+      cancelAnimationFrame(frame);
+      delete element.dataset.flow;
+      delete document.documentElement.dataset.largeText;
+    };
+  }, []);
 
   // A failed read never raises an alert in the dock; signed-out pages mount it
   // too, and Switch still opens.
@@ -341,7 +385,7 @@ export function SwitchDock() {
   const rosterProblem = read.status === "SIGNED_OUT" || roster.status === "SIGNED_OUT" ? "SIGNED_OUT"
     : read.status === "ERROR" || roster.status === "ERROR" ? "ERROR" : null;
 
-  return <section className="switch-dock" aria-label="Switch dock">
+  return <section ref={dockSection} className="switch-dock" aria-label="Switch dock">
     {open ? <dialog ref={dialog} id="switch-dock-panel" className="switch-dock-modal" aria-labelledby="switch-dock-heading"
       onCancel={event => { event.preventDefault(); closePanel(); }}
       onClick={event => { if (event.target === event.currentTarget) closePanel(); }}
