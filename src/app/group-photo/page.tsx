@@ -191,7 +191,7 @@ export default function GroupPhotoPage() {
       {project && <a className="group-photo-back" href="/home" aria-label="Back to Bunch home"><ArrowIcon direction="left" /><span>Bunch</span></a>}
       <div className="group-photo-title"><h1>Group Photo</h1><p>{project ? "Place everyone, then finish the photo." : "Choose a place for everybody."}</p></div>
       <div className="group-photo-appbar-actions">
-        <Link className="button button-secondary" href="/gallery/generated">Photo gallery</Link>
+        <Link className="button button-secondary" href="/gallery/generated">Generated photos</Link>
         {project && <a className="group-photo-new-scene" href="/group-photo">Start or reopen another scene</a>}
       </div>
     </header>

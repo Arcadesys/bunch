@@ -1,12 +1,13 @@
 import Link from "next/link";
 
-type PeopleTool = "people" | "gallery" | "group-photo" | "images" | "profile-gallery";
+type PeopleTool = "people" | "gallery" | "group-photo" | "images" | "profile-gallery" | "other-galleries";
 
 export function PeopleToolsNav({ current }: { current: PeopleTool }) {
   const links = [
     ["people", "/profiles", "People"],
-    ["gallery", "/gallery/generated", "Gallery"],
-    ["profile-gallery", "/gallery", "Profile photos"],
+    ["profile-gallery", "/gallery", "My gallery"],
+    ["other-galleries", "/gallery?view=others", "Other galleries"],
+    ["gallery", "/gallery/generated", "Generated photos"],
     ["group-photo", "/group-photo", "Group Photo"],
     ["images", "/images", "Create Images"],
   ] as const;

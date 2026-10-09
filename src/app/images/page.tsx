@@ -92,7 +92,7 @@ export default function ImagesPage() {
   return <main className="shell" style={{ maxWidth: "100%", overflowWrap: "anywhere" }}>
     <AppNavigation current="IMAGES" />
     <PeopleToolsNav current="images" />
-    <header className="site-header"><div><p className="eyebrow">Bunch · private image generation</p><h1>Images</h1><p>Generate a new private scene from your words, with selected people only when you choose them.</p></div><Link className="button button-secondary" href="/gallery/generated">View photo gallery</Link></header>
+    <header className="site-header"><div><p className="eyebrow">Bunch · private image generation</p><h1>Images</h1><p>Generate a new private scene from your words, with selected people only when you choose them.</p></div><Link className="button button-secondary" href="/gallery/generated">View generated photos</Link></header>
     <p className="notice" role="status">{notice}</p>
     <section className="panel" aria-labelledby="generate-heading"><h2 id="generate-heading">Generate a private image</h2><p>This creates a separate private image. It does not change a profile picture, selected appearance references, hosting, or fronting.</p>
       {available === false && <p role="alert">Private image generation is not connected yet. Your prompt has not been sent.</p>}

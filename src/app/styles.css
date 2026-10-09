@@ -387,6 +387,21 @@ textarea:focus-visible {
   padding-top: 24px;
 }
 
+.gallery-profile-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+  margin: 24px 0;
+  padding: 18px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.gallery-profile-picker label { font-weight: 800; }
+.gallery-profile-picker select { min-width: min(20rem, 100%); min-height: 48px; }
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
