@@ -1,4 +1,5 @@
 import "./landing.css";
+import Image from "next/image";
 const signIn = "/auth/login";
 
 export function BunchLanding() {
@@ -37,12 +38,13 @@ export function BunchLanding() {
             </a>
           </div>
           <figure className="hero-photo">
-            <img
+            <Image
               src="/landing/bunch-group.jpg"
               alt="Eight members of the Arcades, pictured as distinct illustrated characters, together on a sunny beach."
-              width="1280"
-              height="958"
-              fetchPriority="high"
+              width={1280}
+              height={958}
+              sizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1440px) 47vw, 616px"
+              preload
             />
             <figcaption>
               <span>The Arcades, together.</span>
@@ -100,22 +102,22 @@ export function BunchLanding() {
           <div className="wrap people-inner">
             <div className="portrait-pair">
               <figure>
-                <img
+                <Image
                   src="/landing/addie.jpg"
                   alt="Addie’s illustrated portrait: patterned sweater, glasses, and dark hair with a pink streak."
-                  width="640"
-                  height="640"
-                  loading="lazy"
+                  width={640}
+                  height={640}
+                  sizes="(max-width: 760px) calc(50vw - 33px), (max-width: 1440px) 23vw, 300px"
                 />
                 <figcaption>Addie</figcaption>
               </figure>
               <figure>
-                <img
+                <Image
                   src="/landing/lucy.png"
                   alt="Lucy’s illustrated portrait: tufted ears, spotted fur, purple glasses, and a green dress."
-                  width="1254"
-                  height="1254"
-                  loading="lazy"
+                  width={1254}
+                  height={1254}
+                  sizes="(max-width: 760px) calc(50vw - 33px), (max-width: 1440px) 23vw, 300px"
                 />
                 <figcaption>Lucy</figcaption>
               </figure>

@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { getDatabasePool } from "@/db/client";
 
 import { canShareGallery, galleryAccessPredicate } from "./gallery-access";
+import { deleteSharedGalleryCache } from "./shared-gallery-cache";
 import { SystemError } from "./system-error";
 
 const lifetimeMilliseconds = {
@@ -54,7 +55,12 @@ export class GalleryShareService {
 
   async revoke(ownerId: string, id: string) {
     await this.assertAccess(ownerId);
-    return (await this.pool.query("update gallery_share set revoked_at=coalesce(revoked_at,now()) where owner_id=$1 and id=$2::uuid returning id", [ownerId, id])).rowCount === 1;
+    const revoked = (await this.pool.query("update gallery_share set revoked_at=coalesce(revoked_at,now()) where owner_id=$1 and id=$2::uuid returning id", [ownerId, id])).rowCount === 1;
+    if (revoked) {
+      const purge = await deleteSharedGalleryCache(id);
+      if (!purge.deleted) throw new Error("Shared gallery revocation was recorded, but its edge cache could not be deleted yet.");
+    }
+    return revoked;
   }
 
   async setCurrentFronting(ownerId: string, id: string, enabled: boolean): Promise<GalleryShare> {
@@ -75,12 +81,12 @@ export class GalleryShareService {
 
   private async publicShare(token: string) {
     const row = (await this.pool.query(
-      `select s.owner_id, s.show_current_fronting from gallery_share s join app_user u on u.id=s.owner_id
+      `select s.owner_id, s.id as share_id, s.show_current_fronting from gallery_share s join app_user u on u.id=s.owner_id
        left join pilot_account a on a.owner_id=u.id cross join pilot_policy p
        where s.token_hash=$1 and s.revoked_at is null and (s.expires_at is null or s.expires_at>now()) and ${galleryAccessPredicate} limit 1`,
       [tokenHash(token)],
     )).rows[0];
-    return row ? { ownerId: String(row.owner_id), showCurrentFronting: row.show_current_fronting === true } : null;
+    return row ? { shareId: row.share_id ? String(row.share_id) : undefined, ownerId: String(row.owner_id), showCurrentFronting: row.show_current_fronting === true } : null;
   }
 
   async publicGallery(token: string): Promise<PublicGallery | null> {
@@ -117,10 +123,15 @@ export class GalleryShareService {
   }
 
   async publicImage(token: string, imageId: string) {
-    const ownerId = await this.publicOwner(token);
-    if (!ownerId) return null;
-    const row = (await this.pool.query("select storage_key,content_type from private_image where owner_id=$1 and id=$2::uuid limit 1", [ownerId, imageId])).rows[0];
-    return row ? { storageKey: String(row.storage_key), contentType: String(row.content_type) } : null;
+    const share = await this.publicShare(token);
+    if (!share) return null;
+    const row = (await this.pool.query("select storage_key,content_type,created_at from private_image where owner_id=$1 and id=$2::uuid limit 1", [share.ownerId, imageId])).rows[0];
+    return row ? {
+      shareId: share.shareId,
+      storageKey: String(row.storage_key),
+      contentType: String(row.content_type),
+      createdAt: row.created_at ? date(row.created_at) : undefined,
+    } : null;
   }
 
   private toShare(row: Record<string, unknown>): GalleryShare {

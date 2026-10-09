@@ -1,29 +1,60 @@
 # Native image generation
 
+## Host image generation
+
+In Codex, use `prepare_codex_alter_image`. It resolves exact active names or
+aliases and supplies ordered, permanent gallery and download routes for every
+selected appearance reference. These routes require the owner's browser
+session; they contain no capability, storage key, or image bytes. Download only
+the matching selected images through the authenticated gallery, inspect all
+local references, then use Codex's image generator with the canonical prompt.
+An optional user-supplied scene or style image stays local.
+
+`REFERENCE_DOWNLOAD_REQUIRED` confirms preparation only. It does not mean
+references reached the host or an image was generated. If authentication or a
+reference is unavailable, report the blocker without substituting another photo,
+guessing a likeness, requesting a re-upload, or starting a paid Bunch job.
+
+`prepare_chatgpt_alter_image` requires ChatGPT's mounted widget and its
+file-upload, widget-state, and follow-up APIs. It cannot transfer files in Codex.
+The widget unwraps hidden metadata envelopes, prevents concurrent duplicate
+handoffs, and records `sent` only after the follow-up succeeds. A failed handoff
+offers an explicit retry that reuses already transferred references. It reports
+partial transfer honestly and confirms the request was sent, rather than claiming
+the host has already generated an image. No output is displayed inside this
+handoff card; the host shows it in the conversation.
+
 Bunch's Images page generates one image from a prompt, with optional named people. Selected people use every saved appearance reference and their canonical visual identity. An uploaded background and Furry Image Studio are not required.
 
-For a one-shot named-character request such as “@Bunch draw Lucy in a cozy
-sweater,” the companion should resolve the exact active name `Lucy Arcade` (or
-a confirmed exact alias), then call `generate_scene` with that name in
-`alterNames`. Bunch supplies the selected appearance references privately to
-the native provider; the user does not need to upload a source photo. The
-result remains a private generated image and does not change Lucy's profile
-picture, appearance references, hosting, fronting, or canon.
+For every ChatGPT named-character request such as “@Bunch draw Lucy in a cozy
+sweater,” resolve the exact active name `Lucy Arcade` (or a confirmed exact
+alias), then call `prepare_chatgpt_alter_image`. The optional `sceneImage` is
+image 1 when supplied; otherwise the ordered private appearance references
+begin at image 1. The widget transfers those references to transient ChatGPT
+files with `library: false`, keeps Bunch capabilities widget-only, and asks
+ChatGPT's image tool to generate once. Reference bytes are necessary for
+identity fidelity; reference IDs, prose, URLs, and storage identifiers are not
+image content.
+
+This handoff creates no Bunch scene job, calls no Bunch image provider, consumes
+no Bunch image allowance, and saves no Bunch output. `generate_scene` is the
+paid Bunch-native path and is reserved for a Bunch-owned surface or an explicit
+request for Bunch-native generation.
+
+If an alter is unknown, ambiguous, archived, or has no selected appearance
+reference, stop visibly and name the exact missing or conflicting identity.
+Never silently omit a participant, invent a likeness, or fall back to a prose
+description. If the ChatGPT file, upload, or generation handoff fails, stop
+without claiming an image was generated.
+
+The ChatGPT handoff is distinct from native Bunch generation. Its generated
+output remains a private generated image and does not change profile pictures,
+appearance references, hosting, fronting, presence, or canon. A generated
+output is never automatically a profile picture, selected reference, or canon.
 
 Reference IDs returned by `get_alter` and the `prepare_*` tools identify photos
-but carry no pixels, and reference media stays in private metadata that a chat
-host's own image tool never receives. `generate_scene` is therefore the direct
-route for drawing named people in chat, not a fallback after a prepare tool. The
-prepare tools build packets for external image-studio adapters only.
-
-ChatGPT once called `prepare_alter_image_prompt` for Lucy, read its prompt
-("Use the attached appearance reference…"), found no attachment, and asked the
-user to upload one. The tool descriptions, server instructions, and companion
-skill now send drawing requests straight to `generate_scene`. Because hosts act
-on results more reliably than descriptions, the result text of `get_alter` and
-`list_alters` names the exact `generate_scene` call, and the prepare results
-lead with it, ahead of the packet, whenever every named person is ready and has
-selected appearance references.
+but carry no pixels. Capabilities, URLs, bytes, and storage keys remain private
+metadata and never enter model-visible content.
 
 Tool descriptions and server instructions reach ChatGPT only after a deploy and
 a refresh of the connector's tool list; a stale connector keeps the old wording.
@@ -45,15 +76,20 @@ requests one fresh capability before pointing to that link.
 
 ## Configuration and release
 
-- Apply `drizzle/0018_native_scene_render.sql` before deploying the new application.
+- Apply all migrations through `drizzle/0023_ai_spend_ledger.sql` before deploying. This preserves the attempt backfill and adds versioned cost metadata without storing prompts or private-media identifiers.
 - Reuse the existing server-only `OPENAI_API_KEY` and private Blob configuration.
-- `NATIVE_SCENE_MODEL` optionally selects the image model. The provider supports prompt-only generation and reference-conditioned edits, following the [official Image API guide](https://developers.openai.com/api/docs/guides/image-generation).
-- `NATIVE_SCENE_DAILY_LIMIT` bounds native generation attempts per owner per day; the default is 20. Failed attempts also count because a provider call may have been billed. This is an attempt cap, not a guaranteed dollar budget.
+- `AI_COST_ROUTING_STAGE` controls rollout: `shadow` (default) records the current Sunburst/high path, `operator` enables routing and dollar gates only for the operator, `pilot` enables them for all pilot accounts, and `off` restores the configured legacy Sunburst/high route while retaining telemetry, the count allowance, and the hard daily spend pause. `NATIVE_SCENE_MODEL` and `GROUP_PHOTO_MODEL` remain legacy/off-route overrides.
+- Active routing uses GPT Image 2 medium for prompt-only scenes, Sunburst high for reference-sensitive generation/repair/photo finishing, and GPT Image 2 low after the $0.10 daily soft limit. At $0.25, paid images pause until Chicago midnight. The existing 10-use FRIEND limit remains independent.
+- Every active FRIEND account has **10 shared image uses per Chicago calendar day**. `NATIVE_SCENE_DAILY_LIMIT` now controls the OPERATOR/legacy default only (20). Account → Pilot image allowances lets the active operator override any account with 0–1000 uses or clear the override. Zero blocks new requests.
+- Native generation, repairs and Group Photo finishing share `image_usage`. Admission and job creation run under the owner row lock. Replays do not reserve again. The admission day stays fixed across midnight, regardless of worker start time.
+- Reservations reduce remaining uses immediately. Only failures before dispatch release them; provider failures, uncertain timeouts and storage failures after dispatch count. Deleting outputs never refunds dispatched uses. Expiry never retries a provider call.
+- `GET /api/v1/image-allowance` returns the count allowance, current dollar spend, routing stage/mode, limits, reset time, and next prompt-only/identity-sensitive routes. Native/group responses and MCP expose the same accounting. Resets are midnight America/Chicago, including daylight-saving changes; UI shows the local equivalent.
+- The ledger stores model, quality, size, action, route, reference count, versioned price basis, modality-specific token usage, and estimated/confirmed microdollar cost. It never stores prompts, reference IDs, provider messages, or private image bytes. Provider-confirmed usage replaces the conservative dispatch estimate when the response contains a complete modality breakdown.
 - Private scene outputs are independent artifacts. Generating does not change anyone's profile picture, appearance references, hosting or fronting.
 
 ## Execution and privacy
 
-The web interface and MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage.
+The Bunch web interface and paid native MCP tools share an owner-scoped database job. A stable request ID returns the same job; reuse with different input conflicts. Workers claim queued jobs atomically. Processing runs through Next.js `after` within a 300-second route budget, with a 210-second provider timeout. Reopening may resume queued work. Running jobs are never automatically repeated; interrupted attempts fail after six minutes and require a new explicit generation action. A lost response may still have incurred provider usage.
 
 For named people, the job freezes profile versions, the canonical prompt and ordered reference associations. Private reference bytes transfer directly from Bunch's server to the configured image provider. They do not enter model-facing tool text. Before attaching the normalized JPEG, the worker rechecks profile versions and erasure. Authenticated image routes serve output with private/no-store headers.
 
@@ -64,3 +100,13 @@ Account export includes owner-authorized downloads for generated images. Account
 Win condition: a prompt submitted through Bunch produces a real private image that decodes in the page and reopens with the same saved hash. A named two-person scene additionally preserves every selected reference.
 
 Verification records will distinguish schema/static checks, provider contract tests, PostgreSQL persistence/erasure/replay tests, browser interaction tests, and the real-provider rendered check. Mocked image fixtures are not evidence of real generation or identity fidelity.
+
+## Repairs
+
+Use **Repair this image** from image history, either gallery, or a finished Group Photo. The Images page also lists available private sources. A correction makes a separate native image job using `repairSource: { kind: "private" | "native" | "group", id }` and the existing `scene` field. Repair jobs reject additional named people, retain source orientation at supported provider sizes, and preserve the original. The MCP `repair_image` tool accepts `source`, `correction`, and a stable `requestId`; `get_image_allowance` reports the shared balance.
+
+Repair jobs snapshot all ancestor person dependencies and link to their immediate source with cascading foreign keys. Source ownership and existence, profile versions, and active account access are checked before dispatch and attachment. Person erasure includes repair descendants. Private-source deletion removes descendant bytes and jobs; account export/deletion includes repairs and usage. The existing `pilot:admin reconcile-uploads` command also removes orphaned generated outputs while preserving attached generations, group photos, and backgrounds.
+
+Storage is separate from daily uses. Before dispatch, the service requires the existing storage policy and at least 5 MB of remaining storage for a pilot account, matching the maximum normalized output. Concurrent uploads can still consume this headroom; upload reservation remains authoritative.
+
+For rollout, run the database and browser checks, apply migrations, deploy, then perform one authenticated real generation and one repair. Verify both images decode and their saved hashes survive reopening. A configured key, successful build, or synthetic fixture alone does not establish provider access or live image quality.

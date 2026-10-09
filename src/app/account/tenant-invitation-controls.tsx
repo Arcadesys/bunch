@@ -14,6 +14,9 @@ export function TenantInvitationControls() {
   const [activation, setActivation] = useState<{ open: boolean; maxFriends: number; reason?: string } | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const expansionCapacity = activation
+    ? Math.min(activation.maxFriends + 3, 20)
+    : 3;
 
   async function refresh() {
     const response = await fetch("/api/v1/account/invitations", { cache: "no-store" });
@@ -63,7 +66,9 @@ export function TenantInvitationControls() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "Invitations could not be opened.");
-      setMessage("Invitations are open for the recorded capacity. You can now create a one-use link.");
+      setMessage(activation?.open
+        ? `Pilot capacity increased to ${Number(form.get("slots"))} private systems.`
+        : "Invitations are open for the recorded capacity. You can now create a one-use link.");
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Invitations could not be opened.");
@@ -98,7 +103,22 @@ export function TenantInvitationControls() {
       <label className="pilot-check"><input type="checkbox" name="capacityConfirmed" required />I verified capacity for the selected number of systems.</label>
       <label className="pilot-check"><input type="checkbox" name="recoveryConfirmed" required />I verified encrypted recovery and a restore test in the last seven days.</label>
       <button disabled={busy}>Record evidence and open invitations</button>
-    </form> : <button type="button" onClick={() => void create()} disabled={busy || !activation}>Create and copy invitation link</button>}
+    </form> : <>
+      <button type="button" onClick={() => void create()} disabled={busy || !activation}>Create and copy invitation link</button>
+      {activation && activation.maxFriends < 20 ? <details>
+        <summary>Increase pilot capacity by 3</summary>
+        <form onSubmit={activate} className="tenant-activation-form">
+          <p>Current capacity: <strong>{activation.maxFriends}</strong> private systems. New capacity: <strong>{expansionCapacity}</strong>.</p>
+          <input name="slots" type="hidden" value={expansionCapacity} />
+          <label>When did you verify capacity for {expansionCapacity} systems?<input name="checkedAt" type="datetime-local" required /></label>
+          <label>Capacity evidence<textarea name="capacityEvidence" required minLength={12} maxLength={2000} placeholder={`What capacity and cost check did you complete for ${expansionCapacity} systems?`} /></label>
+          <label>Recovery evidence<textarea name="recoveryEvidence" required minLength={12} maxLength={2000} placeholder="What seven-day recovery and restore check did you complete?" /></label>
+          <label className="pilot-check"><input type="checkbox" name="capacityConfirmed" required />I verified capacity for {expansionCapacity} private systems.</label>
+          <label className="pilot-check"><input type="checkbox" name="recoveryConfirmed" required />I verified encrypted recovery and a restore test in the last seven days.</label>
+          <button disabled={busy}>Record evidence and increase capacity to {expansionCapacity}</button>
+        </form>
+      </details> : null}
+    </>}
     <h3>Invitation status</h3>
     {invitations.length === 0 ? <p>No invitation links created yet.</p> : <ul className="tenant-invitation-list">
       {invitations.map((invitation) => <li key={invitation.id}>

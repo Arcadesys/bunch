@@ -27,12 +27,13 @@ integration("signed MCP tokens still read only their own database records alongs
   });
   const dependencies = {
     authorize: async (req: Request) => verifyCompanionAccessToken(req.headers.get("authorization")!.slice(7), config, async () => publicKey),
-    privateServer: (ownerId: string) => createMcpServer(ownerId, service),
+    createPrivateServer: (ownerId: string) => createMcpServer(ownerId, service),
   };
   try {
     const profiles = await Promise.all(owners.map((owner, i) => service.createAlter(owner, { requestId: randomUUID(), name: `Private test person ${i + 1}` }, "WEB")));
-    for (let i = 0; i < owners.length; i++) {
-      const token = await new SignJWT({ scope: COMPANION_SCOPE }).setProtectedHeader({ alg: "RS256" }).setSubject(subjects[i]).setIssuer(config.issuer).setAudience(config.audience).setExpirationTime("5m").sign(privateKey);
+    const tokens = await Promise.all(subjects.map(subject => new SignJWT({ scope: COMPANION_SCOPE }).setProtectedHeader({ alg: "RS256" }).setSubject(subject).setIssuer(config.issuer).setAudience(config.audience).setExpirationTime("5m").sign(privateKey)));
+    await Promise.all(owners.map(async (owner, i) => {
+      const token = tokens[i];
       const response = await handleMcpRequest(request("list_alters", {}, token), dependencies);
       assert.equal(response.status, 200);
       const result = (await response.json()).result;
@@ -40,8 +41,12 @@ integration("signed MCP tokens still read only their own database records alongs
       assert.doesNotMatch(JSON.stringify(result), /Fenton|Benny|Dot/);
       const foreign = await handleMcpRequest(request("get_alter", { alterId: profiles[1 - i].data.id }, token), dependencies);
       assert.equal((await foreign.json()).result.isError, true);
-    }
-    const demo = await handleMcpRequest(request("get_demo_system", {}), dependencies);
+      assert.equal((await service.listAlters(owner, {})).data.length, 1);
+    }));
+    const demo = await handleMcpRequest(request("get_demo_system", {}), {
+      ...dependencies,
+      authorize: async () => { throw new Error("anonymous demo must not authorize"); },
+    });
     assert.equal(demo.status, 200);
     assert.doesNotMatch(await demo.text(), /Private test person|demo-isolation/);
     for (const owner of owners) assert.equal((await service.listAlters(owner, {})).data.length, 1, "demo reads never seed or mutate tenants");

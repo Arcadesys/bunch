@@ -25,6 +25,10 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
       DATABASE_URL_UNPOOLED: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
+      # bunch_test is the service container's POSTGRES_USER, so it is already a
+      # superuser and can CREATE DATABASE for reference-api.integration.test.ts,
+      # which provisions and drops its own throwaway database per run.
+      BUNCH_REFERENCE_TEST_DATABASE_URL: postgres://bunch_test:local_ci_test@127.0.0.1:5432/bunch_test
       SYSTEM_PUBLIC_ORIGIN: http://127.0.0.1:3000
     steps:
       - uses: actions/checkout@v4

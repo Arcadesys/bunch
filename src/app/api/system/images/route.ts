@@ -3,10 +3,10 @@ import { getPilotService } from "@/server/pilot-service";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { requireOwnerId } from "@/server/auth";
-import { deletePrivateImages, savePrivateImage } from "@/server/private-images";
+import { deletePrivateImages, privateImageUploadIdentity, savePrivateImage } from "@/server/private-images";
 import { repository } from "@/server/repository";
 import { getSystemService } from "@/server/system-service";
-import { SystemError } from "@/server/system-error";
+import { SystemError, systemErrorStatus } from "@/server/system-error";
 
 export const runtime = "nodejs";
 
@@ -20,12 +20,18 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || typeof alterId !== "string") throw new Error("Choose a profile and image.");
     await getPilotService().assertAccess(ownerId, "upload");
     await getSystemService().getAlter(ownerId, alterId);
+    const isProfilePicture = form.get("setAsProfilePicture") === "true";
+    const expectedVersion = Number(form.get("expectedVersion"));
+    const requestId = request.headers.get("idempotency-key") ?? String(form.get("requestId") ?? "");
+    const uploadIdentity = isProfilePicture ? await privateImageUploadIdentity(file) : undefined;
+    if (isProfilePicture) {
+      const replay = await getSystemService().findProfilePictureUploadReplay(ownerId, alterId, requestId, expectedVersion, uploadIdentity!);
+      if (replay) return NextResponse.json({ profile: replay.data, replayed: true });
+    }
     const saved = await savePrivateImage(ownerId, file);
     try {
-      if (form.get("setAsProfilePicture") === "true") {
-        const expectedVersion = Number(form.get("expectedVersion"));
-        const requestId = request.headers.get("idempotency-key") ?? String(form.get("requestId") ?? "");
-        const result = await getSystemService().attachAndSetProfilePicture(ownerId, alterId, { id: randomUUID(), ...saved }, { expectedVersion, requestId }, "WEB");
+      if (isProfilePicture) {
+        const result = await getSystemService().attachAndSetProfilePicture(ownerId, alterId, { id: randomUUID(), ...saved }, { expectedVersion, requestId }, "WEB", uploadIdentity);
         if (result.replayed) await deletePrivateImages([saved.storageKey]);
         return NextResponse.json({ profile: result.data, replayed: result.replayed });
       }
@@ -37,7 +43,10 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to upload image.";
-    const status = error instanceof SystemError ? (error.code === "CONFLICT" ? 409 : error.code === "NOT_FOUND" ? 404 : error.code === "FORBIDDEN" ? 403 : error.code === "RATE_LIMITED" ? 429 : error.code === "QUOTA_EXCEEDED" ? 413 : 400) : message.includes("Sign in") ? 401 : 400;
-    return NextResponse.json({ error: error instanceof SystemError ? error.userMessage : message, details: error instanceof SystemError ? error.details : undefined }, { status });
+    const status = error instanceof SystemError ? systemErrorStatus(error) : message.includes("Sign in") ? 401 : 400;
+    return NextResponse.json(
+      { error: error instanceof SystemError ? error.userMessage : message, code: error instanceof SystemError ? error.code : undefined, details: error instanceof SystemError ? error.details : undefined },
+      { status, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 }

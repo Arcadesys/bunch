@@ -1,4 +1,12 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
+
+// Phones show one pane at a time: a row opens its detail, "← Create images" returns to the list.
+async function openRow(page: Page, name: RegExp) {
+  const back = page.getByRole("button", { name: "← Create images" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("region", { name: "Create images" }).getByRole("button", { name }).click();
+}
 
 type RenderState = "QUEUED" | "RUNNING" | "COMPLETE" | "FAILED";
 
@@ -84,6 +92,7 @@ test("a prompt-only mock render queues, completes, decodes, and reloads", async 
   await expect(
     page.getByText("No private images generated here yet."),
   ).toBeVisible();
+  await openRow(page, /^\+ New image/);
   await page
     .getByRole("textbox", { name: "Describe the image" })
     .fill("A quiet synthetic studio scene");
@@ -117,7 +126,7 @@ test("a prompt-only mock render queues, completes, decodes, and reloads", async 
 
   // The requested id is deliberately absent from the 20-item history page.
   await page.goto(`/images?render=${deepLinkRenderId}`);
-  await expect(page.getByText("Deep-linked synthetic render")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Image details" }).getByText("Deep-linked synthetic render")).toBeVisible();
   await expect(
     page.getByRole("img", { name: "Generated private image" }).first(),
   ).toBeVisible();
@@ -178,6 +187,7 @@ test("optional people use every paginated exact name without horizontal overflow
   );
 
   await page.goto("/images");
+  await openRow(page, /^\+ New image/);
   await expect(page.getByLabel(/Avery Fixture/)).toBeVisible();
   await expect(page.getByLabel(/Blake Fixture/)).toBeVisible();
   await expect(page.getByText("Blake Fixture private album (3 pictures)"))
@@ -213,4 +223,73 @@ test("optional people use every paginated exact name without horizontal overflow
       "The 320px people picker and queued status must fit the viewport",
     ).toBeLessThanOrEqual(reflow.client + 1);
   }
+});
+
+test("repair preserves the original, shows allowance, and reopens both images", async ({ page }, testInfo) => {
+  const original = render(deepLinkRenderId, "COMPLETE", "Original synthetic scene");
+  const repaired = render(queuedRenderId, "COMPLETE", "Make the background blue");
+  let submitted = false;
+  let body: Record<string, unknown> | undefined;
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const allowance = () => ({ limit: 10, used: submitted ? 2 : 1, reserved: 0, remaining: submitted ? 8 : 9, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: .04, softLimitUsd: .1, hardLimitUsd: .25, mode: "STANDARD", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "medium", label: "Prompt-only value route" }, identitySensitive: { model: "gpt-image-2.5-sunburst", quality: "high", label: "Identity-preserving route" } } });
+  await page.route("**/api/v1/alters**", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/v1/image-repair-sources", route => route.fulfill({ json: { data: [{ kind: "native", id: original.id, label: original.scene, url: `/api/v1/native-scenes/renders/${original.id}/image` }] } }));
+  await page.route("**/api/v1/native-scenes/renders", async route => {
+    if (route.request().method() === "POST") { body = route.request().postDataJSON(); submitted = true; return route.fulfill({ json: { data: repaired, meta: { allowance: allowance() } } }); }
+    return route.fulfill({ json: { data: submitted ? [repaired, original] : [original], meta: { available: true, allowance: allowance() } } });
+  });
+  await page.route("**/api/v1/native-scenes/renders/*/image", route => route.fulfill({ contentType: "image/png", body: imageFixture }));
+  await page.goto("/images");
+  await expect(page.getByRole("heading", { name: "Create images", exact: true })).toBeVisible();
+  await openRow(page, /^\+ New image/);
+  await expect(page.getByText("9 of 10 image uses remaining")).toBeVisible();
+  await openRow(page, /^Original synthetic scene/);
+  await page.getByRole("button", { name: "Repair this image", exact: true }).click();
+  const correction = page.getByRole("textbox", { name: "Describe the correction" });
+  await expect(correction).toBeFocused();
+  await expect(page.getByRole("img", { name: "Original image selected for repair" })).toBeVisible();
+  await correction.fill("Make the background blue");
+  const submit = page.getByRole("button", { name: "Repair and save new image" });
+  await submit.focus();
+  await expect(submit).toBeFocused();
+  const size = await submit.boundingBox();
+  expect(size?.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Repair started. Your original is preserved; the new image will appear in history.")).toBeVisible();
+  expect(body).toEqual({ scene: "Make the background blue", repairSource: { kind: "native", id: original.id } });
+  await page.reload();
+  // The reload reopens the image that was being repaired.
+  await expect(page.getByRole("region", { name: "Image details" }).getByText("Original synthetic scene")).toBeVisible();
+  await openRow(page, /^\+ New image/);
+  await expect(page.getByText("8 of 10 image uses remaining")).toBeVisible();
+  // Both the original and the repair stay in history; each reopens as a finished image.
+  const back = page.getByRole("button", { name: "← Create images" });
+  if (await back.isVisible()) await back.click();
+  const history = page.getByRole("region", { name: "Create images" }).getByRole("button", { name: /^(Make the background blue|Original synthetic scene)/ });
+  await expect(history).toHaveCount(2);
+  for (const name of [/^Make the background blue/, /^Original synthetic scene/]) {
+    await openRow(page, name);
+    await expect(page.getByRole("heading", { name: "Private image ready" })).toHaveCount(1);
+    const image = page.getByRole("img", { name: "Generated private image" });
+    await expect(image).toHaveCount(1);
+    await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("repair-allowance.png"), fullPage: true });
+});
+
+test("exhausted allowance disables generation and explains reset", async ({ page }) => {
+  await page.route("**/api/v1/alters**", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/v1/native-scenes/renders", route => route.fulfill({ json: { data: [], meta: { available: true, allowance: { limit: 10, used: 10, reserved: 0, remaining: 0, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: .25, softLimitUsd: .1, hardLimitUsd: .25, mode: "PAUSED", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "low", label: "Paid images paused until reset" }, identitySensitive: { model: "gpt-image-2", quality: "low", label: "Paid images paused until reset" } } } } } }));
+  await page.goto("/images");
+  await openRow(page, /^\+ New image/);
+  await expect(page.getByText("0 of 10 image uses remaining")).toBeVisible();
+  await expect(page.getByText(/Paid images paused.*\$0\.25 today/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Paid images paused" })).toBeDisabled();
+  await expect(page.getByText(/Resets .*your local time/)).toBeVisible();
+  await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+  await expect(page.locator(".image-spend-state strong", { hasText: "Paid images paused" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });

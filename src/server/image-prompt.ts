@@ -2,12 +2,12 @@ import type { AlterView } from "@/domain/contracts";
 import { buildAlterImagePrompt, furrySceneInputSchema, imagePromptInputSchema } from "@/domain/image-prompt";
 import { issueImageReadCapability } from "./mcp-authorization";
 
-type ProfileReader = {
+export type ProfileReader = {
   getAlter(ownerId: string, id: string): Promise<AlterView>;
   listAlters(ownerId: string, input: { limit: number; cursor?: string; includeArchived: boolean }): Promise<{ data: AlterView[]; nextCursor?: string }>;
 };
 
-export async function prepareAlterImagePrompt(service: ProfileReader, ownerId: string, raw: unknown, publicOrigin: string) {
+export async function prepareAlterImagePrompt(service: ProfileReader, ownerId: string, raw: unknown, publicOrigin: string, transport: "widget" | "browser" = "widget") {
   const input = imagePromptInputSchema.parse(raw);
   const alters: AlterView[] = [];
   if (input.alters === "all") {
@@ -26,7 +26,9 @@ export async function prepareAlterImagePrompt(service: ProfileReader, ownerId: s
     return {
       role: "character_reference", alterId: alter.id, alterName: alter.name, imageId,
       contentType: image.contentType,
-      src: `${publicOrigin}/api/system/images/inline/${image.id}?cap=${encodeURIComponent(issueImageReadCapability(ownerId, image.id))}`,
+      src: transport === "browser"
+        ? `${new URL(publicOrigin).origin}/api/system/gallery-images/${image.id}`
+        : `${publicOrigin}/api/system/images/inline/${image.id}?cap=${encodeURIComponent(issueImageReadCapability(ownerId, image.id))}`,
     };
   }));
   const result = buildAlterImagePrompt(input.scene, alters);
@@ -52,7 +54,7 @@ async function listEveryActiveAlter(service: ProfileReader, ownerId: string) {
  * Prepares one private multi-character Furry scene. References remain solely
  * in metadata and each current selected reference must be present in order.
  */
-export async function prepareFurryScene(service: ProfileReader, ownerId: string, raw: unknown, publicOrigin: string) {
+export async function prepareFurryScene(service: ProfileReader, ownerId: string, raw: unknown, publicOrigin: string, transport: "widget" | "browser" = "widget") {
   const input = furrySceneInputSchema.parse(raw);
   const activeAlters = await listEveryActiveAlter(service, ownerId);
   const seenIds = new Set<string>();
@@ -68,7 +70,7 @@ export async function prepareFurryScene(service: ProfileReader, ownerId: string,
   if (missingInitialReference) throw new Error(`MISSING_APPEARANCE_REFERENCE: ${missingInitialReference.name}`);
   if (alters.reduce((count, alter) => count + alter.appearanceReferenceImageIds.length, 0) > 12) throw new Error("SCENE_REFERENCE_LIMIT_EXCEEDED: A Furry scene supports at most 12 selected references.");
 
-  const prepared = await prepareAlterImagePrompt(service, ownerId, { scene: input.scene, alters: alters.map((alter) => alter.id) }, publicOrigin);
+  const prepared = await prepareAlterImagePrompt(service, ownerId, { scene: input.scene, alters: alters.map((alter) => alter.id) }, publicOrigin, transport);
   const { identities } = prepared.structuredContent;
   const { referenceMedia } = prepared._meta;
   if (referenceMedia.length > 12) throw new Error("SCENE_REFERENCE_LIMIT_EXCEEDED: A Furry scene supports at most 12 selected references.");

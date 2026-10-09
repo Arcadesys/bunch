@@ -257,7 +257,7 @@ integration(
       });
       await assert.rejects(
         limited.start(owner, { scene: "Quota check", requestId: randomUUID() }),
-        /daily native-scene limit/,
+        /daily image allowance/,
       );
     } finally {
       await pool.end();

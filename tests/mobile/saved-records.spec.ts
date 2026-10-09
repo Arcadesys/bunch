@@ -4,7 +4,13 @@ test("saved records remain available without a catch-up; addressed note survives
   harness.session = null;
   harness.currentFront = null;
   await page.goto("/notes");
+  await expect(page.getByRole("region", { name: "Notes" }).getByRole("button", { name: /^Fixture note/ })).toBeVisible();
+  await page.getByRole("button", { name: /^Fixture note/ }).click();
   await expect(page.getByRole("article")).toContainText("Fixture note");
+  // The list view opens the note editor in the detail pane.
+  const back = page.getByRole("button", { name: "← Notes" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("button", { name: "+ Leave a note" }).click();
   await page.getByLabel("Note", { exact: true }).fill("Remember the studio booking");
   await page.getByRole("combobox", { name: "Recipient", exact: true }).selectOption(harness.profiles[1].id);
   await page.getByRole("button", { name: "Save note", exact: true }).click();
@@ -18,6 +24,8 @@ test("saved records remain available without a catch-up; addressed note survives
 
 test("assigned todo is immediately visible; completing it is distinct from reviewing catch-up", async ({ page, harness }) => {
   await page.goto("/board");
+  // The list view opens the create form in the detail pane.
+  await page.getByRole("button", { name: "+ Add a todo" }).click();
   await page.getByLabel("Title", { exact: true }).fill("Print the fit coupon");
   await page.getByRole("checkbox", { name: "Test Finch", exact: true }).check();
   await page.getByRole("button", { name: "Save todo", exact: true }).click();

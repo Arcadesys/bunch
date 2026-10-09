@@ -46,6 +46,10 @@ import { deletePrivateImages } from "@/server/private-images";
 import { SystemError } from "@/server/system-error";
 
 type MutationResult<T> = { data: T; replayed: boolean };
+type MutationReceiptCodec<T> = {
+  encode: (data: T) => unknown;
+  decode: (receipt: unknown) => T;
+};
 type Page<T> = { data: T[]; nextCursor?: string };
 type ErasureCounts = { host: number; todos: number; notes: number; coverage: number; images: number };
 type ErasurePreview = { alterId: string; version: number; blockers: ErasureCounts; canErase: boolean; previewToken?: string; expiresAt?: string };
@@ -326,7 +330,7 @@ export class SystemService {
     [ownerId, entityType, entityId, action, source, changedFields, requestId ?? null, fromStatus ?? null, toStatus ?? null, actorAlterId ?? null]);
   }
 
-  private async mutate<T>(ownerId: string, requestId: string, operation: string, run: (client: PoolClient) => Promise<T>): Promise<MutationResult<T>> {
+  private async mutate<T>(ownerId: string, requestId: string, operation: string, run: (client: PoolClient) => Promise<T>, receiptCodec?: MutationReceiptCodec<T>): Promise<MutationResult<T>> {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
@@ -335,11 +339,15 @@ export class SystemService {
       const receipt = await client.query<{ operation: string; result: T }>("select operation, result from mutation_receipt where owner_id = $1 and request_id = $2::uuid", [ownerId, requestId]);
       if (receipt.rows[0]) {
         if (receipt.rows[0].operation !== operation) throw new SystemError("CONFLICT", "This requestId was already used for a different operation.");
+        const stored = receipt.rows[0].result as unknown as { uploadIdentity?: unknown; data?: T };
+        if (!receiptCodec && stored.uploadIdentity) throw new SystemError("CONFLICT", "This profile-picture request must be replayed with its original image bytes.");
+        const data = receiptCodec ? receiptCodec.decode(stored) : receipt.rows[0].result;
         await client.query("commit");
-        return { data: receipt.rows[0].result, replayed: true };
+        return { data, replayed: true };
       }
       const result = JSON.parse(JSON.stringify(await run(client))) as T;
-      await client.query("insert into mutation_receipt (owner_id, request_id, operation, result) values ($1, $2::uuid, $3, $4::jsonb)", [ownerId, requestId, operation, JSON.stringify(result)]);
+      const stored = receiptCodec ? receiptCodec.encode(result) : result;
+      await client.query("insert into mutation_receipt (owner_id, request_id, operation, result) values ($1, $2::uuid, $3, $4::jsonb)", [ownerId, requestId, operation, JSON.stringify(stored)]);
       await client.query("commit");
       return { data: result, replayed: false };
     } catch (error) {
@@ -790,16 +798,47 @@ export class SystemService {
     });
   }
 
-  async attachAndSetProfilePicture(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, raw: Omit<SetProfilePicture, "imageId">, source: RecordSource) {
+  async attachAndSetProfilePicture(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, raw: Omit<SetProfilePicture, "imageId">, source: RecordSource, uploadIdentity?: { contentHash: string; contentType: string }) {
     const input = setProfilePictureSchema.omit({ imageId: true }).parse(raw);
-    return this.mutate(ownerId, input.requestId, `attach_profile_picture:${alterId}`, async (client) => {
+    const operation = `attach_profile_picture:${alterId}`;
+    const codec: MutationReceiptCodec<AlterView> | undefined = uploadIdentity ? {
+      encode: (data) => ({ data, uploadIdentity: { alterId, expectedVersion: input.expectedVersion, ...uploadIdentity } }),
+      decode: (stored) => {
+        const receipt = stored as { data?: AlterView; uploadIdentity?: { alterId: string; expectedVersion: number; contentHash: string; contentType: string } };
+        // Receipts written before upload identity binding remain readable for compatibility.
+        if (!receipt.uploadIdentity) return stored as AlterView;
+        if (receipt.uploadIdentity.alterId !== alterId || receipt.uploadIdentity.expectedVersion !== input.expectedVersion ||
+          receipt.uploadIdentity.contentHash !== uploadIdentity.contentHash || receipt.uploadIdentity.contentType !== uploadIdentity.contentType) {
+          throw new SystemError("CONFLICT", "This profile-picture request was already used for different image content or profile state.");
+        }
+        return receipt.data as AlterView;
+      },
+    } : undefined;
+    return this.mutate(ownerId, input.requestId, operation, async (client) => {
       const current = await this.alterById(client, ownerId, alterId, false);
       if (current.version !== input.expectedVersion) throw new SystemError("CONFLICT", "The alter changed since it was read.", { currentVersion: current.version });
       const inserted = await client.query(`insert into private_image (id, owner_id, alter_id, storage_key, content_type)
         values ($1::uuid, $2, $3::uuid, $4, $5)`, [image.id, ownerId, alterId, image.storageKey, image.contentType]);
       if (!inserted.rowCount) throw new SystemError("NOT_FOUND", "Alter not found.");
       return this.promoteProfilePicture(client, ownerId, alterId, image.id, input.expectedVersion, input.requestId, source);
-    });
+    }, codec);
+  }
+
+  async findProfilePictureUploadReplay(ownerId: string, alterId: string, requestId: string, expectedVersion: number, uploadIdentity: { contentHash: string; contentType: string }) {
+    const input = setProfilePictureSchema.omit({ imageId: true }).parse({ requestId, expectedVersion });
+    const operation = `attach_profile_picture:${alterId}`;
+    const result = await this.pool.query<{ operation: string; result: unknown }>(
+      "select operation, result from mutation_receipt where owner_id=$1 and request_id=$2::uuid", [ownerId, input.requestId],
+    );
+    if (!result.rows[0]) return null;
+    if (result.rows[0].operation !== operation) throw new SystemError("CONFLICT", "This requestId was already used for a different operation.");
+    const stored = result.rows[0].result as { data?: AlterView; uploadIdentity?: { alterId: string; expectedVersion: number; contentHash: string; contentType: string } };
+    if (!stored.uploadIdentity) return { data: result.rows[0].result as AlterView, replayed: true as const };
+    if (stored.uploadIdentity.alterId !== alterId || stored.uploadIdentity.expectedVersion !== input.expectedVersion ||
+      stored.uploadIdentity.contentHash !== uploadIdentity.contentHash || stored.uploadIdentity.contentType !== uploadIdentity.contentType) {
+      throw new SystemError("CONFLICT", "This profile-picture request was already used for different image content or profile state.");
+    }
+    return { data: stored.data as AlterView, replayed: true as const };
   }
 
   async saveGeneratedGalleryResult(ownerId: string, alterId: string, image: { id: string; storageKey: string; contentType: string }, input: { requestId: string; contentHash: string }, source: RecordSource) {

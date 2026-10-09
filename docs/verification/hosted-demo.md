@@ -4,7 +4,7 @@ Win condition: a labeled, fictional system can be explored through Bunch's norma
 
 ## Kept iteration
 
-Eight read tools expose the full sample, people, person details, filtered tasks, filtered notes, presence, history, and Benny's catch-up. Demo tools use a separate fixture-only server for anonymous requests. Invalid supplied credentials never fall back to fiction. Private tool names and mutation paths remain authenticated. Stream probes return 405 for anonymous visitors instead of initiating OAuth.
+Eight read tools expose the full sample, people, person details, filtered tasks, filtered notes, presence, history, and Benny's catch-up. Demo tools use a separate fixture-only server for anonymous requests. Invalid supplied credentials never fall back to fiction. Private tool names and mutation paths remain authenticated. Anonymous SSE connection probes reach the stateless Demo transport without initiating OAuth or exposing records.
 
 The sample directly names Fenton, Benny, and Dot. It preserves their stated relationships, separate hosting/fronting, shared relevance, and Fenton's reminder for Benny to write a thank-you note for the system's gift. No donor, gift type, deadline, species, or new family relationship is invented.
 
@@ -22,3 +22,14 @@ The initial full-suite run caught a missing connection-tool output schema; it wa
 ## Remaining delivery evidence
 
 Required GitHub CI and merge are tracked on the PR. Production deployment and public API probes must be reported separately. Local protocol validation does not claim installation or OAuth consent in a particular user's Codex account. The repository marketplace and stable installation guide provide the supported setup path; the read-only demo needs no account.
+
+After deploying, run the credential-free public adapter smoke check separately:
+
+```sh
+HOSTED_MCP_URL=https://system.thearcades.me/mcp npm run verify:hosted-mcp:public
+```
+
+It initializes the hosted MCP, discovers tools, reads the fixed fictional Demo
+system, confirms private tools still challenge for OAuth, and confirms an invalid
+bearer token never falls back to demo data. It uses no account credential and
+does not call any mutation tool.

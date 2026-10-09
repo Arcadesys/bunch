@@ -3,6 +3,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "@/server/mcp-server";
+import { accountProfileId } from "@/server/mcp-account-profile";
 import { CatchUpService } from "@/server/catch-up-service";
 import type { SystemService } from "@/server/system-service";
 import type { NativeSceneService } from "@/server/native-scene-service";
@@ -19,7 +20,9 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
   const catchUp = new CatchUpService({} as never);
   catchUp.openForPresence = async () => null;
   catchUp.openForCurrentFronter = async () => null;
-  const server = createMcpServer("demo:descriptor", service, catchUp, { listProfiles: async () => [] });
+  const ownerId = "demo:descriptor-private-subject";
+  const loadedOwners: string[] = [];
+  const server = createMcpServer(ownerId, service, catchUp, { listProfiles: async () => [] }, undefined, undefined, undefined, async (id) => { loadedOwners.push(id); return { display_name: "  Arcade  " }; });
   const client = new Client({ name: "descriptor-test", version: "1.0.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
@@ -29,9 +32,50 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.ok(tools.length >= 20);
     for (const tool of tools) {
       assert.ok(tool.outputSchema, `${tool.name} must declare outputSchema`);
-      assert.equal(tool.annotations?.openWorldHint, tool.name === "generate_scene", `${tool.name} must declare its external-provider boundary`);
+      assert.equal(tool.annotations?.openWorldHint, ["generate_scene", "repair_image", "prepare_telegram_sticker_pack", "publish_telegram_sticker_pack"].includes(tool.name), `${tool.name} must declare its external-provider boundary`);
     }
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const upload = byName.get("upload_private_image");
+    assert.deepEqual(upload?._meta?.["openai/fileParams"], ["file"]);
+    const fileSchema = upload?.inputSchema?.properties?.file as { required?: string[]; properties?: Record<string, { type?: string }> } | undefined;
+    assert.deepEqual(fileSchema?.required, ["download_url", "file_id"]);
+    assert.equal(fileSchema?.properties?.download_url?.type, "string");
+    assert.equal(fileSchema?.properties?.file_id?.type, "string");
+    assert.equal(upload?.annotations?.readOnlyHint, false);
+    assert.equal(upload?.annotations?.destructiveHint, false);
+    const chatgptImageDescriptor = byName.get("prepare_chatgpt_alter_image");
+    assert.equal(chatgptImageDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(chatgptImageDescriptor?.annotations?.idempotentHint, true);
+    assert.deepEqual(chatgptImageDescriptor?._meta?.["openai/fileParams"], ["sceneImage"]);
+    assert.equal((chatgptImageDescriptor?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v3.html");
+    assert.ok(!(chatgptImageDescriptor?.inputSchema?.required ?? []).includes("sceneImage"), "sceneImage must remain optional");
+    const sceneImageInput = chatgptImageDescriptor?.inputSchema?.properties?.sceneImage as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: boolean } | undefined;
+    assert.deepEqual(Object.keys(sceneImageInput?.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
+    assert.deepEqual(sceneImageInput?.required?.sort(), ["download_url", "file_id"]);
+    assert.equal(sceneImageInput?.additionalProperties, false);
+    const codexDescriptor = byName.get("prepare_codex_alter_image");
+    assert.equal(codexDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(codexDescriptor?._meta?.["openai/outputTemplate"], undefined);
+    assert.match(chatgptImageDescriptor?.description ?? "", /In Codex use prepare_codex_alter_image/);
+    const profileDescriptor = byName.get("get_account_profile");
+    assert.equal(profileDescriptor?._meta?.["openai/profile"], true);
+    assert.deepEqual(profileDescriptor?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["system:companion"] }]);
+    assert.equal(profileDescriptor?.annotations?.readOnlyHint, true);
+    assert.equal(profileDescriptor?.inputSchema?.type, "object");
+    assert.deepEqual(profileDescriptor?.inputSchema?.properties, {});
+    assert.equal(profileDescriptor?.inputSchema?.additionalProperties, false);
+    assert.deepEqual(profileDescriptor?.outputSchema?.required, ["id"]);
+    assert.equal(profileDescriptor?.outputSchema?.additionalProperties, false);
+    const profileIdSchema = profileDescriptor?.outputSchema?.properties?.id as { minLength?: number; pattern?: string } | undefined;
+    assert.equal(profileIdSchema?.minLength, 1);
+    assert.equal(profileIdSchema?.pattern, "\\S");
+    const accountProfile = await client.callTool({ name: "get_account_profile", arguments: {} });
+    assert.deepEqual(accountProfile.structuredContent, { id: accountProfileId(ownerId), name: "Arcade" });
+    assert.deepEqual(loadedOwners, [ownerId]);
+    assert.equal((accountProfile.content as Array<{ text: string }>)[0].text, JSON.stringify(accountProfile.structuredContent));
+    assert.doesNotMatch(JSON.stringify(accountProfile), /descriptor-private-subject|demo:/);
+    assert.equal(accountProfileId(ownerId), accountProfileId(ownerId), "the same account must retain its profile ID");
+    assert.notEqual(accountProfileId(ownerId), accountProfileId("auth0:other-private-subject"), "different accounts must not share profile IDs");
     assert.equal((byName.get("render_system_companion")?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri, "ui://system-arcades-me.vercel.app/companion-v13.html");
     for (const name of ["get_current_front", "list_system_notes", "list_alters", "get_alter", "list_todos", "get_todo", "preview_erase_alter", "open_private_photo_gallery", "prepare_conversation_catch_up", "get_catch_up", "render_alter_lineup", "prepare_group_photo_render"]) assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, `${name} must be read-only`);
     assert.ok(byName.get("prepare_conversation_catch_up")?.outputSchema?.properties?.historyAccess, "conversation handoff must disclose host access");
@@ -62,6 +106,8 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     assert.deepEqual(lineup._meta, { privateImages: [] });
     assert.equal((byName.get("render_alter_lineup")?._meta?.ui as { resourceUri?: string })?.resourceUri, "ui://system-arcades-me.vercel.app/alter-lineup-v3.html");
     const resources = await client.listResources();
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v3.html"));
+    assert.ok(resources.resources.some((resource) => resource.uri === "ui://system-arcades-me.vercel.app/chatgpt-alter-image-v1.html"), "cached v1 handoffs must remain readable");
     const widget = resources.resources.find((resource) => resource.uri === "ui://system-arcades-me.vercel.app/companion-v13.html");
     assert.ok(widget, "the v13 companion widget must be registered");
     for (const uri of ["ui://system-arcades-me.vercel.app/companion-v11.html", "ui://system-arcades-me.vercel.app/companion-v12.html", "ui://system-arcades-me.vercel.app/alter-lineup-v1.html"]) {
@@ -76,9 +122,11 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
     const html = "text" in content ? content.text : "";
     const legacyHtml = legacyWidgetContents.map((result) => "text" in result.contents[0] ? result.contents[0].text : "");
     assert.deepEqual(content._meta?.ui, {
+      domain: "https://bunch.example",
       csp: { connectDomains: ["https://bunch.example"], resourceDomains: ["https://bunch.example"] },
       prefersBorder: true,
     });
+    assert.equal(content._meta?.["openai/widgetDomain"], "https://bunch.example");
     assert.deepEqual(content._meta?.["openai/widgetCSP"], {
       connect_domains: ["https://bunch.example"],
       resource_domains: ["https://bunch.example"],
@@ -115,7 +163,7 @@ test("MCP descriptors expose exact schemas and safety annotations", async () => 
 
 test("native scene MCP generation schedules once and returns only the authenticated reopen route", async () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null };
+  const render = { id, scene: "A calm studio portrait", alterNames: [], state: "QUEUED" as const, createdAt: "2026-09-13T12:00:00.000Z", finishedAt: null, errorMessage: null, width: null, height: null, contentHash: null, model: "gpt-image-2", quality: "medium" as const, costMode: "STANDARD" as const };
   const calls: string[] = [];
   const sceneService = {
     start: async (ownerId: string, input: unknown) => { calls.push(`start:${ownerId}:${(input as { scene: string }).scene}`); return render; },
@@ -148,7 +196,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-widget-metadata-test-secret";
   const id = "33333333-3333-4333-8333-333333333333";
   const widgetUri = "ui://system-arcades-me.vercel.app/native-scene-v1.html";
-  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64) };
+  const complete = { id, scene: "Lucy Arcade in a cozy sweater", alterNames: ["Lucy Arcade"], state: "COMPLETE" as const, createdAt: "2026-09-15T12:00:00.000Z", finishedAt: "2026-09-15T12:01:30.000Z", errorMessage: null, width: 1024, height: 1024, contentHash: "a".repeat(64), model: "gpt-image-2", quality: "low" as const, costMode: "ECONOMY" as const };
   const sceneService = { start: async () => complete, get: async () => complete, list: async () => [complete] } as unknown as Pick<NativeSceneService, "start" | "get" | "list">;
   const system = { getCurrentPresence: async () => ({ hosting: null, fronting: [], legacyCurrentFront: null }), getCurrentFront: async () => null, listAlters: async () => ({ data: [] }) } as unknown as SystemService;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -185,7 +233,7 @@ test("completed native scenes reach the chat only through the scene widget", asy
   }
 });
 
-test("alter results name the generate_scene call instead of asking for an upload", async () => {
+test("alter results route ChatGPT to the reference handoff without Bunch generation", async () => {
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "scene-routing-metadata-test-secret";
   const lucy = { id: "44444444-4444-4444-8444-444444444444", name: "Lucy Arcade", aliases: ["Lucy"], strengths: [], boundaries: [], imageCount: 1, images: [{ id: "55555555-5555-4555-8555-555555555555", contentType: "image/png", isProfilePicture: false, createdAt: "2026-09-01T12:00:00.000Z" }], appearanceReferenceImageIds: ["55555555-5555-4555-8555-555555555555"], version: 1, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z" };
@@ -199,9 +247,9 @@ test("alter results name the generate_scene call instead of asking for an upload
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const loaded = text(await client.callTool({ name: "get_alter", arguments: { alterId: lucy.id } }));
-    assert.ok(loaded.includes('call generate_scene with alterNames ["Lucy Arcade"]'), loaded);
+    assert.ok(loaded.includes('call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), loaded);
     assert.match(loaded, /carry no pixels/);
-    assert.match(loaded, /Do not ask the user to upload a photo Bunch already holds/);
+    assert.match(loaded, /ask for a re-upload/);
     const listed = text(await client.callTool({ name: "list_alters", arguments: {} }));
     assert.ok(listed.includes('alterNames ["Lucy Arcade"]'), listed);
     assert.doesNotMatch(listed, /Mouse Arcade/);
@@ -212,19 +260,40 @@ test("alter results name the generate_scene call instead of asking for an upload
     const { tools } = await client.listTools();
     for (const name of ["prepare_alter_image_prompt", "prepare_furry_scene"]) {
       const description = tools.find((tool) => tool.name === name)?.description ?? "";
-      assert.match(description, /call generate_scene directly/, name);
+      assert.match(description, /prepare_chatgpt_alter_image/, name);
+      assert.match(description, /never call generate_scene/, name);
       assert.doesNotMatch(description, /before drawing|If this host cannot/, name);
     }
     const prepared = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Lucy in a big cozy sweater", alters: [lucy.id] } });
     const route = text(prepared);
-    assert.ok(route.startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), route);
-    assert.match(route, /do not ask the user to upload a photo Bunch already holds/);
+    assert.ok(route.startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), route);
+    assert.match(route, /ask the user to re-upload a reference Bunch already holds/);
     assert.match((prepared.content as Array<{ text: string }>)[1].text, /Use the attached appearance reference/, "the packet itself is unchanged for external adapters");
     assert.doesNotMatch(JSON.stringify(prepared.content), /cap=/);
     const scene = await client.callTool({ name: "prepare_furry_scene", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
-    assert.ok(text(scene).startsWith('To draw Lucy Arcade in this chat, call generate_scene with alterNames ["Lucy Arcade"]'), text(scene));
+    assert.ok(text(scene).startsWith('To draw Lucy Arcade in ChatGPT, call prepare_chatgpt_alter_image with alterNames ["Lucy Arcade"]'), text(scene));
+    const codex = await client.callTool({name: "prepare_codex_alter_image", arguments: {scene: "Lucy working on AI", alterNames: ["Lucy"]}});
+    assert.equal((codex.structuredContent as {status:string}).status, "REFERENCE_DOWNLOAD_REQUIRED");
+    const codexReferences = (codex.structuredContent as {references:Array<{alterName:string;imageId:string;downloadUrl:string}>}).references;
+    assert.equal(codexReferences[0].alterName, "Lucy Arcade");
+    assert.equal(codexReferences[0].imageId, lucy.appearanceReferenceImageIds[0]);
+    assert.equal(codexReferences[0].downloadUrl, "https://bunch.example/api/system/gallery-images/" + lucy.appearanceReferenceImageIds[0]);
+    assert.doesNotMatch(JSON.stringify(codex), /cap=|storageKey/);
+    assert.match(loaded, /In Codex, call prepare_codex_alter_image/);
+    const referencesOnly = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy in a big cozy sweater", alterNames: ["Lucy"] } });
+    assert.deepEqual((referencesOnly.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
+    assert.equal((referencesOnly.structuredContent as { bunchGeneration: string }).bunchGeneration, "none");
+    assert.equal((referencesOnly.structuredContent as { providerCalled: boolean }).providerCalled, false);
+    assert.equal((referencesOnly.structuredContent as { allowanceCharged: boolean }).allowanceCharged, false);
+    assert.equal(referencesOnly._meta?.sceneImage, undefined);
+    assert.match(((referencesOnly._meta?.referenceMedia as Array<{ src: string }>)[0]).src, /cap=/);
+    const chatgptHandoff = await client.callTool({ name: "prepare_chatgpt_alter_image", arguments: { scene: "Lucy playing the uploaded piano", alterNames: ["Lucy"], sceneImage: { download_url: "https://files.example/piano.png", file_id: "file-piano", mime_type: "image/png", file_name: "piano.png" } } });
+    assert.deepEqual((chatgptHandoff.structuredContent as { identities: Array<{ alterName: string; referenceCount: number }> }).identities, [{ alterName: "Lucy Arcade", referenceCount: 1 }]);
+    assert.equal((chatgptHandoff._meta?.sceneImage as { file_id?: string }).file_id, "file-piano");
+    assert.match(((chatgptHandoff._meta?.referenceMedia as Array<{ src: string }>)[0]).src, /cap=/);
+    assert.doesNotMatch(JSON.stringify({ content: chatgptHandoff.content, structuredContent: chatgptHandoff.structuredContent }), /cap=|files\.example|storageKey/);
     const unready = await client.callTool({ name: "prepare_alter_image_prompt", arguments: { scene: "Portrait", alters: [mouse.id] } });
-    assert.doesNotMatch(JSON.stringify(unready.content), /generate_scene/, "generate_scene would reject a person without references");
+    assert.doesNotMatch(JSON.stringify(unready.content), /prepare_chatgpt_alter_image/, "the handoff would reject a person without references");
   } finally {
     if (priorSecret === undefined) delete process.env.MCP_TOKEN_SIGNING_SECRET;
     else process.env.MCP_TOKEN_SIGNING_SECRET = priorSecret;
@@ -301,6 +370,35 @@ test("lineup follows pagination to include every active profile", async () => {
     assert.equal(result.isError, undefined);
     assert.deepEqual((result.structuredContent as { profiles: Array<{ name: string }> }).profiles.map(item => item.name), ["First", "Second"]);
     assert.deepEqual(calls, [{ limit: 100, cursor: undefined }, { limit: 100, cursor: "next-page" }]);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("delete_private_image is destructive, owner-scoped, and retry-safe", async () => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const calls: string[] = [];
+  const deletions = { delete: async (ownerId: string, kind: string, imageId: string) => { calls.push(`${ownerId}:${kind}:${imageId}`); return { deleted: calls.length === 1 }; } };
+  const server = createMcpServer("demo:image-delete", {} as SystemService, undefined, { listProfiles: async () => [] }, undefined, undefined, undefined, undefined, deletions);
+  const client = new Client({ name: "image-delete-test", version: "1.0.0" });
+  const imageId = "77777777-7777-4777-8777-777777777777";
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const tool = (await client.listTools()).tools.find((candidate) => candidate.name === "delete_private_image");
+    assert.equal(tool?.annotations?.destructiveHint, true);
+    assert.equal(tool?.annotations?.idempotentHint, true);
+    assert.equal(tool?.annotations?.readOnlyHint, false);
+    assert.match(tool?.description ?? "", /only after the user explicitly confirms/);
+    const first = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(first.structuredContent, { deleted: true });
+    const retry = await client.callTool({ name: "delete_private_image", arguments: { kind: "scene", imageId } });
+    assert.deepEqual(retry.structuredContent, { deleted: false });
+    assert.deepEqual(calls, [`demo:image-delete:scene:${imageId}`, `demo:image-delete:scene:${imageId}`]);
+    const invalid = await client.callTool({ name: "delete_private_image", arguments: { kind: "backplate", imageId } });
+    assert.equal(invalid.isError, true);
+    assert.equal(calls.length, 2);
   } finally {
     await client.close();
     await server.close();

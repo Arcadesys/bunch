@@ -131,7 +131,9 @@ tenant, with `$ORIGIN` standing in for your deployed origin:
    MCP clients can use it.
 6. Set `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`,
    `APP_BASE_URL`, `MCP_RESOURCE_URL`, and `SYSTEM_PUBLIC_ORIGIN` in your host's
-   environment. Keep `SYSTEM_DEMO_MODE=false`.
+   environment. Keep `SYSTEM_DEMO_MODE=false`. During a resource-URL migration,
+   set `MCP_LEGACY_RESOURCE_URLS` to a comma-separated list of former audiences;
+   discovery and OAuth challenges continue to advertise only `MCP_RESOURCE_URL`.
 7. Verify the website login and the MCP flow with MCP Inspector before connecting
    the same `/mcp` URL in a ChatGPT client.
 
@@ -148,6 +150,29 @@ openssl rand -hex 32
 ```
 
 `CRON_SECRET` guards the scheduled cleanup route that expires old records.
+
+### Preview test account
+
+Google sign-in cannot finish on Vercel preview URLs, because Auth0 only allows the
+production callback. To test a preview, give previews a shared test account:
+
+1. Generate a password: `openssl rand -hex 24` (at least 32 characters).
+2. In Vercel, add `PREVIEW_LOGIN_SECRET` with that value, scoped to **Preview only**.
+   Never add it to Production. Production ignores it anyway (`VERCEL_ENV` must be
+   `preview`), but keeping it out removes any doubt.
+3. Redeploy the preview. Private pages now send you to `/preview-login` instead of
+   Google. Enter the password; the session lasts 12 hours.
+
+Everyone who signs in this way shares one synthetic account
+(`auth0:preview|tester`, email `preview-tester@bunch.invalid`). Google sign-in can
+never produce that subject, so it cannot see any real account's records, even if the
+preview uses the production database. It starts empty.
+
+If the pilot gate is on for that database, the test account needs an invitation like
+any friend: `npm run pilot:admin invite preview-tester@bunch.invalid`, then open the
+invitation link on the preview while signed in. It is never enrolled automatically.
+
+Rotating `PREVIEW_LOGIN_SECRET` signs every preview session out.
 
 ### Connecting an MCP client
 

@@ -5,6 +5,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { getDemoSystem } from "@/server/demo-system";
+import { ThemeControl } from "../theme-control";
+import { DEMO_APPEARANCE_CACHE_KEY, APPEARANCE_PREVIEW_EVENT, applyAppearance } from "../appearance-provider";
+import { defaultAppearance } from "@/domain/appearance";
 import styles from "./demo.module.css";
 
 type Sample = ReturnType<typeof getDemoSystem>;
@@ -25,7 +28,13 @@ function SampleArt({ night = false }: { night?: boolean }) {
 
 export function InteractiveDemo({ sample }: { sample: Sample }) {
   const [run, setRun] = useState(0);
-  return <DemoSession key={run} sample={sample} reset={() => setRun(value => value + 1)} />;
+  const reset = () => {
+    localStorage.removeItem(DEMO_APPEARANCE_CACHE_KEY);
+    applyAppearance(defaultAppearance);
+    window.dispatchEvent(new CustomEvent(APPEARANCE_PREVIEW_EVENT, { detail: defaultAppearance }));
+    setRun(value => value + 1);
+  };
+  return <DemoSession key={run} sample={sample} reset={reset} />;
 }
 
 function DemoSession({ sample, reset }: { sample: Sample; reset: () => void }) {
@@ -55,16 +64,15 @@ function DemoSession({ sample, reset }: { sample: Sample; reset: () => void }) {
     setMessage(`Photo added to ${name(person)}’s demo gallery in this browser only.`);
   };
   return <main className={styles.demo}>
-    <header className={styles.header}><Link href="/">← Bunch home</Link><button onClick={reset}>Reset demo</button></header>
-    <p className={styles.eyebrow}>Try Bunch · No sign-in needed</p>
-    <h1>Demo system</h1>
-    <p className={styles.intro}>Meet Fenton, Benny, and Dot. Try a return, add a photo, or explore creating an image.</p>
+    <header className={styles.header}><Link className={styles.brand} href="/">Bunch</Link><span>Private demo</span><button onClick={reset}>Reset demo</button></header>
+    <section className={styles.launcherHeading}><p className={styles.eyebrow}>Try Bunch · No sign-in needed</p><h1>What would help right now?</h1><p className={styles.intro}>Choose one demo activity for Fenton, Benny, and Dot.</p></section>
     <p className={styles.notice}>Fictional people and saved history. Your demo changes disappear when you reload or reset. Photos stay in this browser; image creation uses sample illustrations.</p>
     <nav className={styles.steps} aria-label="Demo experiences">
-      <button aria-pressed={view === "return"} onClick={() => changeView("return")}>1. Switch in</button>
-      <button aria-pressed={view === "photos"} onClick={() => changeView("photos")}>2. Add photos</button>
-      <button aria-pressed={view === "create"} onClick={() => changeView("create")}>3. Create an image</button>
+      <button aria-pressed={view === "return"} onClick={() => changeView("return")}><strong>Switch in</strong><span>Try an explicit arrival and catch-up.</span></button>
+      <button aria-pressed={view === "photos"} onClick={() => changeView("photos")}><strong>Add a photo</strong><span>Preview it in a demo gallery.</span></button>
+      <button aria-pressed={view === "create"} onClick={() => changeView("create")}><strong>Create an image</strong><span>Use prepared sample artwork.</span></button>
     </nav>
+    <details className={styles.appearance}><summary>Change demo colors</summary><ThemeControl demo /></details>
     <div className={styles.people} aria-label="Meet the demo people">{sample.people.map(p => <details key={p.id}><summary>{p.name}</summary><p>{p.description}</p></details>)}</div>
     <label className={styles.person}>Try this as
       <select value={person} onChange={event => { setPerson(event.target.value as Person); setResult(null); setMessage(""); }}>{sample.people.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>

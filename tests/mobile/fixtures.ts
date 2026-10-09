@@ -58,16 +58,21 @@ export const test = base.extend<{ harness: Harness }>({
     let recordSequence = 20;
     const recordReceipts = new Map<string, unknown>();
     const switchReceipts = new Map<string, unknown>();
+    let appearance = { mode: "preset", preset: "midnight", palette: { background: "#0a0a14", surface: "#17172d", text: "#f5f3fa", mutedText: "#cecadc", primary: "#55d8ff", secondary: "#ff5cad" }, glow: true, reducedDecoration: false, updatedAt: stamp };
     const presenceSnapshots = new Map<string, Pick<Harness, "presence" | "host" | "history">>();
     await context.route("**/*", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (url.origin !== "http://127.0.0.1:3217") {
+      if (url.origin !== `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3217"}`) {
         harness.unexpected.push(`External request: ${url.origin}`);
         return route.abort();
       }
       if (!url.pathname.startsWith("/api/")) return route.continue();
       const reply = (data: unknown, status = 200) => route.fulfill({ status, json: status >= 400 ? { error: { message: status === 401 ? "Sign in to access private records." : "Record changed; reload before retrying." } } : { data } });
+      if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "GET") return reply(appearance);
+      if (url.pathname === "/api/v1/preferences/appearance" && request.method() === "PUT") { appearance = { ...request.postDataJSON(), updatedAt: new Date().toISOString() }; return reply(appearance); }
+      if (url.pathname === "/api/v1/image-allowance") return reply({ limit: 10, used: 0, reserved: 0, remaining: 10, resetsAt: "2026-09-20T05:00:00Z", spendTodayUsd: 0, softLimitUsd: .1, hardLimitUsd: .25, mode: "STANDARD", routingStage: "pilot", nextPlannedRoutes: { promptOnly: { model: "gpt-image-2", quality: "medium", label: "Prompt-only value route" }, identitySensitive: { model: "gpt-image-2.5-sunburst", quality: "high", label: "Identity-preserving route" } } });
+      if (url.pathname === "/api/v1/account/image-allowances") return reply([]);
       if (url.pathname === "/api/v1/catch-up/review") return reply({ review: null, revision: 0 });
       if (url.pathname === "/api/v1/catch-up/current" && request.method() === "GET") {
         const selected=url.searchParams.get("periodId");
@@ -252,3 +257,15 @@ export const test = base.extend<{ harness: Harness }>({
 });
 
 export { expect };
+
+/**
+ * The section list is a sidebar at 1100px and wider and a drawer behind the
+ * "Open sections" button below that. Returns the visible section navigation.
+ */
+export async function openSections(page: import("@playwright/test").Page) {
+  const menu = page.getByRole("button", { name: "Open sections" });
+  if (await menu.isVisible()) await menu.click();
+  const nav = page.getByRole("navigation", { name: "Bunch navigation" });
+  await expect(nav).toBeVisible();
+  return nav;
+}

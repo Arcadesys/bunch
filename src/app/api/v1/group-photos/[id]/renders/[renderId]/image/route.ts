@@ -1,13 +1,15 @@
-import { NextResponse } from "next/server";
 import { requireOwnerId } from "@/server/auth";
 import { getGroupPhotoRenderService } from "@/server/group-photo-render-service";
+import { privateMediaError, privateMediaResponse } from "@/server/private-media-response";
 
 export const runtime = "nodejs";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; renderId: string }> }) {
   try {
     const ownerId = await requireOwnerId(request);
     const { id, renderId } = await params;
-    const stored = await getGroupPhotoRenderService().image(ownerId, id, renderId);
-    return new NextResponse(stored.body, { headers: { "Content-Type": stored.contentType, "Cache-Control": "private, no-store", "Content-Disposition": "inline; filename=group-photo.jpg", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" } });
-  } catch { return new NextResponse("Not found", { status: 404 }); }
+    const stored = await getGroupPhotoRenderService().image(ownerId, id, renderId, request.headers.get("if-none-match") ?? undefined);
+    const response = privateMediaResponse(request, stored, { contentDisposition: "inline; filename=group-photo.jpg" });
+    response.headers.set("Referrer-Policy", "no-referrer");
+    return response;
+  } catch { return privateMediaError("Not found", 404); }
 }

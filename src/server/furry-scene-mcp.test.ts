@@ -8,7 +8,7 @@ import type { SystemService } from "@/server/system-service";
 
 process.env.SYSTEM_PUBLIC_ORIGIN = "https://bunch.example";
 
-test("prepare_furry_scene exposes ordered multi-reference metadata through MCP", async () => {
+test("scene preparation exposes external metadata for a trusted image-studio adapter", async () => {
   const priorSecret = process.env.MCP_TOKEN_SIGNING_SECRET;
   process.env.MCP_TOKEN_SIGNING_SECRET = "furry-scene-mcp-test-secret-with-enough-entropy";
   const now = "2026-09-08T12:00:00.000Z";

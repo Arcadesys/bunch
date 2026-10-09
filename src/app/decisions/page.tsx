@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppNavigation } from "../app-navigation";
+import { ListDetail, useListSelection } from "../list-detail";
 type Decision = { id: string; title: string; decision: string; rationale?: string; nextAction: string };
 export default function DecisionsPage() {
   const [records, setRecords] = useState<Decision[]>([]);
@@ -14,6 +15,26 @@ export default function DecisionsPage() {
     }).catch(error => { if (!controller.signal.aborted) setNotice(error.message); });
     return () => controller.abort();
   }, [attempt]);
-  useEffect(() => { if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView(); }, [records]);
-  return <main className="shell"><AppNavigation /><h1>Decisions</h1><p role="status">{notice}</p>{notice && <button onClick={() => setAttempt(a => a + 1)}>Refresh decisions</button>}{records.map(record => <article className="panel" key={record.id} id={`record-${record.id}`}><h2>{record.title}</h2><p className="review-prose">{record.decision}</p>{record.rationale && <p>{record.rationale}</p>}<p><strong>Next:</strong> {record.nextAction}</p></article>)}</main>;
+  const ids = useMemo(() => records.map(record => record.id), [records]);
+  const [selectedId, select] = useListSelection(ids);
+  // Catch-up links to /decisions#record-<id>; open that record.
+  useEffect(() => {
+    const hashId = window.location.hash.startsWith("#record-") ? window.location.hash.slice("#record-".length) : "";
+    if (hashId && ids.includes(hashId)) select(hashId);
+  }, [ids, select]);
+  const current = records.find(record => record.id === selectedId);
+  return <main className="app-page"><AppNavigation current="DECISIONS" />
+    <ListDetail title="Decisions" count={records.length ? `${records.length} recorded` : undefined}
+      rows={records.map(record => ({ id: record.id, title: record.title, snippet: record.decision }))}
+      selectedId={selectedId} onSelect={select}
+      listStatus={notice ? <div className="ld-intro"><p role="status">{notice}</p><button className="button button-secondary" onClick={() => setAttempt(a => a + 1)}>Refresh decisions</button></div> : null}>
+      {current ? <article className="detail-card" id={`record-${current.id}`}>
+        <span className="detail-eyebrow">Decision</span>
+        <h2>{current.title}</h2>
+        <p className="review-prose">{current.decision}</p>
+        {current.rationale && <p>{current.rationale}</p>}
+        <div className="detail-callout"><span className="detail-eyebrow">Next</span><p><strong>Next:</strong> {current.nextAction}</p></div>
+      </article> : null}
+    </ListDetail>
+  </main>;
 }

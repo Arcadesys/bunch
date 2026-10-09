@@ -14,6 +14,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const service = getGroupPhotoRenderService();
     const render = await service.start(ownerId, id, expectedVersion, idempotencyKey(request));
     if (render.state === "QUEUED") after(() => service.process(ownerId, render.id).catch(() => { console.error("[group-photo] processing unavailable"); }));
-    return NextResponse.json({ data: render, meta: {} }, { status: render.state === "COMPLETE" ? 200 : 202 });
+    return NextResponse.json({ data: render, meta: { allowance: await service.allowance.read(ownerId) } }, { status: render.state === "COMPLETE" ? 200 : 202 });
   });
 }

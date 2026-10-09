@@ -19,10 +19,10 @@ test("signed-out demo supports arrival, local photos, sample images, and reset w
   await page.getByLabel("Try this as").selectOption("dot");
   await page.getByRole("button", { name: "Try switching in as Dot" }).click();
   await expect(page.getByText("No sample notes or tasks are assigned relevance to Dot.", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "2. Add photos" }).click();
+  await page.getByRole("button", { name: "Add a photo", exact: false }).click();
   await page.getByLabel("Choose a photo").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
   await expect(page.getByAltText("Local photo preview for Dot")).toBeVisible();
-  await page.getByRole("button", { name: "3. Create an image" }).click();
+  await page.getByRole("button", { name: "Create an image", exact: false }).click();
   await page.getByLabel("Choose an image idea").selectOption("night");
   await page.getByRole("button", { name: "Generate sample image" }).click();
   await expect(page.getByRole("img", { name: "Sample illustration of a garden beneath a starry sky" })).toBeVisible();
@@ -33,10 +33,16 @@ test("signed-out demo supports arrival, local photos, sample images, and reset w
   await page.getByLabel("Try this as").selectOption("dot");
   await page.getByRole("button", { name: "Remove picture" }).first().click();
   await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(1);
+  await page.getByText("Change demo colors", { exact: true }).click();
+  await page.getByRole("button", { name: "Berry", exact: true }).click();
+  await page.getByRole("button", { name: "Save theme", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "berry");
   await page.getByRole("button", { name: "Reset demo" }).click();
   await expect(page.getByLabel("Try this as")).toHaveValue("benny");
   await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Catch-up for Benny" })).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "midnight");
+  expect(await page.evaluate(() => localStorage.getItem("bunch-demo-appearance-v1"))).toBeNull();
   expect(privateRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -44,7 +50,7 @@ test("signed-out demo supports arrival, local photos, sample images, and reset w
 test("demo remains readable with enlarged text and rejects unsupported photos", async ({ page }) => {
   await page.goto("/demo");
   await page.evaluate(() => { document.documentElement.style.fontSize = "40px"; document.documentElement.dataset.theme = "light"; });
-  await page.getByRole("button", { name: "2. Add photos" }).click();
+  await page.getByRole("button", { name: "Add a photo", exact: false }).click();
   await page.getByLabel("Choose a photo").setInputFiles({ name: "text.txt", mimeType: "text/plain", buffer: Buffer.from("not a photo") });
   await expect(page.getByRole("status")).toContainText("Choose a JPEG, PNG, or WebP");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

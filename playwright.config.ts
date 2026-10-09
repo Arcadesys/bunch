@@ -25,6 +25,7 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     browserName: "chromium",
+    extraHTTPHeaders: { "x-system-e2e-subject": "browser-fixture" },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     serviceWorkers: "block",

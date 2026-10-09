@@ -15,6 +15,6 @@ export async function GET(request: Request, { params }: Context) {
     const service = getGroupPhotoRenderService();
     const renders = await service.list(ownerId, id);
     for (const render of renders.filter(r => r.state === "QUEUED")) after(() => service.process(ownerId, render.id).catch(() => { console.error("[group-photo] processing unavailable"); }));
-    return NextResponse.json({ data: { ...project, renders }, meta: {} }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ data: { ...project, renders }, meta: { allowance: await service.allowance.read(ownerId) } }, { headers: { "Cache-Control": "private, no-store" } });
   });
 }

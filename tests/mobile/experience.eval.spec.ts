@@ -1,20 +1,27 @@
-import { test, expect } from "./fixtures";
+import { test, expect, openSections } from "./fixtures";
+
+// Options is a split view: on phones the Appearance row must be chosen to open it.
+async function openAppearance(page: import("@playwright/test").Page) {
+  const row = page.locator(".ld-row").filter({ hasText: "Appearance" });
+  await expect(row).toBeAttached();
+  if (!(await page.locator(".ld-detail").isVisible())) await row.click();
+}
 
 // Acceptance evals intentionally stay red when a user-facing requirement fails.
 // Do not mark known defects as expected failures: a repair should turn them green.
 test("@eval appearance is accessible and persists after reload", async ({ page }) => {
   await page.goto("/home");
-  await page.getByRole("link", { name: "Options", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toBeVisible();
-  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
+  await (await openSections(page)).getByRole("link", { name: "Options", exact: true }).click();
+  await openAppearance(page);
+  await page.getByRole("button", { name: "Daylight", exact: true }).click();
+  await page.getByRole("button", { name: "Save theme", exact: true }).click();
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("link", { name: "Options", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Appearance", exact: true })).toHaveValue("light");
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "daylight");
+  await expect(page.getByRole("button", { name: "Daylight", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("@eval reflow fits the viewport including enlarged text and long content", async ({ page, harness }, testInfo) => {
-  await page.goto("/home");
+  await page.goto("/home/catch-up");
   await expect(page.getByRole("heading", { name: /Catch-up for Test Robin/ })).toBeVisible();
   const baseline = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   await testInfo.attach("baseline-reflow", { body: JSON.stringify(baseline), contentType: "application/json" });
@@ -29,7 +36,7 @@ test("@eval reflow fits the viewport including enlarged text and long content", 
 });
 
 test("@eval all navigation and action targets are at least 44 by 44 CSS pixels", async ({ page }) => {
-  await page.goto("/home");
+  await page.goto("/home/catch-up");
   await expect(page.getByRole("heading", { name: /Catch-up for Test Robin/ })).toBeVisible();
   const undersized = await page.getByRole("main").locator("a, button, select, input:not([type=hidden]), textarea").evaluateAll((elements) => elements.flatMap((element) => {
     const rect = element.getBoundingClientRect();
@@ -41,7 +48,7 @@ test("@eval all navigation and action targets are at least 44 by 44 CSS pixels",
 
 test("@eval signed-out state never claims a confirmed front or empty private inbox", async ({ page, harness }) => {
   harness.readStatus = 401;
-  await page.goto("/home");
+  await page.goto("/home/catch-up");
   await expect(page.locator(".command-notice")).toContainText("Sign in");
   await expect(page.getByText("Current front · confirmed", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Nothing in this view needs your eyes.", { exact: true })).toHaveCount(0);
@@ -50,10 +57,15 @@ test("@eval signed-out state never claims a confirmed front or empty private inb
 for (const kind of ["note", "todo"]) {
   test(`@eval successful ${kind} save announces success and clears the form`, async ({ page, harness }) => {
     await page.goto(kind === "note" ? "/notes" : "/board");
+    const openForm = page.getByRole("button", { name: kind === "note" ? "+ Leave a note" : "+ Add a todo", exact: true });
+    await openForm.click();
     const input = page.getByLabel(kind === "note" ? "Note" : "Title", { exact: true });
     await input.fill("Synthetic save check");
     await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save todo", exact: true }).click();
     await expect(page.locator(".command-notice")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Todos.");
+    // Saving closes the form and opens the saved record; a fresh form starts empty.
+    if (!(await openForm.isVisible())) await page.locator(".ld-back").click();
+    await openForm.click();
     await expect(input).toHaveValue("");
     expect(harness.writes).toHaveLength(1);
   });
@@ -61,8 +73,10 @@ for (const kind of ["note", "todo"]) {
 
 test("@eval switch-front action opens a selectable confirmation flow", async ({ page, harness }) => {
   await page.goto("/home");
-  await page.getByRole("button", { name: "Set host or start side fronter", exact: true }).click();
+  const switchButton = page.getByRole("region", { name: "Switch dock" }).getByRole("button", { name: /^Switch\./ });
+  await expect(switchButton).not.toHaveAccessibleName("Switch. Reading hosting and fronting.");
+  await switchButton.click();
   expect(harness.writes).toHaveLength(0);
-  await expect(page.getByRole("combobox", { name: /front|alter|profile/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /confirm side-fronter arrival/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Record a switch as" })).toBeFocused();
+  await expect(page.getByRole("button", { name: /^Record as host: Test Finch\./ })).toBeVisible();
 });

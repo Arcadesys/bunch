@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { uuidSchema } from "@/domain/contracts";
 import { requireOwnerId } from "@/server/auth";
-import { normalizeSystemError, SystemError } from "@/server/system-error";
+import { normalizeSystemError, SystemError, systemErrorStatus } from "@/server/system-error";
 
 export async function apiOwner(request: Request) {
   try { return await requireOwnerId(request); } catch (error) { throw normalizeSystemError(error); }
@@ -17,6 +17,17 @@ export function requireSameOrigin(request: Request) {
   const allowed = new Set([new URL(request.url).origin]);
   if (process.env.SYSTEM_PUBLIC_ORIGIN) allowed.add(new URL(process.env.SYSTEM_PUBLIC_ORIGIN).origin);
   if (!allowed.has(origin)) throw new SystemError("UNAUTHORIZED", "Cross-origin mutations are not allowed.");
+}
+
+/** For credentialed JSON account mutations that must reject requests without Origin. */
+export function requireStrictSameOriginJson(request: Request) {
+  const origin = request.headers.get("origin");
+  const allowed = new Set([new URL(request.url).origin]);
+  if (process.env.SYSTEM_PUBLIC_ORIGIN) allowed.add(new URL(process.env.SYSTEM_PUBLIC_ORIGIN).origin);
+  if (!origin || !allowed.has(origin)) throw new SystemError("UNAUTHORIZED", "This account action must come from the Bunch website.");
+  if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? "")) {
+    throw new SystemError("VALIDATION_ERROR", "This account action requires a JSON request.");
+  }
 }
 
 export function idempotencyKey(request: Request) {
@@ -36,14 +47,30 @@ export function mutationMeta(requestId: string, replayed: boolean) {
 }
 
 export async function apiResponse(run: () => Promise<Response>) {
-  try { return await run(); } catch (raw) {
+  try {
+    const response = await run();
+    if (!response.headers.has("Cache-Control")) response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  } catch (raw) {
     const error = normalizeSystemError(raw);
     if (!(error instanceof SystemError)) {
-      console.error("[api] request failed", { code: "INTERNAL_ERROR" });
-      return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } }, { status: 500 });
+      console.error("[api] request failed", {
+        code: "INTERNAL_ERROR",
+        name: error instanceof Error ? error.name : typeof error,
+        pgCode: error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : undefined,
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      });
+      return NextResponse.json(
+        { error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } },
+        { status: 500, headers: { "Cache-Control": "private, no-store" } },
+      );
     }
-    const status = { VALIDATION_ERROR: 400, NOT_FOUND: 404, CONFLICT: 409, ERASURE_BLOCKED: 409, UNAUTHORIZED: 401, FORBIDDEN: 403, RATE_LIMITED: 429, QUOTA_EXCEEDED: 413 }[error.code];
-    return NextResponse.json({ error: { code: error.code, message: error.userMessage, details: error.details } }, { status, headers: error.code === "RATE_LIMITED" ? {"Retry-After":"60"} : undefined });
+    const headers = new Headers({ "Cache-Control": "private, no-store" });
+    if (error.code === "RATE_LIMITED") headers.set("Retry-After", "60");
+    return NextResponse.json(
+      { error: { code: error.code, message: error.userMessage, details: error.details } },
+      { status: systemErrorStatus(error), headers },
+    );
   }
 }
 

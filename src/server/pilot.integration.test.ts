@@ -5,6 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 import { PilotService } from "./pilot-service";
 import { SystemService } from "./system-service";
+import { SystemError } from "./system-error";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 integration(
@@ -174,12 +175,43 @@ integration(
         await assert.rejects(pilot.accept({ ownerId: `auth0:friend:${randomUUID()}`, email: "e@example.test", emailVerified: true }, revoked, "E", true));
         await assert.rejects(pilot.createTenantInvitation(a), /operator/);
       });
+      await t.test("operator can expand but not reduce recorded capacity", async () => {
+        const evidence = {
+          checkedAt: new Date().toISOString(),
+          slots: 7,
+          capacityConfirmed: true as const,
+          recoveryConfirmed: true as const,
+          capacityEvidence: "Seven isolated systems fit within the checked service allowances.",
+          recoveryEvidence: "Encrypted backup restored successfully in the checked recovery test.",
+        };
+        await pilot.openTenantInvitations(owner, evidence);
+        assert.equal((await pilot.invitationActivation(owner)).maxFriends, 7);
+        await assert.rejects(
+          pilot.openTenantInvitations(owner, { ...evidence, slots: 6 }),
+          /cannot be reduced/,
+        );
+      });
+      await t.test("active accounts keep uploads after readiness evidence expires; explicit pauses still block", async () => {
+        await pool.query("update pilot_policy set capacity_verified_at=now()-interval '10 days',recovery_verified_at=now()-interval '10 days' where id");
+        await pilot.assertAccess(b);
+        await pilot.reserveUpload(b, "fixture/stale-evidence", 1024);
+        const saved = (await pool.query("select bytes,state from pilot_upload where storage_key=$1 and owner_id=$2", ["fixture/stale-evidence", b])).rows[0];
+        assert.equal(Number(saved.bytes), 1024);
+        assert.equal(saved.state, "RESERVED");
+        await assert.rejects(pilot.invite("stale@example.test"), /closed/);
+        await pool.query("update pilot_policy set uploads_enabled=false where id");
+        await pilot.assertAccess(b);
+        await assert.rejects(pilot.reserveUpload(b, "fixture/paused", 1024), (error: unknown) => error instanceof SystemError && error.code === "STORAGE_UNAVAILABLE" && error.userMessage.includes("account is still active"));
+        assert.equal((await pool.query("select count(*)::int as n from pilot_upload where storage_key='fixture/paused'")).rows[0].n, 0);
+        await pool.query("update pilot_policy set uploads_enabled=true,capacity_verified_at=now(),recovery_verified_at=now() where id");
+      });
       await t.test(
-        "parallel uploads atomically enforce 50 MB including reservations",
+        "parallel uploads atomically enforce each account's 100 MiB capacity including reservations",
         async () => {
+          await pool.query("update pilot_account set quota_bytes=$2 where owner_id=$1", [a, 100 * 1048576]);
           const results = await Promise.allSettled([
-            pilot.reserveUpload(a, "fixture/a1", 30 * 1048576),
-            pilot.reserveUpload(a, "fixture/a2", 30 * 1048576),
+            pilot.reserveUpload(a, "fixture/a1", 60 * 1048576),
+            pilot.reserveUpload(a, "fixture/a2", 60 * 1048576),
           ]);
           assert.equal(
             results.filter((r) => r.status === "fulfilled").length,
@@ -194,8 +226,18 @@ integration(
                 )
               ).rows[0].n,
             ),
-            30 * 1048576,
+            60 * 1048576,
           );
+          await assert.rejects(
+            pilot.reserveUpload(a, "fixture/over-remaining", 40 * 1048576 + 1),
+            (error: unknown) => error instanceof SystemError && error.code === "QUOTA_EXCEEDED" && error.userMessage.includes("40.0 MiB remaining in your 100.0 MiB image storage"),
+          );
+          await pilot.reserveUpload(a, "fixture/exact-boundary", 40 * 1048576);
+          await assert.rejects(
+            pilot.reserveUpload(a, "fixture/over-full", 1),
+            (error: unknown) => error instanceof SystemError && error.code === "QUOTA_EXCEEDED" && error.userMessage.includes("100.0 MiB image storage is full"),
+          );
+          await pool.query("delete from pilot_upload where storage_key='fixture/exact-boundary'");
         },
       );
       await t.test(
@@ -208,6 +250,7 @@ integration(
             [b],
           );
           await assert.rejects(pilot.assertAccess(b));
+          await assert.rejects(pilot.reserveUpload(b, "fixture/revoked", 1024));
           await assert.rejects(
             service.createAlter(
               b,
@@ -279,13 +322,12 @@ integration(
         },
       );
       await t.test(
-        "stale capacity evidence stops new invitations and uploads",
+        "stale capacity evidence stops new invitations",
         async () => {
           await pool.query(
             "update pilot_policy set capacity_verified_at=now()-interval '8 days' where id",
           );
           await assert.rejects(pilot.invite("late@example.test"), /closed/);
-          await assert.rejects(pilot.reserveUpload(b, "fixture/late", 1024));
         },
       );
       await t.test(

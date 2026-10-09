@@ -18,6 +18,7 @@ async function liveDock(page: Page) {
 
 async function openDock(page: Page) {
   await (await liveDock(page)).click();
+  await expect(page.getByRole("dialog", { name: "Record a switch as" })).toBeVisible();
   await expect(panelHeading(page)).toBeFocused();
   await expect(page.getByRole("button", { name: /^Record as host: Test Finch\./ })).toBeEnabled();
 }
@@ -85,7 +86,8 @@ test("energy and trigger are saved with the arrival only when Done is pressed", 
   await page.getByRole("group", { name: "Trigger" }).getByRole("button", { name: "Stress", exact: true }).click();
   expect(harness.writes).toHaveLength(1);
 
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  // Todos' status group also has a "Done" button; press the dock's own Done.
+  await dock(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dock(page).getByRole("status")).toContainText("Energy and trigger saved with Test Finch’s record.");
   expect(harness.writes).toHaveLength(2);
   expect(harness.writes[1].path).toBe(`/api/v1/presence/periods/${harness.presence.hosting!.id}/details`);
@@ -101,6 +103,35 @@ test("Escape closes the panel without writing, and S opens it from any page", as
   await page.keyboard.press("Escape");
   await expect(panelHeading(page)).toHaveCount(0);
   await expect(switchButton(page)).toBeFocused();
+  expect(harness.writes).toHaveLength(0);
+});
+
+test("the switch modal stays reachable in a short viewport and contains keyboard focus", async ({ page, harness }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  await page.setViewportSize({ width: 1440, height: 360 });
+  await page.goto("/board");
+  await openDock(page);
+  const modal = page.getByRole("dialog", { name: "Record a switch as" });
+  await page.keyboard.press("Shift+Tab");
+  expect(await page.evaluate(() => document.activeElement?.closest("dialog")?.id)).toBe("switch-dock-panel");
+  await panelHeading(page).focus();
+  const bounds = await modal.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(360);
+
+  const lastProfile = page.getByRole("button", { name: /^Record as host: Test Finch\./ });
+  await lastProfile.scrollIntoViewIfNeeded();
+  await expect(lastProfile).toBeInViewport();
+  for (let step = 0; step < 8; step += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest("dialog")?.id)).toBe("switch-dock-panel");
+  }
+  await modal.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  await expect(switchButton(page)).toBeFocused();
+  expect(consoleErrors).toEqual([]);
   expect(harness.writes).toHaveLength(0);
 });
 
@@ -127,4 +158,39 @@ test("a signed-out dock still offers Switch and never raises an alert", async ({
   await expect(panelHeading(page)).toBeFocused();
   await expect(dock(page)).toContainText("Sign in to record switches.");
   await expect(page.getByRole("button", { name: /^Record as/ })).toHaveCount(0);
+});
+
+test("the dock fits the viewport at 200% text and keeps its status in words", async ({ page, harness }) => {
+  harness.presence.hosting = { id: "60000000-0000-4000-8000-000000000009", alterId: harness.profiles[1].id, alterName: "Test Finch", startedAt: "2026-09-04T12:00:00.000Z", version: 1, kind: "HOSTING", origin: "EXPLICIT" };
+  // Init scripts run before <html> exists, so enlarge once the document is parsed.
+  await page.addInitScript(() => document.addEventListener("DOMContentLoaded", () => { document.documentElement.style.fontSize = "40px"; }));
+  await page.goto("/board");
+  const trigger = await liveDock(page);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe("40px");
+  await expect(trigger).toHaveAccessibleName("Switch. Hosting: Test Finch. Fronting alongside: Test Robin.");
+  await expect(dock(page)).toContainText("Host Test Finch");
+  await expect(dock(page)).toContainText("Also Test Robin");
+  // The words must be on screen, not clipped down to a letter or a colour.
+  const clipped = await dock(page).locator(".switch-dock-host-line, .switch-dock-also-line").evaluateAll(lines =>
+    lines.filter(line => line.clientWidth === 0 || line.scrollWidth > line.clientWidth + 1).map(line => line.textContent));
+  expect(clipped).toEqual([]);
+
+  // A phone widens its layout viewport to fit overflowing content, so pin
+  // innerWidth to the device width before trusting the scrollWidth check.
+  const viewport = page.viewportSize()!;
+  expect(await page.evaluate(() => innerWidth)).toBe(viewport.width);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const bounds = await dock(page).boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+
+  await trigger.scrollIntoViewIfNeeded();
+  const button = await trigger.boundingBox();
+  expect(button).not.toBeNull();
+  expect(button!.height).toBeGreaterThanOrEqual(44);
+  expect(button!.x).toBeGreaterThanOrEqual(0);
+  expect(button!.x + button!.width).toBeLessThanOrEqual(viewport.width + 1);
+  await trigger.click();
+  await expect(panelHeading(page)).toBeFocused();
 });

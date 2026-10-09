@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
 import { requireOwnerId } from "@/server/auth";
 import { readPrivateImage } from "@/server/private-images";
+import { privateMediaError, privateMediaResponse } from "@/server/private-media-response";
 import { repository } from "@/server/repository";
 
 export const runtime = "nodejs";
@@ -10,20 +10,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ imag
     const ownerId = await requireOwnerId(request);
     const { imageId } = await params;
     const image = await repository.getImage(ownerId, imageId);
-    if (!image) return new NextResponse("Not found", { status: 404 });
+    if (!image) return privateMediaError("Not found", 404);
 
-    const stored = await readPrivateImage(image.storageKey);
-    return new NextResponse(stored.body, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Disposition": "inline",
-        "Content-Type": stored.contentType,
-        "Referrer-Policy": "no-referrer",
-        "X-Content-Type-Options": "nosniff",
-        ...(stored.etag ? { ETag: stored.etag } : {}),
-      },
-    });
+    const stored = await readPrivateImage(image.storageKey, { ifNoneMatch: request.headers.get("if-none-match") ?? undefined });
+    const response = privateMediaResponse(request, stored, { contentDisposition: "inline" });
+    response.headers.set("Referrer-Policy", "no-referrer");
+    return response;
   } catch {
-    return new NextResponse("Not found", { status: 404 });
+    return privateMediaError("Not found", 404);
   }
 }

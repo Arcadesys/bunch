@@ -44,6 +44,7 @@ const unavailable = () =>
     "This account does not have active Bunch access. Visit /join or /account.",
   );
 export const OWNER_TABLES = [
+  "image_usage",
   "native_scene_render",
   "group_photo_render",
   "group_photo_placement",
@@ -57,6 +58,12 @@ export const OWNER_TABLES = [
   "todo_assignee",
   "activity_event",
   "mutation_receipt",
+  "telegram_publication_attempt",
+  "telegram_link_transaction",
+  "telegram_link_intent",
+  "telegram_connection",
+  "telegram_connection_epoch",
+  "mcp_invocation",
   "system_host",
   "presence_period",
   "fronting_session",
@@ -149,6 +156,13 @@ export class PilotService {
       );
     });
   }
+  // The single active OPERATOR account (enforced by the pilot_one_operator unique
+  // index) is the Bunch admin. Used to gate admin-only surfaces like usage stats.
+  async assertOperator(ownerId: string) {
+    const account = await this.account(ownerId);
+    if (account?.role !== "OPERATOR" || account.state !== "ACTIVE")
+      throw new SystemError("FORBIDDEN", "Only the active Bunch operator can view usage stats.");
+  }
   private async invitationAdministrator(ownerId: string, client: Pool | PoolClient = this.pool) {
     const result = await client.query<PilotAccount>(
       "select * from pilot_account where owner_id=$1",
@@ -186,10 +200,19 @@ export class PilotService {
       throw new SystemError("VALIDATION_ERROR", "Capacity and recovery evidence must be from the last seven days.");
     await this.transaction(async (c) => {
       await this.invitationAdministrator(ownerId, c);
-      await c.query("select id from pilot_policy where id for update");
+      const policy = (
+        await c.query("select max_friends,invitations_open from pilot_policy where id for update")
+      ).rows[0];
+      if (policy && input.slots < Number(policy.max_friends))
+        throw new SystemError(
+          "VALIDATION_ERROR",
+          "Pilot capacity cannot be reduced through the invitation controls.",
+        );
       await c.query("insert into pilot_account(owner_id,role,privacy_accepted_at) values($1,'OPERATOR',now()) on conflict(owner_id) do nothing", [ownerId]);
-      const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
-      if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
+      if (!policy?.invitations_open) {
+        const otherAccounts = await c.query("select 1 from app_user u left join pilot_account a on a.owner_id=u.id where a.owner_id is null");
+        if (otherAccounts.rowCount) throw new SystemError("CONFLICT", "Another existing account must be reviewed before invitations can open.");
+      }
       await c.query(
         "update pilot_policy set gate_enabled=true,friends_enabled=true,invitations_open=true,uploads_enabled=true,max_friends=$1,capacity_verified_at=$2,recovery_verified_at=$2,evidence=$3 where id",
         [input.slots, checkedAt.toISOString(), JSON.stringify({ capacityEvidence: input.capacityEvidence, recoveryEvidence: input.recoveryEvidence, checkedAt: input.checkedAt })],
@@ -329,7 +352,7 @@ export class PilotService {
         throw unavailable();
       const data: Record<string, unknown[]> = {};
       for (const table of OWNER_TABLES) {
-        if (table === "mutation_receipt" || table === "gallery_share") continue; // Internal retry payloads and bearer-token hashes are not user records.
+        if (table === "mutation_receipt" || table === "gallery_share" || table === "mcp_invocation" || table === "telegram_link_transaction" || table === "telegram_link_intent" || table === "telegram_connection_epoch" || table === "telegram_connection" || table === "telegram_publication_attempt") continue; // Internal retries, bearer tokens, transient authorization material, and service identifiers are not exported.
         const rows = (
           await c.query(`select * from ${table} where owner_id=$1${table === "conversation_summary" ? " and expires_at>now()" : ""}`, [ownerId])
         ).rows;
@@ -352,6 +375,13 @@ export class PilotService {
       const generatedImages = (
         await c.query("select id from native_scene_render where owner_id=$1 and state='COMPLETE' order by created_at", [ownerId])
       ).rows.map(row => ({ id: row.id, downloadUrl: `/api/v1/account/generated-images/${row.id}` }));
+      const telegram = (await c.query<{ display_name: string | null; username: string | null; bot_access: boolean; connection_revision: number; connected_at: Date }>(
+        "select display_name,username,bot_access,connection_revision,connected_at from telegram_connection where owner_id=$1", [ownerId])).rows[0];
+      if (telegram) data.telegram_connection = [{ display_name: telegram.display_name, username: telegram.username, bot_access: telegram.bot_access,
+        connection_revision: telegram.connection_revision, connected_at: telegram.connected_at }];
+      const telegramPublications = (await c.query<{ pack_name: string; status: string; created_at: Date; updated_at: Date }>(
+        "select pack_name,status,created_at,updated_at from telegram_publication_attempt where owner_id=$1 order by created_at", [ownerId])).rows;
+      if (telegramPublications.length) data.telegram_publication_attempt = telegramPublications;
       const preferences = (
         await c.query("select time_zone from app_user where id=$1", [ownerId])
       ).rows[0];
@@ -417,6 +447,7 @@ export class PilotService {
       ).rows.map((r) => r.storage_key);
       await remove(keys);
       await c.query("select set_config('app.pilot_purge',$1,true)", [ownerId]);
+      await c.query("delete from telegram_link_rate where rate_key=$1", [ownerId]);
       for (const table of OWNER_TABLES)
         await c.query(`delete from ${table} where owner_id=$1`, [ownerId]);
       // Also covers legacy tables not represented in current contracts.
@@ -448,10 +479,12 @@ export class PilotService {
       }
       if (
         a.state !== "ACTIVE" ||
-        (a.role === "FRIEND" &&
-          (!p.friends_enabled || !p.uploads_enabled || !freshEvidence(p)))
+        (a.role === "FRIEND" && !p.friends_enabled)
       )
         throw unavailable();
+      // Readiness evidence gates invitations, not continued use by active accounts.
+      if (a.role === "FRIEND" && !p.uploads_enabled)
+        throw new SystemError("STORAGE_UNAVAILABLE", "Image uploads are temporarily paused. Your Bunch account is still active. Try again later.");
       const used = Number(
         (
           await c.query(
@@ -460,11 +493,16 @@ export class PilotService {
           )
         ).rows[0].n,
       );
-      if (a.role === "FRIEND" && used + bytes > Number(a.quota_bytes))
-        throw new SystemError(
-          "QUOTA_EXCEEDED",
-          "Your 50 MB image allowance is full. Delete images before uploading more.",
-        );
+      const quotaBytes = Number(a.quota_bytes);
+      if (a.role === "FRIEND" && used + bytes > quotaBytes) {
+        const remainingBytes = Math.max(0, quotaBytes - used);
+        const remainingMiB = (remainingBytes / (1024 * 1024)).toFixed(1);
+        const quotaMiB = (quotaBytes / (1024 * 1024)).toFixed(1);
+        const message = remainingBytes === 0
+          ? `Your ${quotaMiB} MiB image storage is full. Delete stored images before uploading more.`
+          : `This file is larger than the ${remainingMiB} MiB remaining in your ${quotaMiB} MiB image storage. Delete stored images to make room, then try again.`;
+        throw new SystemError("QUOTA_EXCEEDED", message);
+      }
       await c.query(
         "insert into pilot_upload(storage_key,owner_id,bytes,state) values($1,$2,$3,'RESERVED')",
         [key, ownerId, bytes],
