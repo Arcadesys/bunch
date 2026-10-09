@@ -10,6 +10,7 @@ import { SystemService } from "./system-service";
 import { PilotService } from "./pilot-service";
 import { createMcpServer } from "./mcp-server";
 import { GET } from "@/app/api/cron/expire-catch-ups/route";
+import { runRetentionCleanup } from "@/server/retention-cleanup";
 
 // The MCP server has no default origin, so every test that builds one must say
 // where this instance is served from. Pinned rather than defaulted: these
@@ -120,20 +121,14 @@ test("retention cron rejects missing configuration and incorrect credentials bef
   } finally { if(old===undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET=old; }
 });
 
-test("authorized retention cron runs cleanup and returns no private content", async t => {
-  const old = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = "fixture-secret-only";
-  const cleanup = t.mock.method(ConversationSummaryService.prototype, "purgeExpired", async () => 3);
-  // The constructor needs a pool even though this endpoint test stubs the cleanup.
-  const oldUrl = process.env.DATABASE_URL;
-  process.env.DATABASE_URL = "postgresql://127.0.0.1:1/unused";
-  try {
-    const response = await GET(new Request("https://example.test/api/cron/expire-catch-ups", { headers: { authorization: "Bearer fixture-secret-only" } }));
-    assert.equal(response.status,200);
-    assert.deepEqual(await response.json(), { deleted: 3 });
-    assert.equal(cleanup.mock.callCount(),1);
-  } finally {
-    if(old===undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET=old;
-    if(oldUrl===undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL=oldUrl;
-  }
+test("retention cleanup runs both purges and returns no private content", async () => {
+  let summaryCalls = 0, telegramCalls = 0;
+  const response = await runRetentionCleanup(
+    { purgeExpired: async () => { summaryCalls++; return 3; } } as ConversationSummaryService,
+    async () => { telegramCalls++; },
+  );
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(), { deleted: 3 });
+  assert.equal(summaryCalls,1);
+  assert.equal(telegramCalls,1);
 });

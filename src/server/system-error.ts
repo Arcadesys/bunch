@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 
-export type SystemErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "ERASURE_BLOCKED" | "AUTH_UNAVAILABLE" | "UNAUTHORIZED" | "FORBIDDEN" | "RATE_LIMITED" | "QUOTA_EXCEEDED";
+export type SystemErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "ERASURE_BLOCKED" | "AUTH_UNAVAILABLE" | "UNAUTHORIZED" | "FORBIDDEN" | "RATE_LIMITED" | "QUOTA_EXCEEDED" | "STORAGE_UNAVAILABLE";
 
 export class SystemError extends Error {
   constructor(public readonly code: SystemErrorCode, public readonly userMessage: string, public readonly details?: Record<string, unknown>) {
@@ -27,5 +27,6 @@ export function systemErrorStatus(error: SystemError) {
     FORBIDDEN: 403,
     RATE_LIMITED: 429,
     QUOTA_EXCEEDED: 413,
+    STORAGE_UNAVAILABLE: 503,
   }[error.code];
 }

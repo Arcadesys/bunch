@@ -19,6 +19,17 @@ export function requireSameOrigin(request: Request) {
   if (!allowed.has(origin)) throw new SystemError("UNAUTHORIZED", "Cross-origin mutations are not allowed.");
 }
 
+/** For credentialed JSON account mutations that must reject requests without Origin. */
+export function requireStrictSameOriginJson(request: Request) {
+  const origin = request.headers.get("origin");
+  const allowed = new Set([new URL(request.url).origin]);
+  if (process.env.SYSTEM_PUBLIC_ORIGIN) allowed.add(new URL(process.env.SYSTEM_PUBLIC_ORIGIN).origin);
+  if (!origin || !allowed.has(origin)) throw new SystemError("UNAUTHORIZED", "This account action must come from the Bunch website.");
+  if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? "")) {
+    throw new SystemError("VALIDATION_ERROR", "This account action requires a JSON request.");
+  }
+}
+
 export function idempotencyKey(request: Request) {
   const key = request.headers.get("idempotency-key");
   if (!key) throw new SystemError("VALIDATION_ERROR", "Idempotency-Key is required for mutations.");
@@ -43,7 +54,12 @@ export async function apiResponse(run: () => Promise<Response>) {
   } catch (raw) {
     const error = normalizeSystemError(raw);
     if (!(error instanceof SystemError)) {
-      console.error("[api] request failed", { code: "INTERNAL_ERROR" });
+      console.error("[api] request failed", {
+        code: "INTERNAL_ERROR",
+        name: error instanceof Error ? error.name : typeof error,
+        pgCode: error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : undefined,
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      });
       return NextResponse.json(
         { error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } },
         { status: 500, headers: { "Cache-Control": "private, no-store" } },

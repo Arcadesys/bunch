@@ -1,6 +1,7 @@
 import { getPilotService, type PilotIdentity } from "./pilot-service";
 import { getAuth0Client, isAuth0Configured } from "@/lib/auth0";
 import { SystemError } from "./system-error";
+import { PREVIEW_EMAIL, PREVIEW_SESSION_COOKIE, previewLoginEnabled, verifyPreviewSession } from "./preview-login";
 
 export function ownerIdFromAuth0Subject(subject: string) {
   const normalized = subject.trim();
@@ -16,8 +17,19 @@ function e2ePilotIdentity(request?: Request): PilotIdentity | null {
     : null;
 }
 
-// Three accepted identity paths, in precedence order: the end-to-end test seam (which
-// cannot run in a production build), a real Auth0 session, and finally the local
+async function previewPilotIdentity(request?: Request): Promise<PilotIdentity | null> {
+  if (!previewLoginEnabled()) return null;
+  let token = request?.headers.get("cookie")?.split(/;\s*/).find((part) => part.startsWith(`${PREVIEW_SESSION_COOKIE}=`))?.slice(PREVIEW_SESSION_COOKIE.length + 1);
+  if (!token) {
+    try { token = (await (await import("next/headers")).cookies()).get(PREVIEW_SESSION_COOKIE)?.value; } catch { token = undefined; }
+  }
+  const subject = verifyPreviewSession(token);
+  return subject ? { ownerId: ownerIdFromAuth0Subject(subject), email: PREVIEW_EMAIL, emailVerified: true } : null;
+}
+
+// Four accepted identity paths, in precedence order: the end-to-end test seam (which
+// cannot run in a production build), a real Auth0 session, the preview-deployment
+// test account (off everywhere but Vercel previews), and finally the local
 // walkthrough header. Every path returns an owner ID derived from an immutable
 // subject, never from anything the caller supplied as data.
 export async function requireOwnerId(request?: Request): Promise<string> {
@@ -33,6 +45,11 @@ export async function requireOwnerId(request?: Request): Promise<string> {
       await getPilotService().assertAccess(ownerId, request?.url.includes("/images") ? "image" : "web");
       return ownerId;
     }
+  }
+  const preview = await previewPilotIdentity(request);
+  if (preview) {
+    await getPilotService().assertAccess(preview.ownerId, request?.url.includes("/images") ? "image" : "web");
+    return preview.ownerId;
   }
 
   // Local-only walkthrough mode. It is rejected unless deliberately enabled.
@@ -52,8 +69,12 @@ export async function requirePilotIdentity(request?: Request): Promise<PilotIden
   // both the explicit test-server flag and a per-request synthetic subject.
   const e2e = e2ePilotIdentity(request);
   if (e2e) return e2e;
-  if (!isAuth0Configured()) throw new SystemError("AUTH_UNAVAILABLE", "Bunch sign-in is temporarily unavailable.");
-  const session = await getAuth0Client().getSession();
-  if (!session?.user.sub) throw new SystemError("UNAUTHORIZED", "Sign in with Google to manage your Bunch account.");
+  const session = isAuth0Configured() ? await getAuth0Client().getSession() : null;
+  if (!session?.user.sub) {
+    const preview = await previewPilotIdentity(request);
+    if (preview) return preview;
+    if (!isAuth0Configured()) throw new SystemError("AUTH_UNAVAILABLE", "Bunch sign-in is temporarily unavailable.");
+    throw new SystemError("UNAUTHORIZED", "Sign in with Google to manage your Bunch account.");
+  }
   return { ownerId: ownerIdFromAuth0Subject(session.user.sub), email: typeof session.user.email === "string" ? session.user.email : "", emailVerified: session.user.email_verified === true };
 }

@@ -1,391 +1,161 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 import { AppNavigation } from "@/app/app-navigation";
-import { PeopleToolsNav } from "@/app/people-tools-nav";
-import {
-  defaultStickerSlots,
-  type StickerPackView,
-  type StickerSlot,
-} from "@/domain/sticker-pack";
+import { ListDetail, useListSelection, initials, type ListRow } from "@/app/list-detail";
+import { defaultStickerPack, stickerPackCsv, type StickerPackDraft } from "@/domain/sticker-pack";
+import "./stickers.css";
 
 type Person = {
-  id: string;
-  name: string;
-  communicationGuidance?: string;
-  appearanceReferenceImageIds?: string[];
+  id: string; name: string; description?: string | null; pronouns?: string | null;
+  appearanceNotes?: string | null; appearanceReferenceImageIds?: string[];
+  profilePicture?: { id: string } | null;
 };
-
 const demoHeaders = { "x-system-demo": "local" };
 
-function errorMessage(payload: unknown, fallback: string) {
-  const error =
-    typeof payload === "object" && payload && "error" in payload
-      ? (payload as { error?: { message?: unknown } }).error
-      : undefined;
-  return typeof error?.message === "string" ? error.message : fallback;
-}
-
-function cloneSlots(slots: StickerSlot[]) {
-  return slots.map((slot) => ({ ...slot }));
-}
-
-export default function StickerPacksPage() {
+export default function StickerLabPage() {
   const [people, setPeople] = useState<Person[]>([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [pack, setPack] = useState<StickerPackView | null>(null);
-  const [slots, setSlots] = useState<StickerSlot[]>(() => defaultStickerSlots());
-  const [communicationProfile, setCommunicationProfile] = useState("");
-  const [notice, setNotice] = useState("Choose a person to design ten everyday reaction stickers.");
-  const [busy, setBusy] = useState(false);
-  const [telegramUrl, setTelegramUrl] = useState("");
-  const requestIds = useRef(new Map<string, string>());
-
-  const selected = useMemo(
-    () => people.find((person) => person.id === selectedId) ?? null,
-    [people, selectedId],
-  );
-
-  const loadPeople = useCallback(async () => {
-    const response = await fetch("/api/v1/alters?limit=100", { headers: demoHeaders });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(errorMessage(payload, "Could not load people."));
-    const all = Array.isArray(payload.data) ? [...payload.data] : [];
-    for (let cursor = payload.meta?.nextCursor; cursor; ) {
-      const page = await fetch(
-        `/api/v1/alters?limit=100&cursor=${encodeURIComponent(cursor)}`,
-        { headers: demoHeaders },
-      ).then((item) => item.json());
-      all.push(...(Array.isArray(page.data) ? page.data : []));
-      cursor = page.meta?.nextCursor;
-    }
-    setPeople(all);
-    const requested = new URLSearchParams(window.location.search).get("person");
-    if (requested && all.some((person) => person.id === requested)) setSelectedId(requested);
-  }, []);
+  const [pack, setPack] = useState<StickerPackDraft | null>(null);
+  const [notice, setNotice] = useState("Choose a person. Bunch will keep the ten reaction directions private with their profile.");
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // loadPeople mutates state only after its network work completes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadPeople().catch((error) =>
-      setNotice(error instanceof Error ? error.message : "Could not load people."),
-    );
-  }, [loadPeople]);
+    void fetch("/api/v1/alters?limit=100", { headers: demoHeaders }).then(r => r.json()).then(payload => {
+      const list = Array.isArray(payload.data) ? payload.data as Person[] : [];
+      setPeople(list);
+    }).catch(() => setNotice("Could not load private people.")).finally(() => setLoaded(true));
+  }, []);
+
+  // Until people load, an empty list keeps a saved ?id= from being replaced.
+  const ids = useMemo(() => loaded ? people.map(p => p.id) : [], [loaded, people]);
+  const [selectedId, select] = useListSelection(ids);
 
   useEffect(() => {
     if (!selectedId) return;
-    let cancelled = false;
-    void fetch(`/api/v1/alters/${encodeURIComponent(selectedId)}/sticker-pack`, {
-      headers: demoHeaders,
-    })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(errorMessage(payload, "Could not load this sticker board."));
-        if (cancelled) return;
-        const saved = payload.data as StickerPackView | null;
-        setPack(saved);
-        setSlots(cloneSlots(saved?.slots ?? payload.meta?.defaults ?? defaultStickerSlots()));
-        setCommunicationProfile(saved?.communicationProfile ?? "");
-        setTelegramUrl(saved?.telegramUrl ?? "");
-        setNotice(
-          saved
-            ? saved.status === "APPROVED"
-              ? "Prompt board approved. It is ready for the ChatGPT blocking pass."
-              : saved.status === "PUBLISHED"
-                ? "This pack has been published to Telegram."
-                : "Draft loaded. Keep directing the performances until they feel right."
-            : "New board ready. Describe how this person communicates, then direct each reaction.",
-        );
-      })
-      .catch((error) => {
-        if (!cancelled)
-          setNotice(error instanceof Error ? error.message : "Could not load this sticker board.");
-      });
-    return () => {
-      cancelled = true;
-    };
+    let active = true;
+    void fetch(`/api/v1/preferences/stickers/${encodeURIComponent(selectedId)}`, { headers: demoHeaders, cache: "no-store" }).then(async r => {
+      const payload = await r.json();
+      if (!r.ok) throw new Error(payload?.error?.message || "Could not load sticker directions.");
+      if (!active) return;
+      setPack(payload.data as StickerPackDraft);
+      setNotice("Shape how this person actually says each thing. These are performances, not fixed emoji poses.");
+    }).catch(() => { if (active) setPack(defaultStickerPack(selectedId)); });
+    return () => { active = false; };
   }, [selectedId]);
 
-  function choosePerson(value: string) {
-    setSelectedId(value);
-    setPack(null);
-    setSlots(defaultStickerSlots());
-    setCommunicationProfile("");
-    setTelegramUrl("");
-    setNotice(value ? "Loading this person's sticker board…" : "Choose a person to design ten everyday reaction stickers.");
+  const person = people.find(p => p.id === selectedId);
+  // Never show (or save) one person's board under another person's name while switching.
+  const board = pack && pack.alterId === selectedId ? pack : null;
+  const completed = useMemo(() => pack ? pack.stickers.filter(s => s.performance.trim()).length : 0, [pack]);
+
+  function updateSticker(index: number, field: string, value: string) {
+    if (!pack) return;
+    setPack({ ...pack, stickers: pack.stickers.map((s, i) => i === index ? { ...s, [field]: value } : s) });
   }
 
-  function updateSlot(index: number, patch: Partial<StickerSlot>) {
-    setSlots((current) =>
-      current.map((slot, itemIndex) => (itemIndex === index ? { ...slot, ...patch } : slot)),
-    );
-    if (pack?.status === "APPROVED") setNotice("You changed an approved board. Save it as a draft or approve it again.");
-  }
-
-  async function save(status: "DRAFT" | "APPROVED" | "PUBLISHED") {
-    if (!selected) return;
-    if (status === "APPROVED" && slots.some((slot) => !slot.performance.trim())) {
-      setNotice("Give every reaction a performance before approving the board.");
-      return;
-    }
-    if (status === "PUBLISHED" && !telegramUrl.trim()) {
-      setNotice("Paste the Telegram add-pack link before marking this pack published.");
-      return;
-    }
-    setBusy(true);
-    const body = {
-      expectedVersion: pack?.version ?? null,
-      communicationProfile: communicationProfile.trim() || null,
-      status,
-      slots,
-      telegramUrl: status === "PUBLISHED" ? telegramUrl.trim() : null,
-    };
-    const fingerprint = JSON.stringify([selected.id, body]);
-    const requestId = requestIds.current.get(fingerprint) ?? crypto.randomUUID();
-    requestIds.current.set(fingerprint, requestId);
+  async function save() {
+    if (!pack) return;
+    setSaving(true);
     try {
-      const response = await fetch(
-        `/api/v1/alters/${encodeURIComponent(selected.id)}/sticker-pack`,
-        {
-          method: "PUT",
-          headers: {
-            ...demoHeaders,
-            "Content-Type": "application/json",
-            "Idempotency-Key": requestId,
-          },
-          body: JSON.stringify(body),
-        },
-      );
+      const response = await fetch(`/api/v1/preferences/stickers/${encodeURIComponent(pack.alterId)}`, {
+        method: "PUT", headers: { ...demoHeaders, "Content-Type": "application/json" }, body: JSON.stringify(pack)
+      });
       const payload = await response.json();
-      if (!response.ok) throw new Error(errorMessage(payload, "Could not save this sticker board."));
-      setPack(payload.data);
-      requestIds.current.delete(fingerprint);
-      setNotice(
-        status === "APPROVED"
-          ? "Prompt board approved. In ChatGPT, ask Bunch to make the sticker pack for this person."
-          : status === "PUBLISHED"
-            ? "Published pack link saved in Bunch."
-            : "Draft saved.",
-      );
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not save this sticker board.");
-    } finally {
-      setBusy(false);
-    }
+      if (!response.ok) throw new Error(payload?.error?.message || "Could not save sticker directions.");
+      setNotice("Sticker directions saved privately in Bunch.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save sticker directions."); }
+    finally { setSaving(false); }
   }
 
-  async function copyLaunchPrompt() {
-    if (!selected) return;
-    const prompt = `Make a ten-reaction sticker pack for ${selected.name} using the approved sticker board in Bunch. Use Bunch's saved appearance references for the final character pass. Start with cheap pose blocking and only repair the sticker I select.`;
-    try {
-      await navigator.clipboard.writeText(prompt);
-      setNotice("Launch prompt copied. Paste it into a ChatGPT chat with Bunch installed.");
-    } catch {
-      setNotice(prompt);
-    }
+  async function copyCsv() {
+    if (!pack) return;
+    await navigator.clipboard.writeText(stickerPackCsv(pack));
+    setNotice("Copied the ten-sticker CSV. Hand this to the sticker generator for blocking.");
   }
 
-  function useGuidance() {
-    if (!selected?.communicationGuidance) {
-      setNotice("No communication guidance is saved on this profile yet.");
-      return;
-    }
-    setCommunicationProfile(selected.communicationGuidance);
-    setNotice("Copied the profile's communication guidance into this sticker board. Edit it as needed.");
+  async function copyPrompt() {
+    if (!pack || !person) return;
+    const prompt = `Make a personalized ten-reaction sticker pack for ${person.name}. Use Bunch for their canonical appearance references. Start from this approved direction board, do a cheap blocking pass first, and repair only the selected sticker when I ask for changes. Do not render final character art until the blocking poses are approved.\n\nPersonality summary:\n${pack.personalitySummary || "(not written yet)"}\n\nCSV:\n${stickerPackCsv(pack)}`;
+    await navigator.clipboard.writeText(prompt);
+    setNotice("Copied a ChatGPT handoff prompt with the full reaction board.");
   }
 
-  return (
-    <main className="shell" style={{ maxWidth: "1180px" }}>
-      <AppNavigation current="PROFILES" />
-      <PeopleToolsNav current="stickers" />
-      <header className="site-header">
-        <div>
-          <p className="eyebrow">Bunch · expressive communication</p>
-          <h1>Sticker studio</h1>
-          <p>
-            Direct ten tiny performances for one person. Bunch stores the creative contract;
-            ChatGPT can do the blocking, repairs, final character pass, and Telegram delivery.
-          </p>
-        </div>
-      </header>
+  // Build list rows
+  const rows: ListRow[] = useMemo(() => {
+    return people.map(p => ({
+      id: p.id,
+      avatar: { src: p.profilePicture?.id ? `/api/v1/images/${encodeURIComponent(p.profilePicture.id)}` : null, initials: initials(p.name) },
+      title: p.name,
+      meta: p.appearanceReferenceImageIds?.length ? "Appearance reference ready" : "No appearance reference yet",
+    }));
+  }, [people]);
 
-      <p className="notice" role="status">{notice}</p>
+  return <main className="app-page">
+    <AppNavigation current="STICKERS" />
+    <ListDetail
+      title="Sticker lab"
+      count="Ten reactions each"
+      intro="Direct ten tiny performances for one person, then hand them to ChatGPT for blocking and character rendering."
+      rows={rows}
+      selectedId={person ? selectedId : null}
+      onSelect={select}
+      detailLabel="Reaction board"
+      listStatus={<>
+        {person ? null : <p className="ld-intro" role="status">{notice}</p>}
+        {loaded && people.length === 0 ? <p className="ld-intro">No private people yet. Add them in People first.</p> : null}
+      </>}
+    >
+      {person ? (
+        <div className="detail-card sticker-lab-detail">
+          <p className="notice" role="status">{notice}</p>
+          <div className="sticker-person-detail">
+            {person.profilePicture?.id && <Image src={`/api/v1/images/${encodeURIComponent(person.profilePicture.id)}`} alt={`${person.name} profile picture`} width={180} height={180} unoptimized />}
+            <div>
+              <h2>{person.name}’s reactions</h2>
+              <p>{person.description || "No description recorded."}</p>
+              <p>{person.appearanceReferenceImageIds?.length ? `${person.appearanceReferenceImageIds.length} selected appearance reference(s) ready.` : "No selected appearance reference yet."}</p>
+            </div>
+          </div>
+          {board ? <>
 
-      <section className="panel" aria-labelledby="person-heading">
-        <h2 id="person-heading">1. Choose a person</h2>
-        <label>
-          Person
-          <select value={selectedId} onChange={(event) => choosePerson(event.target.value)}>
-            <option value="">Choose a person</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>{person.name}</option>
-            ))}
-          </select>
-        </label>
-        {selected && (
-          <p>
-            {selected.appearanceReferenceImageIds?.length
-              ? `${selected.appearanceReferenceImageIds.length} selected appearance reference(s) are ready for the final character pass.`
-              : "No appearance reference is selected yet. You can still design and block the poses first."}
-          </p>
-        )}
-      </section>
+          <div className="sticker-progress">
+            <strong>{completed}/10 performances directed</strong>
+            <span>Appearance comes later. Get the acting right first.</span>
+          </div>
 
-      {selected && (
-        <>
-          <section className="panel" aria-labelledby="personality-heading">
-            <h2 id="personality-heading">2. How does {selected.name} communicate?</h2>
-            <p>
-              This is direction, not biography. Capture the things that change how “thanks,”
-              “sorry,” or “hell yes” look for this person.
-            </p>
-            {selected.communicationGuidance && (
-              <button className="button button-secondary" type="button" onClick={useGuidance}>
-                Start from saved communication guidance
-              </button>
-            )}
-            <label>
-              Communication profile
-              <textarea
-                rows={5}
-                maxLength={5000}
-                value={communicationProfile}
-                onChange={(event) => setCommunicationProfile(event.target.value)}
-                placeholder="Deadpan, expressive hands, affection is understated, signs THANK-YOU, hates baby-talk…"
-              />
-            </label>
-          </section>
+          <label>
+            Personality / communication summary
+            <textarea rows={3} value={board.personalitySummary} onChange={e => setPack({ ...board, personalitySummary: e.target.value })} placeholder="Deadpan, affectionate, signs thank-you, hates exaggerated apology poses..." />
+          </label>
+          <label>
+            Pack-wide notes
+            <textarea rows={3} value={board.notes} onChange={e => setPack({ ...board, notes: e.target.value })} placeholder="No captions except congrats. Keep hands readable. Tail carries a lot of emotion." />
+          </label>
 
-          <section className="panel" aria-labelledby="board-heading">
-            <div style={{ display: "flex", gap: 12, alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap" }}>
-              <div>
-                <h2 id="board-heading">3. Direct the ten reactions</h2>
-                <p>These are semantic slots. Change the acting, not the person&apos;s identity.</p>
+          <section className="sticker-board" aria-label="Ten reaction directions">
+            {board.stickers.map((s, index) => <article className="sticker-card" key={s.id}>
+              <header><span className="sticker-emoji" aria-hidden="true">{s.emoji}</span><div><h3>{s.intent}</h3><small>{s.id}</small></div></header>
+              <label>Performance<textarea rows={2} value={s.performance} onChange={e => updateSticker(index, "performance", e.target.value)} placeholder="What does this person actually do?" /></label>
+              <div className="sticker-fields">
+                <label>Expression<input value={s.expression} onChange={e => updateSticker(index, "expression", e.target.value)} /></label>
+                <label>Gesture<input value={s.gesture} onChange={e => updateSticker(index, "gesture", e.target.value)} /></label>
+                <label>Framing<select value={s.framing} onChange={e => updateSticker(index, "framing", e.target.value)}><option>face</option><option>chest-up</option><option>waist-up</option><option>full-body</option></select></label>
+                <label>Intensity<select value={s.intensity} onChange={e => updateSticker(index, "intensity", e.target.value)}><option>low</option><option>medium</option><option>high</option></select></label>
               </div>
-              {pack && <strong>Status: {pack.status}</strong>}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-              {slots.map((slot, index) => (
-                <article className="panel" key={slot.stickerId} style={{ margin: 0 }}>
-                  <h3 style={{ marginTop: 0 }}>
-                    <span aria-hidden="true">{slot.emoji}</span> {slot.intent}
-                  </h3>
-                  <label>
-                    Performance
-                    <textarea
-                      rows={3}
-                      value={slot.performance}
-                      onChange={(event) => updateSlot(index, { performance: event.target.value })}
-                      placeholder="What do they actually do?"
-                    />
-                  </label>
-                  <label>
-                    Expression
-                    <input
-                      value={slot.expression}
-                      onChange={(event) => updateSlot(index, { expression: event.target.value })}
-                      placeholder="soft smile, flat stare…"
-                    />
-                  </label>
-                  <label>
-                    Gesture
-                    <input
-                      value={slot.gesture}
-                      onChange={(event) => updateSlot(index, { gesture: event.target.value })}
-                      placeholder="ASL THANK-YOU, dogeza, tiny wave…"
-                    />
-                  </label>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <label>
-                      Framing
-                      <select
-                        value={slot.framing}
-                        onChange={(event) => updateSlot(index, { framing: event.target.value })}
-                      >
-                        <option value="face close-up">Face close-up</option>
-                        <option value="chest-up">Chest-up</option>
-                        <option value="waist-up">Waist-up</option>
-                        <option value="full body">Full body</option>
-                      </select>
-                    </label>
-                    <label>
-                      Intensity
-                      <select
-                        value={slot.intensity}
-                        onChange={(event) =>
-                          updateSlot(index, {
-                            intensity: event.target.value as StickerSlot["intensity"],
-                          })
-                        }
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </label>
-                  </div>
-                  <label>
-                    Optional sticker text
-                    <input
-                      value={slot.text}
-                      maxLength={160}
-                      onChange={(event) => updateSlot(index, { text: event.target.value })}
-                      placeholder="Usually leave blank"
-                    />
-                  </label>
-                  <label>
-                    Visual notes
-                    <textarea
-                      rows={2}
-                      value={slot.visualNotes}
-                      onChange={(event) => updateSlot(index, { visualNotes: event.target.value })}
-                      placeholder="Keep hands readable; tail carries the emotion…"
-                    />
-                  </label>
-                </article>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-              <button className="button button-secondary" type="button" disabled={busy} onClick={() => void save("DRAFT")}>
-                Save draft
-              </button>
-              <button className="button" type="button" disabled={busy} onClick={() => void save("APPROVED")}>
-                Approve prompt board
-              </button>
-              <button className="button button-secondary" type="button" disabled={busy || pack?.status !== "APPROVED"} onClick={() => void copyLaunchPrompt()}>
-                Copy ChatGPT launch prompt
-              </button>
-            </div>
+              <label>Optional sticker text<input value={s.text} onChange={e => updateSticker(index, "text", e.target.value)} placeholder="Usually blank" /></label>
+            </article>)}
           </section>
 
-          <section className="panel" aria-labelledby="published-heading">
-            <h2 id="published-heading">4. When Telegram is done</h2>
-            <p>
-              After ChatGPT publishes the final pack, save its add-pack link here so Bunch can
-              keep the finished artifact with the person it belongs to.
-            </p>
-            <label>
-              Telegram add-pack URL
-              <input
-                type="url"
-                value={telegramUrl}
-                onChange={(event) => setTelegramUrl(event.target.value)}
-                placeholder="https://t.me/addstickers/..."
-              />
-            </label>
-            <button className="button" type="button" disabled={busy || pack?.status !== "APPROVED" || !telegramUrl.trim()} onClick={() => void save("PUBLISHED")}>
-              Mark pack published
-            </button>
-            {pack?.telegramUrl && (
-              <p>
-                <a href={pack.telegramUrl} target="_blank" rel="noreferrer">Open this sticker pack in Telegram</a>
-              </p>
-            )}
-          </section>
-        </>
-      )}
-    </main>
-  );
+          <div className="detail-actions">
+            <button className="button" type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save in Bunch"}</button>
+            <button className="button button-secondary" type="button" onClick={copyCsv}>Copy CSV</button>
+            <button className="button button-secondary" type="button" onClick={copyPrompt}>Copy ChatGPT handoff</button>
+          </div>
+          </> : <p>Loading sticker directions…</p>}
+        </div>
+      ) : null}
+    </ListDetail>
+  </main>;
 }

@@ -35,3 +35,13 @@ The Bunch web app also exposes the same creative board at `/stickers`. After a f
 The same hosted `/mcp` endpoint supports a read-only default walkthrough without sign-in. Ask for `get_demo_system` to fetch Fenton, Benny, Dot, fictional history, and shared tasks from Bunch. Nothing is stored locally or written to a real system. To use your own records, call `connect_private_system`, complete OAuth, and refresh the tool list. Invalid credentials remain errors; they never select demo data.
 
 [Install and explore the Demo system](../../docs/demo-install.md)
+
+## Telegram sticker uploader
+
+The `upload-telegram-stickers` skill prepares selected private PNG image IDs and
+publishes an explicitly approved pack through the authenticated hosted MCP server.
+Publication makes the pack shareable on Telegram. The operator must configure
+an owner-specific Telegram bot secret and verified user ID outside chat. Direct
+ZIP import and self-service Telegram pairing are not included in this version.
+
+[Setup, boundaries and verification](../../docs/telegram-stickers.md)

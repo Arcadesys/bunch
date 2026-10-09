@@ -26,15 +26,14 @@ export class ImageAllowanceService {
     catch (error) { await c.query("rollback"); throw error; } finally { c.release(); }
   }
   async assertAccess(db: Db, owner: string) {
-    const a = (await db.query("select a.*,p.gate_enabled,p.friends_enabled,p.uploads_enabled,p.capacity_verified_at,p.recovery_verified_at from pilot_policy p left join pilot_account a on a.owner_id=$1 where p.id", [owner])).rows[0];
+    const a = (await db.query("select a.*,p.gate_enabled,p.friends_enabled,p.uploads_enabled from pilot_policy p left join pilot_account a on a.owner_id=$1 where p.id", [owner])).rows[0];
     if (!a || (!a.owner_id && a.gate_enabled) || (a.owner_id && (a.state !== "ACTIVE" || (a.role === "FRIEND" && !a.friends_enabled)))) throw new SystemError("FORBIDDEN", "Image access is unavailable for this account.");
     return a;
   }
   async storagePreflight(db: Db, owner: string) {
     const a = await this.assertAccess(db, owner);
     if (a.role !== "FRIEND") return;
-    const fresh = (value: unknown) => value && Date.now() - new Date(String(value)).getTime() <= 7 * 86400000 && new Date(String(value)).getTime() <= Date.now();
-    if (!a.uploads_enabled || !fresh(a.capacity_verified_at) || !fresh(a.recovery_verified_at)) throw new SystemError("FORBIDDEN", "Private image storage is currently unavailable.");
+    if (!a.uploads_enabled) throw new SystemError("FORBIDDEN", "Private image storage is currently unavailable.");
     const used = Number((await db.query("select coalesce(sum(bytes),0) as n from pilot_upload where owner_id=$1", [owner])).rows[0].n);
     // Reserve headroom for the maximum normalized output; upload admission remains authoritative.
     if (used + 5 * 1024 * 1024 > Number(a.quota_bytes)) throw new SystemError("QUOTA_EXCEEDED", "Private image storage is full. Free at least 5 MB before generating or repairing an image.");

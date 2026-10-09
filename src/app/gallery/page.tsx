@@ -1,24 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { requireOwnerId } from "@/server/auth";
 import { isAuth0Configured } from "@/lib/auth0";
 import { repository } from "@/server/repository";
 import { AppNavigation } from "../app-navigation";
-import { PeopleToolsNav } from "../people-tools-nav";
+import { ProfileGallery } from "./profile-gallery";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Private photo gallery — Bunch",
+  title: "Profile photos — Bunch",
   description: "Owner-authorized private profile photos.",
   robots: { index: false, follow: false },
 };
-
-function imageUrl(imageId: string) {
-  return `/api/system/gallery-images/${encodeURIComponent(imageId)}`;
-}
 
 export default async function PrivateGalleryPage() {
   let ownerId: string;
@@ -27,56 +21,21 @@ export default async function PrivateGalleryPage() {
   } catch {
     if (isAuth0Configured()) redirect("/auth/login?returnTo=%2Fgallery");
     return (
-      <main className="shell gallery-shell">
-        <AppNavigation current="GALLERY" />
-        <PeopleToolsNav current="profile-gallery" />
-        <h1>Private photo gallery</h1>
-        <p className="notice" role="status">Sign-in is unavailable. Private photos cannot be loaded in this build.</p>
+      <main className="app-page">
+        <AppNavigation current="PHOTOS" />
+        <div className="app-page-body">
+          <h1>Profile photos</h1>
+          <p className="notice" role="status">Sign-in is unavailable. Private photos cannot be loaded in this build.</p>
+        </div>
       </main>
     );
   }
   const profiles = await repository.listProfiles(ownerId);
-  const photoCount = profiles.reduce((count, profile) => count + profile.images.length, 0);
 
   return (
-    <main className="shell gallery-shell">
-      <AppNavigation current="GALLERY" />
-      <PeopleToolsNav current="profile-gallery" />
-      <header className="site-header">
-        <div>
-          <p className="eyebrow">Bunch · private photos</p>
-          <h1>Private photo gallery</h1>
-        </div>
-        <div className="header-actions"><Link className="button" href="/gallery/generated">Generated images and group photos</Link><Link className="button button-secondary" href="/profiles">Manage profiles and pictures</Link></div>
-      </header>
-
-      <p className="notice" role="status">
-        {photoCount === 0
-          ? "No private photos are stored yet."
-          : `${photoCount} private photo${photoCount === 1 ? "" : "s"} in your gallery.`}
-      </p>
-
-      {profiles.filter((profile) => profile.images.length > 0).map((profile) => (
-        <section className="gallery-section" key={profile.id} aria-labelledby={`profile-${profile.id}`}>
-          <h2 id={`profile-${profile.id}`}>{profile.name}</h2>
-          <p className="small">{profile.images.length} private photo{profile.images.length === 1 ? "" : "s"}</p>
-          {profile.profilePicture ? <div className="gallery-profile-picture"><h3>Profile picture</h3><p className="selected-state">Selected as current profile picture</p><Image src={imageUrl(profile.profilePicture.id)} alt={`Profile picture for ${profile.name}`} width={540} height={540} sizes="(max-width: 600px) 100vw, 560px" loading="lazy" decoding="async" unoptimized /></div> : <p className="empty-picture">No profile picture selected.</p>}
-          <h3>Private picture history</h3>
-          {(() => {
-            const historyImages = profile.images
-              .map((image, index) => ({ image, index }))
-              .filter(({ image }) => image.id !== profile.profilePicture?.id);
-            return historyImages.length ? <div className="gallery-grid">
-            {historyImages.map(({ image, index }) => (
-              <figure className="gallery-card" key={image.id}>
-                <Image src={imageUrl(image.id)} alt={`Private picture ${index + 1} for ${profile.name}`} width={480} height={480} sizes="(max-width: 600px) 100vw, (max-width: 1100px) 50vw, 480px" loading="lazy" decoding="async" unoptimized />
-                <figcaption>{image.isProfilePicture ? "Selected as profile picture" : `Private picture ${index + 1}`}</figcaption><Link className="button button-secondary" href={`/images?repairKind=private&repairId=${image.id}`}>Repair this image</Link>
-              </figure>
-            ))}
-          </div> : <p className="empty-picture">No additional private pictures are stored.</p>;
-          })()}
-        </section>
-      ))}
+    <main className="app-page">
+      <AppNavigation current="PHOTOS" />
+      <ProfileGallery profiles={profiles} />
     </main>
   );
 }

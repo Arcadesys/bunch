@@ -1,4 +1,6 @@
 import { requirePilotIdentity } from "@/server/auth";
+import { apiResponse, requireSameOrigin } from "@/server/http-api";
+import { deletableImageKindSchema, getImageDeletionService } from "@/server/image-deletion";
 import { getPilotService } from "@/server/pilot-service";
 import { readPrivateImage } from "@/server/private-images";
 import { privateMediaError, privateMediaResponse } from "@/server/private-media-response";
@@ -20,4 +22,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ imag
     const stored = await readPrivateImage(row.storage_key, { ifNoneMatch: request.headers.get("if-none-match") ?? undefined });
     return privateMediaResponse(request, stored, { contentDisposition: `attachment; filename="bunch-${imageId}.jpg"` });
   } catch { return privateMediaError("Unavailable", 403); }
+}
+
+/** Permanently delete a generated scene (?kind=scene, the default) or group photo (?kind=group) and its repairs. */
+export async function DELETE(request: Request, { params }: { params: Promise<{ imageId: string }> }) {
+  return apiResponse(async () => {
+    requireSameOrigin(request);
+    const { ownerId } = await requirePilotIdentity(request);
+    const imageId = uuidSchema.parse((await params).imageId);
+    const kind = deletableImageKindSchema.exclude(["upload"]).parse(new URL(request.url).searchParams.get("kind") ?? "scene");
+    await getImageDeletionService().delete(ownerId, kind, imageId);
+    return Response.json({ deleted: true }, { headers: { "Cache-Control": "private, no-store" } });
+  });
 }

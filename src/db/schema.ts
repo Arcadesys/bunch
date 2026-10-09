@@ -41,6 +41,47 @@ export const appUser = pgTable("app_user", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const telegramConnection = pgTable("telegram_connection", {
+  ownerId: text("owner_id").primaryKey().references(() => appUser.id, { onDelete: "cascade" }),
+  issuer: text("issuer").notNull(),
+  subject: text("subject").notNull(),
+  telegramUserId: text("telegram_user_id").notNull().unique(),
+  displayName: text("display_name"),
+  username: text("username"),
+  botAccess: boolean("bot_access").notNull().default(false),
+  connectionRevision: integer("connection_revision").notNull().default(1),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [unique("telegram_connection_issuer_subject_key").on(table.issuer, table.subject)]);
+
+export const telegramConnectionEpoch = pgTable("telegram_connection_epoch", {
+  ownerId: text("owner_id").primaryKey().references(() => appUser.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull().default(0),
+});
+
+export const telegramLinkTransaction = pgTable("telegram_link_transaction", {
+  stateHash: text("state_hash").primaryKey(), confirmationHash: text("confirmation_hash").unique(),
+  ownerId: text("owner_id").notNull(), sessionHash: text("session_hash").notNull(), nonce: text("nonce").notNull(),
+  codeVerifier: text("code_verifier").notNull(), intentHash: text("intent_hash"),
+  status: text("status").notNull(), telegramIssuer: text("telegram_issuer"), telegramSubject: text("telegram_subject"),
+  telegramUserId: text("telegram_user_id"), displayName: text("display_name"), username: text("username"),
+  botAccess: boolean("bot_access").notNull().default(false), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+});
+
+export const telegramLinkIntent = pgTable("telegram_link_intent", {
+  tokenHash: text("token_hash").primaryKey(), ownerId: text("owner_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), consumedAt: timestamp("consumed_at", { withTimezone: true }),
+});
+
+export const telegramPublicationAttempt = pgTable("telegram_publication_attempt", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerId: text("owner_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  connectionRevision: integer("connection_revision").notNull(), botId: text("bot_id").notNull(), packName: text("pack_name").notNull(),
+  titleHash: text("title_hash").notNull(), contentHash: text("content_hash").notNull(), status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [unique("telegram_publication_attempt_owner_pack_key").on(table.ownerId, table.packName)]);
+
 export const galleryShare = pgTable("gallery_share", {
   showCurrentFronting: boolean("show_current_fronting").notNull().default(false),
   id: uuid("id").primaryKey().defaultRandom(),

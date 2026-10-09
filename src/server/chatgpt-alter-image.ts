@@ -42,7 +42,7 @@ export async function prepareChatgptAlterImage(service: ProfileReader, ownerId: 
   };
   return {
     structuredContent: result,
-    content: [{ type: "text" as const, text: `Prepared ${result.referenceCount} private appearance reference${result.referenceCount === 1 ? "" : "s"} for the requested ChatGPT image generation. No image has been generated or saved.` }],
+    content: [{ type: "text" as const, text: `Prepared ${result.referenceCount} private appearance reference${result.referenceCount === 1 ? "" : "s"} for the requested ChatGPT image generation. This preparation does not confirm reference transfer or generation. Requires the ChatGPT widget file-upload controls; in Codex use prepare_codex_alter_image instead. No image has been generated or saved.` }],
     _meta: meta,
   };
 }
