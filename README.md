@@ -16,6 +16,17 @@ It has two front doors onto the same records:
 **Working Monkeys** is the engine underneath — the MCP server, the record
 services, and the database. Bunch is what you see; Working Monkeys is what runs.
 
+## Engineering to explore
+
+- **Shared authorization:** web and MCP writes use the same transactional record services. See [the MCP surface](#the-mcp-surface) and [architecture](ARCHITECTURE.md).
+- **Explicit records:** hosting and fronting have independent lifecycles; unknown history stays unknown.
+- **Retry-aware mutations:** request UUIDs support repeatable writes, with separate preview and erasure operations for destructive work.
+- **Verification sources:** [mobile and accessibility checks](tests/mobile/README.md) document the test setup and CI gate.
+
+**Try it:** use [Getting started](#getting-started) with demo mode and a separate database. The source is public; real companion records are private.
+
+**Collaborator starting point:** read [ARCHITECTURE.md](ARCHITECTURE.md), then follow one record operation from the MCP or web route to its service and tests. Preserve explicit consent and the distinction between hosting and fronting.
+
 ## Getting started
 
 **[SETUP.md](SETUP.md)** walks through running it locally. The short version:
