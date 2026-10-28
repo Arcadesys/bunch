@@ -40,5 +40,17 @@ integration("reviewed switch is atomic, owner isolated and bound to its retry pa
       const result=await Promise.race([operations,new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error("Concurrent switch deadlocked")),5000))]);
       assert.equal(result.length,2);
     } finally {await pool.query("delete from app_user where id=$1",[simultaneousOwner]);}
+    const racingOwner=`fixture:${randomUUID()}`;
+    try {
+      const member=(await service.createAlter(racingOwner,{requestId:randomUUID(),name:"Race"},"WEB")).data;
+      const intent={requestId:randomUUID(),reviewed:[],end:[],start:[member.id]};
+      const [write,resolution]=await Promise.allSettled([service.recordNativeSwitch(racingOwner,intent,"SYSTEM"),service.resolveNativeSwitch(racingOwner,intent)]);
+      assert.equal(resolution.status,"fulfilled");
+      if(resolution.status==="fulfilled") {
+        const active=(await service.getCurrentPresence(racingOwner)).fronting;
+        assert.equal(active.length,resolution.value.outcome==="recorded"?1:0);
+        assert.equal(write.status,resolution.value.outcome==="recorded"?"fulfilled":"rejected");
+      }
+    } finally {await pool.query("delete from app_user where id=$1",[racingOwner]);}
   } finally {await pool.query("delete from app_user where id=any($1::text[])",[[owner,other]]);await pool.end();}
 });
