@@ -1,0 +1,35 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { generateKeyPair, SignJWT } from "jose";
+import { nativeRosterRequest, verifyRosterToken, type RosterDeps } from "./native-roster";
+const config={issuer:"https://fixture.example/",audience:"https://fixture.example/native-host",clientId:"fixture-client",jwksUri:new URL("https://fixture.example/keys")};
+test("roster token requires a specific signed issuer, audience, client, scope and expiry",async()=>{
+  const {privateKey,publicKey}=await generateKeyPair("RS256");
+  const token=(scope:string,azp=config.clientId,aud=config.audience)=>new SignJWT({scope,azp}).setProtectedHeader({alg:"RS256"}).setSubject("fixture").setIssuer(config.issuer).setAudience(aud).setExpirationTime("5m").sign(privateKey);
+  const key=async()=>publicKey;
+  assert.equal(await verifyRosterToken(await token("bunch:roster.read"),config,key),"auth0:fixture");
+  await assert.rejects(async()=>verifyRosterToken(await token("system:companion"),config,key));
+  await assert.rejects(async()=>verifyRosterToken(await token("bunch:roster.read","other"),config,key));
+  await assert.rejects(async()=>verifyRosterToken(await token("bunch:roster.read",config.clientId,"https://fixture.example/mcp"),config,key));
+  const rfc9068=await new SignJWT({scope:"bunch:roster.read",client_id:config.clientId}).setProtectedHeader({alg:"RS256"}).setSubject("fixture").setIssuer(config.issuer).setAudience(config.audience).setExpirationTime("5m").sign(privateKey);
+  assert.equal(await verifyRosterToken(rfc9068,config,key),"auth0:fixture");
+  const mismatch=await new SignJWT({scope:"bunch:roster.read",client_id:config.clientId,azp:"other"}).setProtectedHeader({alg:"RS256"}).setSubject("fixture").setIssuer(config.issuer).setAudience(config.audience).setExpirationTime("5m").sign(privateKey);
+  await assert.rejects(()=>verifyRosterToken(mismatch,config,key));
+  const expired=await new SignJWT({scope:"bunch:roster.read",client_id:config.clientId}).setProtectedHeader({alg:"RS256"}).setSubject("fixture").setIssuer(config.issuer).setAudience(config.audience).setExpirationTime("1 second ago").sign(privateKey);
+  await assert.rejects(()=>verifyRosterToken(expired,config,key));
+});
+test("read-only roster only projects minimal fields and authorizes every avatar",async()=>{
+  const id="11111111-1111-4111-8111-111111111111";
+  const calls:string[]=[];
+  const deps:RosterDeps={authorize:async t=>{if(t!=="fixture-token")throw Error();return "owner";},host:async()=>({alterId:id,alterName:"Fictional",version:9} as never),members:async()=>({data:[{id,name:"Fictional",hasAvatar:true,privateField:"hidden"} as never]}),avatar:async(owner,member)=>{calls.push(owner+member);return {body:new Uint8Array([1,2]),contentType:"image/png"};}};
+  const req=(path:string,auth="Bearer fixture-token",method="GET")=>new Request(`https://fixture.example/${path}`,{method,headers:{authorization:auth}});
+  assert.deepEqual(await (await nativeRosterRequest(req("host"),"host",deps)).json(),{data:{alterId:id,alterName:"Fictional"}});
+  assert.deepEqual(await (await nativeRosterRequest(req("members"),"members",deps)).json(),{data:[{id,name:"Fictional",hasAvatar:true}],meta:{}});
+  const picture=await nativeRosterRequest(req("avatar"),"avatar",deps,id);
+  assert.equal(picture.status,200); assert.equal(picture.headers.get("cache-control"),"private, no-store"); assert.equal(picture.headers.get("content-type"),"image/png");
+  assert.deepEqual([...new Uint8Array(await picture.arrayBuffer())],[1,2]);
+  assert.equal((await nativeRosterRequest(req("avatar","Bearer wrong"),"avatar",deps,id)).status,401);
+  assert.equal((await nativeRosterRequest(req("avatar?token=x"),"avatar",deps,id)).status,400);
+  assert.equal((await nativeRosterRequest(req("avatar","Bearer fixture-token","POST"),"avatar",deps,id)).status,405);
+  assert.equal(calls.length,1);
+});

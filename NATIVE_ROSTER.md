@@ -1,0 +1,5 @@
+# Read-only Android roster API
+
+`GET /api/native-roster/host`, `/members`, and `/members/{memberId}/avatar` accept only a signed, unexpired Auth0 bearer token with the configured native-host audience, exact dedicated Android client ID and `bunch:roster.read` scope. Pilot eligibility is checked on each request. The API exposes only the recorded host, paginated active member IDs/names and the current selected profile picture. It does not provide fronting state or writes. Responses are private and no-store; image bytes are never returned as URLs.
+
+The runtime fails closed until `NATIVE_ROSTER_CLIENT_ID` and `NATIVE_ROSTER_RESOURCE_URL=https://system.thearcades.me/native-host` are configured. This does not create or configure an Auth0 client, grant or App Link. Configure a public authorization-code/PKCE client, only the read grant, and a verified callback before an Android sign-in can work. Never reuse a web client secret or broad MCP grant. Test using synthetic users and private owner isolation before live access. The Android callback must be associated with its actual signing certificate, not an arbitrary debug signer.
