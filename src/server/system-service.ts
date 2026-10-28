@@ -44,6 +44,7 @@ import {
 import { getDatabasePool } from "@/db/client";
 import { deletePrivateImages } from "@/server/private-images";
 import { SystemError } from "@/server/system-error";
+import { nativeSwitchSchema, nativeSwitchIdentity, type NativeSwitch } from "@/domain/native-switch";
 
 type MutationResult<T> = { data: T; replayed: boolean };
 type MutationReceiptCodec<T> = {
@@ -489,6 +490,65 @@ export class SystemService {
         fronting: periods.filter(p => p.kind === "FRONTING"), legacyCurrentFront };
     } catch (error) { await client.query("rollback"); throw error; }
     finally { client.release(); }
+  }
+
+  async recordNativeSwitch(ownerId: string, raw: NativeSwitch, source: RecordSource) {
+    const input = nativeSwitchSchema.parse(raw);
+    const canonical = nativeSwitchIdentity(input);
+    const codec: MutationReceiptCodec<{ started: PresencePeriod[]; ended: PresencePeriod[] }> = {
+      encode: data => ({ data, nativeSwitchIdentity: canonical }),
+      decode: stored => {
+        const receipt = stored as { data?: {started: PresencePeriod[]; ended: PresencePeriod[]}; nativeSwitchIdentity?: string };
+        if (receipt.nativeSwitchIdentity !== canonical || !receipt.data) throw new SystemError("CONFLICT", "This request ID was already used for different switch choices.");
+        return receipt.data;
+      },
+    };
+    return this.mutate(ownerId, input.requestId, "native_switch", async client => {
+      await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`fronting:${ownerId}`]);
+      await client.query("select id from app_user where id = $1 for update", [ownerId]);
+      if (await this.currentFront(client, ownerId, true)) throw new SystemError("CONFLICT", "A legacy front record needs separate review before recording changes.");
+      const current = await client.query<{id:string; version:number; alter_id:string}>("select id, version, alter_id from presence_period where owner_id = $1 and kind = 'FRONTING' and ended_at is null order by id for update", [ownerId]);
+      const expected = [...input.reviewed].sort((a,b) => a.id.localeCompare(b.id));
+      if (JSON.stringify(current.rows.map(({id,version}) => ({id,version}))) !== JSON.stringify(expected)) throw new SystemError("CONFLICT", "The current front changed. Review it again.");
+      const ending = new Set(input.end.map(x => x.id));
+      const stillFronting = new Set(current.rows.filter(x => !ending.has(x.id)).map(x => x.alter_id));
+      if (input.start.some(id => stillFronting.has(id))) throw new SystemError("CONFLICT", "A selected member is already fronting.");
+      if (input.start.length) {
+        const profiles = await client.query("select id from alter_profile where owner_id = $1 and id = any($2::uuid[]) and archived_at is null for update", [ownerId,input.start]);
+        if (profiles.rowCount !== input.start.length) throw new SystemError("NOT_FOUND", "A selected member is unavailable.");
+      }
+      const ended: PresencePeriod[] = [], started: PresencePeriod[] = [];
+      for (const item of input.end) {
+        const result = await client.query("update presence_period set ended_at = date_trunc('milliseconds', clock_timestamp()), version = version + 1, updated_at = clock_timestamp() where owner_id = $1 and id = $2::uuid and kind = 'FRONTING' and ended_at is null and version = $3 returning id", [ownerId,item.id,item.version]);
+        if (!result.rowCount) throw new SystemError("CONFLICT", "The current front changed. Review it again.");
+        const period = await this.presenceById(client, ownerId, item.id); ended.push(period);
+        await this.activity(client, ownerId, "FRONTING_EPISODE", period.id, "ENDED", source, ["endedAt", "version"], input.requestId);
+      }
+      for (const alterId of input.start) {
+        const inserted = await client.query("insert into presence_period(owner_id, alter_id, kind) values ($1, $2::uuid, 'FRONTING') returning id", [ownerId,alterId]);
+        const period = await this.presenceById(client, ownerId, inserted.rows[0].id); started.push(period);
+        await this.activity(client, ownerId, "FRONTING_EPISODE", period.id, "STARTED", source, ["alterId", "startedAt"], input.requestId);
+      }
+      return {started, ended};
+    }, codec);
+  }
+
+  async resolveNativeSwitch(ownerId: string, raw: NativeSwitch) {
+    const input=nativeSwitchSchema.parse(raw), identity=nativeSwitchIdentity(input), client=await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`${ownerId}:${input.requestId}`]);
+      await this.ensureOwner(client,ownerId);
+      const rows=await client.query<{operation:string;result:{nativeSwitchIdentity?:string;data?:{started:PresencePeriod[];ended:PresencePeriod[]}}}>("select operation, result from mutation_receipt where owner_id = $1 and request_id = $2::uuid",[ownerId,input.requestId]);
+      const receipt=rows.rows[0];
+      if(receipt) {
+        if(!["native_switch","native_switch_cancelled"].includes(receipt.operation)||receipt.result.nativeSwitchIdentity!==identity)throw new SystemError("CONFLICT","Request identity mismatch.");
+        await client.query("commit");
+        return receipt.operation==="native_switch"?{outcome:"recorded" as const,data:receipt.result.data}:{outcome:"cancelled" as const};
+      }
+      await client.query("insert into mutation_receipt (owner_id, request_id, operation, result) values ($1,$2::uuid,'native_switch_cancelled',$3::jsonb)",[ownerId,input.requestId,JSON.stringify({nativeSwitchIdentity:identity})]);
+      await client.query("commit");return {outcome:"cancelled" as const};
+    } catch(error){await client.query("rollback");throw error;} finally {client.release();}
   }
 
   async startFrontingEpisode(ownerId: string, raw: StartFrontingEpisode, source: RecordSource) {

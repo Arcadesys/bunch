@@ -4,11 +4,11 @@ import { z } from "zod";
 
 export const ROSTER_SCOPE = "bunch:roster.read";
 export type RosterAuthConfig = {issuer: string; audience: string; clientId: string; jwksUri: URL};
-export async function verifyRosterToken(token: string, config: RosterAuthConfig, key: JWTVerifyGetKey = createRemoteJWKSet(config.jwksUri)): Promise<string> {
+export async function verifyRosterToken(token: string, config: RosterAuthConfig, key: JWTVerifyGetKey = createRemoteJWKSet(config.jwksUri), requiredScope = ROSTER_SCOPE): Promise<string> {
   if (!config.clientId || !config.issuer || !config.audience) throw new Error("Unavailable");
   const {payload} = await jwtVerify(token, key, {algorithms:["RS256"], issuer:config.issuer, audience:config.audience});
   const client = payload.client_id ?? payload.azp;
-  if (!payload.sub || client !== config.clientId || (payload.client_id !== undefined && payload.azp !== undefined && payload.client_id !== payload.azp) || typeof payload.exp !== "number" || typeof payload.scope !== "string" || !payload.scope.split(/\s+/).includes(ROSTER_SCOPE)) throw new Error("Unauthorized");
+  if (!payload.sub || client !== config.clientId || (payload.client_id !== undefined && payload.azp !== undefined && payload.client_id !== payload.azp) || typeof payload.exp !== "number" || typeof payload.scope !== "string" || !payload.scope.split(/\s+/).includes(requiredScope)) throw new Error("Unauthorized");
   return ownerIdFromAuth0Subject(payload.sub);
 }
 export type Member = {id: string; name: string; hasAvatar: boolean};
