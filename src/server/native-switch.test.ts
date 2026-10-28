@@ -14,6 +14,7 @@ test("switch API requires its own scoped token and bounds changes to reviewed se
   const req=(method:string,t:string,body?:unknown)=>new Request("https://fixture.example/api/native-switch",{method,headers:{authorization:`Bearer ${t}`,"content-type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const good=await token(SWITCH_SCOPE), roster=await token("bunch:roster.read");
   assert.equal((await nativeSwitchRequest(req("GET",roster),deps)).status,401);
+  assert.equal((await nativeSwitchRequest(req("GET",await token("bunch:host.write")),deps)).status,401);
   assert.equal((await nativeSwitchRequest(req("GET",await token(SWITCH_SCOPE,"https://fixture.example/mcp")),deps)).status,401);
   assert.equal((await nativeSwitchRequest(req("GET",await token(SWITCH_SCOPE,config.audience,"1 second ago")),deps)).status,401);
   const current=await (await nativeSwitchRequest(req("GET",good),deps)).json();

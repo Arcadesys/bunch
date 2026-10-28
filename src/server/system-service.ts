@@ -45,6 +45,7 @@ import { getDatabasePool } from "@/db/client";
 import { deletePrivateImages } from "@/server/private-images";
 import { SystemError } from "@/server/system-error";
 import { nativeSwitchSchema, nativeSwitchIdentity, type NativeSwitch } from "@/domain/native-switch";
+import { nativeHostWriteSchema,nativeHostIdentity,type NativeHostWrite } from "@/domain/native-host-write";
 
 type MutationResult<T> = { data: T; replayed: boolean };
 type MutationReceiptCodec<T> = {
@@ -395,6 +396,31 @@ export class SystemService {
       await this.activity(client, ownerId, "HOST", current.id, input.alterId ? "SET" : "CLEARED", source, ["alterId"], input.requestId, previous?.alterId ?? undefined, input.alterId ?? undefined);
       return current;
     });
+  }
+
+  async setNativeHost(ownerId:string,raw:NativeHostWrite,source:RecordSource) {
+    const input=nativeHostWriteSchema.parse(raw),identity=nativeHostIdentity(input);
+    const codec:MutationReceiptCodec<SystemHostView>={encode:data=>({data,nativeHostIdentity:identity}),decode:stored=>{const receipt=stored as {data?:SystemHostView;nativeHostIdentity?:string};if(receipt.nativeHostIdentity!==identity||!receipt.data)throw new SystemError("CONFLICT","Request identity mismatch.");return receipt.data;}};
+    return this.mutate(ownerId,input.requestId,"native_host_write",async client=>{
+      await client.query("select id from app_user where id = $1 for update",[ownerId]);
+      const previous=await this.readSystemHost(client,ownerId);
+      if((previous?.version??null)!==input.expectedVersion)throw new SystemError("CONFLICT","The host changed. Review it again.");
+      const profile=await client.query("select id from alter_profile where owner_id = $1 and id = $2::uuid and archived_at is null for update",[ownerId,input.alterId]);
+      if(!profile.rowCount)throw new SystemError("NOT_FOUND","Member unavailable.");
+      await client.query(`insert into system_host (owner_id,alter_id,recorded_at) values ($1,$2::uuid,date_trunc('milliseconds',clock_timestamp())) on conflict (owner_id) do update set alter_id=excluded.alter_id,version=system_host.version+1,recorded_at=excluded.recorded_at`,[ownerId,input.alterId]);
+      const current=(await this.readSystemHost(client,ownerId))!;
+      await this.activity(client,ownerId,"HOST",current.id,"SET",source,["alterId"],input.requestId,previous?.alterId??undefined,input.alterId);
+      return current;
+    },codec);
+  }
+  async resolveNativeHost(ownerId:string,raw:NativeHostWrite){
+    const input=nativeHostWriteSchema.parse(raw),identity=nativeHostIdentity(input),client=await this.pool.connect();
+    try{
+      await client.query("begin");await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))",[`${ownerId}:${input.requestId}`]);await this.ensureOwner(client,ownerId);
+      const rows=await client.query<{operation:string;result:{nativeHostIdentity?:string;data?:SystemHostView}}>("select operation,result from mutation_receipt where owner_id=$1 and request_id=$2::uuid",[ownerId,input.requestId]);const receipt=rows.rows[0];
+      if(receipt){if(!["native_host_write","native_host_cancelled"].includes(receipt.operation)||receipt.result.nativeHostIdentity!==identity)throw new SystemError("CONFLICT","Request identity mismatch.");await client.query("commit");return receipt.operation==="native_host_write"?{outcome:"recorded" as const,data:receipt.result.data}:{outcome:"cancelled" as const};}
+      await client.query("insert into mutation_receipt (owner_id,request_id,operation,result) values ($1,$2::uuid,'native_host_cancelled',$3::jsonb)",[ownerId,input.requestId,JSON.stringify({nativeHostIdentity:identity})]);await client.query("commit");return {outcome:"cancelled" as const};
+    }catch(error){await client.query("rollback");throw error;}finally{client.release();}
   }
 
   private async alterById(client: PoolClient, ownerId: string, alterId: string, includeArchived = true) {

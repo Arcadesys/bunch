@@ -1,0 +1,15 @@
+import test from "node:test";import assert from "node:assert/strict";import {randomUUID} from "node:crypto";import {Pool} from "pg";import {SystemService} from "./system-service";
+const integration=process.env.TEST_DATABASE_URL?test:test.skip;
+integration("host writes isolate owners, enforce versions and bind retries without touching front",async()=>{
+ const pool=new Pool({connectionString:process.env.TEST_DATABASE_URL}),service=new SystemService(pool,async()=>{}),owner=`fixture:${randomUUID()}`,other=`fixture:${randomUUID()}`;
+ try{
+  const a=(await service.createAlter(owner,{requestId:randomUUID(),name:"A"},"WEB")).data,b=(await service.createAlter(owner,{requestId:randomUUID(),name:"B"},"WEB")).data,foreign=(await service.createAlter(other,{requestId:randomUUID(),name:"Other"},"WEB")).data;
+  const episode=(await service.startFrontingEpisode(owner,{requestId:randomUUID(),alterId:a.id},"WEB")).data;
+  await assert.rejects(()=>service.setNativeHost(owner,{requestId:randomUUID(),alterId:foreign.id,expectedVersion:null},"SYSTEM"));
+  const first={requestId:randomUUID(),alterId:a.id,expectedVersion:null};const result=await service.setNativeHost(owner,first,"SYSTEM");assert.equal(result.data.alterId,a.id);assert.equal((await service.setNativeHost(owner,first,"SYSTEM")).replayed,true);await assert.rejects(()=>service.setNativeHost(owner,{...first,alterId:b.id},"SYSTEM"));assert.equal((await service.resolveNativeHost(owner,first)).outcome,"recorded");
+  await assert.rejects(()=>service.setNativeHost(owner,{requestId:randomUUID(),alterId:b.id,expectedVersion:null},"SYSTEM"));
+  const cancelled={requestId:randomUUID(),alterId:b.id,expectedVersion:result.data.version};assert.equal((await service.resolveNativeHost(owner,cancelled)).outcome,"cancelled");await assert.rejects(()=>service.setNativeHost(owner,cancelled,"SYSTEM"));await assert.rejects(()=>service.resolveNativeHost(owner,{...cancelled,alterId:a.id}));
+  const version=result.data.version;const races=await Promise.allSettled([service.setNativeHost(owner,{requestId:randomUUID(),alterId:a.id,expectedVersion:version},"SYSTEM"),service.setNativeHost(owner,{requestId:randomUUID(),alterId:b.id,expectedVersion:version},"SYSTEM")]);assert.equal(races.filter(x=>x.status==="fulfilled").length,1);const front=(await service.getCurrentPresence(owner)).fronting;assert.equal(front.length,1);assert.equal(front[0].id,episode.id);
+  const latest=await service.getSystemHost(owner),intent={requestId:randomUUID(),alterId:b.id,expectedVersion:latest!.version};const [write,resolution]=await Promise.allSettled([service.setNativeHost(owner,intent,"SYSTEM"),service.resolveNativeHost(owner,intent)]);assert.equal(resolution.status,"fulfilled");if(resolution.status==="fulfilled"){assert.equal(write.status,resolution.value.outcome==="recorded"?"fulfilled":"rejected");assert.equal((await service.getSystemHost(owner))!.version,latest!.version+(resolution.value.outcome==="recorded"?1:0));}
+ }finally{await pool.query("delete from app_user where id=any($1::text[])",[[owner,other]]);await pool.end();}
+});
