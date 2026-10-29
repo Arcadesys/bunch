@@ -1,6 +1,6 @@
 import { getPilotService } from "./pilot-service";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify, errors, type JWTVerifyGetKey, type JWTPayload } from "jose";
+import { createRemoteJWKSet, decodeJwt, jwtVerify, errors, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
 import { SystemError } from "@/server/system-error";
 
@@ -107,6 +107,19 @@ function logMcpAuthFailure(category: McpAuthFailureCategory) {
   console.warn("[mcp] credential rejected", { category });
 }
 
+// The issuer here is unverified and is used only for a fixed diagnostic, never authorization.
+export function keyResolutionDiagnostic(error: unknown, token: string, expectedIssuer: string) {
+  const keyError = error instanceof errors.JWKSNoMatchingKey ? "no_matching_key"
+    : error instanceof errors.JWKSTimeout ? "timeout"
+    : error instanceof errors.JWKSMultipleMatchingKeys ? "multiple_matching_keys" : "other";
+  let issuerMatch: "match" | "different" | "unavailable" = "unavailable";
+  try {
+    const issuer = decodeJwt(token).iss;
+    if (typeof issuer === "string") issuerMatch = issuer === expectedIssuer ? "match" : "different";
+  } catch { /* malformed tokens produce no issuer diagnostic */ }
+  return { keyError, issuerMatch };
+}
+
 export async function verifyCompanionAccessToken(
   token: string,
   config = getMcpAuthorizationConfig(),
@@ -139,7 +152,9 @@ export async function requireCompanionAccessToken(request: Request): Promise<str
   let ownerId: string;
   try { ownerId = await verifyCompanionAccessToken(token, config); }
   catch (error) {
-    logMcpAuthFailure(classifyMcpVerificationFailure(error));
+    const category = classifyMcpVerificationFailure(error);
+    logMcpAuthFailure(category);
+    if (category === "key_resolution") console.warn("[mcp] key resolution diagnostic", keyResolutionDiagnostic(error, token, config.issuer));
     throw new SystemError("UNAUTHORIZED", "Authentication required.");
   }
   await getPilotService().assertAccess(ownerId, "mcp");

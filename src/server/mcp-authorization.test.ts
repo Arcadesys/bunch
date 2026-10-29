@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { errors, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
-import { COMPANION_SCOPE, classifyMcpVerificationFailure, getMcpAuthorizationConfig, issueImageReadCapability, issueSceneImageReadCapability, mcpWwwAuthenticate, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { COMPANION_SCOPE, classifyMcpVerificationFailure, getMcpAuthorizationConfig, issueImageReadCapability, issueSceneImageReadCapability, keyResolutionDiagnostic, mcpWwwAuthenticate, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
 import { SystemError } from "@/server/system-error";
 
 const config: McpAuthorizationConfig = {
@@ -192,4 +192,12 @@ test("verification failures expose only fixed diagnostic categories", async () =
     });
   }
   assert.equal(classifyMcpVerificationFailure(new Error("secret token and claims")), "verification_other");
+});
+
+test("key diagnostics contain only fixed categories and do not trust issuer claims", async () => {
+  const { token } = await fixtureToken();
+  assert.deepEqual(keyResolutionDiagnostic(new errors.JWKSNoMatchingKey(), token, config.issuer), {keyError: "no_matching_key", issuerMatch: "match"});
+  assert.deepEqual(keyResolutionDiagnostic(new errors.JWKSTimeout(), token, "https://other.example/"), {keyError: "timeout", issuerMatch: "different"});
+  assert.deepEqual(keyResolutionDiagnostic(new errors.JWKSMultipleMatchingKeys(), "not-a-jwt", config.issuer), {keyError: "multiple_matching_keys", issuerMatch: "unavailable"});
+  assert.deepEqual(keyResolutionDiagnostic(new Error("private data"), token, config.issuer), {keyError: "other", issuerMatch: "match"});
 });
