@@ -1,3 +1,4 @@
+import { nativeAuthConfig } from "@/server/native-auth-config";
 import { getDatabasePool } from "@/db/client";
 import { getSystemService } from "@/server/system-service";
 import { getPilotService } from "@/server/pilot-service";
@@ -7,10 +8,7 @@ import { verifyRosterToken, type RosterDeps } from "@/server/native-roster";
 
 export const nativeRosterDeps: RosterDeps = {
   authorize: async token => {
-    const domain=process.env.AUTH0_DOMAIN, clientId=process.env.NATIVE_ROSTER_CLIENT_ID, audience=process.env.NATIVE_ROSTER_RESOURCE_URL;
-    if (!domain || !clientId || audience!=="https://system.thearcades.me/native-host") throw new Error("Unavailable");
-    const issuer=`https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`;
-    const owner=await verifyRosterToken(token,{issuer,clientId,audience,jwksUri:new URL(".well-known/jwks.json",issuer)});
+    const owner=await verifyRosterToken(token,nativeAuthConfig());
     await getPilotService().assertAccess(owner,"mcp");
     return owner;
   },
