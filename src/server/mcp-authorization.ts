@@ -1,6 +1,6 @@
 import { getPilotService } from "./pilot-service";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type JWTPayload } from "jose";
+import { createRemoteJWKSet, jwtVerify, errors, type JWTVerifyGetKey, type JWTPayload } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
 import { SystemError } from "@/server/system-error";
 
@@ -83,6 +83,30 @@ function grantedScopes(payload: JWTPayload) {
   return new Set([...scopes, ...permissions]);
 }
 
+type McpAuthFailureCategory = "missing_bearer" | "malformed_token" | "expired" | "issuer" | "audience" | "claim" | "signature" | "key_resolution" | "missing_subject" | "missing_scope" | "verification_other";
+
+class McpAuthFailure extends Error {
+  constructor(readonly category: McpAuthFailureCategory) { super(category === "missing_scope" ? "The System companion scope is required." : "MCP authorization failed"); }
+}
+
+export function classifyMcpVerificationFailure(error: unknown): McpAuthFailureCategory {
+  if (error instanceof McpAuthFailure) return error.category;
+  if (error instanceof errors.JWTExpired) return "expired";
+  if (error instanceof errors.JWTClaimValidationFailed) {
+    if (error.claim === "iss") return "issuer";
+    if (error.claim === "aud") return "audience";
+    return "claim";
+  }
+  if (error instanceof errors.JWSSignatureVerificationFailed) return "signature";
+  if (error instanceof errors.JWKSNoMatchingKey || error instanceof errors.JWKSTimeout || error instanceof errors.JWKSMultipleMatchingKeys) return "key_resolution";
+  return "verification_other";
+}
+
+function logMcpAuthFailure(category: McpAuthFailureCategory) {
+  // A fixed category only: never log tokens, headers, claims, subjects, URLs, or errors.
+  console.warn("[mcp] credential rejected", { category });
+}
+
 export async function verifyCompanionAccessToken(
   token: string,
   config = getMcpAuthorizationConfig(),
@@ -93,9 +117,8 @@ export async function verifyCompanionAccessToken(
     issuer: config.issuer,
     audience: config.acceptedAudiences ?? config.audience,
   });
-  if (!payload.sub || !grantedScopes(payload).has(COMPANION_SCOPE)) {
-    throw new Error("The System companion scope is required.");
-  }
+  if (!payload.sub) throw new McpAuthFailure("missing_subject");
+  if (!grantedScopes(payload).has(COMPANION_SCOPE)) throw new McpAuthFailure("missing_scope");
   return ownerIdFromAuth0Subject(payload.sub);
 }
 
@@ -104,16 +127,21 @@ export async function verifyCompanionAccessToken(
 export async function requireCompanionAccessToken(request: Request): Promise<string> {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) {
+    logMcpAuthFailure("missing_bearer");
     throw new SystemError("UNAUTHORIZED", "Authentication required.");
   }
   const token = authorization.slice(7).trim();
   if (!token || token.split(".").length !== 3) {
+    logMcpAuthFailure("malformed_token");
     throw new SystemError("UNAUTHORIZED", "Authentication required.");
   }
   const config = getMcpAuthorizationConfig();
   let ownerId: string;
   try { ownerId = await verifyCompanionAccessToken(token, config); }
-  catch { throw new SystemError("UNAUTHORIZED", "Authentication required."); }
+  catch (error) {
+    logMcpAuthFailure(classifyMcpVerificationFailure(error));
+    throw new SystemError("UNAUTHORIZED", "Authentication required.");
+  }
   await getPilotService().assertAccess(ownerId, "mcp");
   return ownerId;
 }

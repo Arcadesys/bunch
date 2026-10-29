@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { ownerIdFromAuth0Subject } from "@/server/auth";
-import { COMPANION_SCOPE, getMcpAuthorizationConfig, issueImageReadCapability, issueSceneImageReadCapability, mcpWwwAuthenticate, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
+import { COMPANION_SCOPE, classifyMcpVerificationFailure, getMcpAuthorizationConfig, issueImageReadCapability, issueSceneImageReadCapability, mcpWwwAuthenticate, requireCompanionAccessToken, requireImageReadCapability, requireSceneImageReadCapability, verifyCompanionAccessToken, type McpAuthorizationConfig } from "@/server/mcp-authorization";
 import { SystemError } from "@/server/system-error";
 
 const config: McpAuthorizationConfig = {
@@ -176,4 +176,20 @@ test("expired access tokens fail and a fresh token retains the same owner", asyn
   await assert.rejects(verifyCompanionAccessToken(expired.token, config, expired.getKey), /exp/);
   const fresh = await fixtureToken();
   assert.equal(await verifyCompanionAccessToken(fresh.token, config, fresh.getKey), ownerIdFromAuth0Subject("google-oauth2|immutable-google-subject"));
+});
+
+
+test("verification failures expose only fixed diagnostic categories", async () => {
+  const scenarios = [
+    { token: await fixtureToken({ audience: "https://other.example/mcp" }), category: "audience" },
+    { token: await fixtureToken({ scope: "openid" }), category: "missing_scope" },
+    { token: await fixtureToken({ expiresIn: "-1s" }), category: "expired" },
+  ];
+  for (const { token, category } of scenarios) {
+    await assert.rejects(() => verifyCompanionAccessToken(token.token, config, token.getKey), (error: unknown) => {
+      assert.equal(classifyMcpVerificationFailure(error), category);
+      return true;
+    });
+  }
+  assert.equal(classifyMcpVerificationFailure(new Error("secret token and claims")), "verification_other");
 });
