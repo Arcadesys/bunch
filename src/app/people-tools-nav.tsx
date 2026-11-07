@@ -5,8 +5,8 @@ type PeopleTool = "people" | "gallery" | "group-photo" | "images" | "profile-gal
 export function PeopleToolsNav({ current }: { current: PeopleTool }) {
   const links = [
     ["people", "/profiles", "People"],
-    ["gallery", "/gallery/generated", "Gallery"],
-    ["profile-gallery", "/gallery", "Profile photos"],
+    ["profile-gallery", "/gallery", "Gallery"],
+    ["gallery", "/gallery/generated", "Generated photos"],
     ["group-photo", "/group-photo", "Group Photo"],
     ["images", "/images", "Create Images"],
   ] as const;
