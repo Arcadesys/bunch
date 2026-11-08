@@ -5,9 +5,7 @@ test("signed-out demo supports arrival, local photos, sample images, and reset w
   const errors: string[] = [];
   page.on("request", request => { if (/\/api\/(v1|system)|\/mcp/.test(request.url())) privateRequests.push(request.url()); });
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/");
-  await page.getByRole("link", { name: "Try the interactive demo" }).click();
-  await expect(page).toHaveURL(/\/demo$/);
+  await page.goto("/demo");
   await expect(page).toHaveTitle("Try Demo system — Bunch");
   await page.getByRole("button", { name: "Try switching in as Benny" }).click();
   await expect(page.getByRole("heading", { name: "Catch-up for Benny" })).toBeVisible();

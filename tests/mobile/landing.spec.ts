@@ -12,10 +12,10 @@ test("public landing loads real artwork without requesting private records", asy
   const hero = page.getByRole("img", { name: /Eight members of the Arcades/ });
   await expect(hero).toBeVisible();
   await expect.poll(() => hero.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
-  await page.getByRole("link", { name: "Get to know Bunch" }).click();
-  await expect(page).toHaveURL(/#how-it-helps$/);
+  await page.getByRole("link", { name: "Meet Bunch" }).click();
+  await expect(page).toHaveURL(/#what-it-does$/);
   await expect(page.getByRole("heading", { name: /Somewhere to leave the thread/ })).toBeInViewport();
-  const portrait = page.getByRole("img", { name: /Tally Arcade/ });
+  const portrait = page.getByRole("img", { name: /Addie’s illustrated portrait/ });
   await portrait.scrollIntoViewIfNeeded();
   await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   const signIn = page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Sign in" });
