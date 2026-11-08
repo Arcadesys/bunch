@@ -49,7 +49,9 @@ function DemoSession({ sample, reset }: { sample: Sample; reset: () => void }) {
   const [message, setMessage] = useState("");
   const urls = useRef<string[]>([]);
   const nextId = useRef(1);
+  const statusRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => () => { urls.current.forEach(url => URL.revokeObjectURL(url)); }, []);
+  useEffect(() => { if (message) statusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [message]);
   const name = (id: Person) => sample.people.find(p => p.id === id)!.name;
   const fronting = demoFronting;
   const changeView = (next: View) => { setView(next); setMessage(""); };
@@ -81,7 +83,7 @@ function DemoSession({ sample, reset }: { sample: Sample; reset: () => void }) {
       <p className={styles.eyebrow}>A little context for your return</p><h2 id="return-heading">Switch in as {name(person)}</h2>
       <p><strong>Hosting responsibility:</strong> {name(sample.presence.hostingPersonId)}<br/><strong>Fronting in this demo:</strong> {fronting.map(name).join(", ")}</p>
       <p>Choose to record a sample arrival. Other people remain fronting, and hosting responsibility stays separate.</p>
-      <button className={styles.primary} onClick={() => { setArrived(person); setDemoFronting(current => [...new Set([...current, person])]); setReviewed(false); setMessage(`Sample arrival recorded for ${name(person)}. Catch-up is ready below.`); }}>Try switching in as {name(person)}</button>
+      <button className={styles.primary} disabled={arrived === person} onClick={() => { setArrived(person); setDemoFronting(current => [...new Set([...current, person])]); setReviewed(false); setMessage(`Sample arrival recorded for ${name(person)}. Catch-up is ready below.`); }}>{arrived === person ? "Arrival recorded ✓" : <>Try switching in as {name(person)}</>}</button>
       {arrived && <div className={styles.catchup}>
         <h3>Catch-up for {name(arrived)}</h3>
         {arrived === "benny" ? <><p>{sample.catchUp.overview}</p><p className={styles.small}>Sample window: September 8–9, 2026. Saved records only; this does not establish anyone’s absence.</p></> : <p>Here are the fictional saved records relevant to {name(arrived)}. This walkthrough has no recorded catch-up window for {name(arrived)}.</p>}
@@ -98,7 +100,7 @@ function DemoSession({ sample, reset }: { sample: Sample; reset: () => void }) {
       </form>
       {result && <figure className={styles.result}><SampleArt night={result.night}/><figcaption>{result.caption} · Sample illustration for {name(result.person)}</figcaption><button onClick={() => { setPictures(current => [...current, result]); setResult(null); setMessage("Sample image added to the demo gallery."); }}>Keep in demo gallery</button></figure>}
     </section>}
-    <p role="status" className={styles.status}>{message}</p>
+    <p role="status" className={styles.status} ref={statusRef}>{message}</p>
     <section className={styles.gallery} aria-labelledby="gallery-heading"><h2 id="gallery-heading">{name(person)}’s demo gallery</h2>{pictures.filter(p => p.person === person).length === 0 ? <p>No pictures yet. Add a photo or create a sample image.</p> : <div className={styles.grid}>{pictures.filter(p => p.person === person).map(p => <figure key={p.id}>{p.url ? <img src={p.url} alt={`Local photo preview for ${name(p.person)}`} onError={() => { setPictures(current => current.filter(item => item.id !== p.id)); setMessage("That file could not be displayed. Please choose another photo."); }} /> : <SampleArt night={p.night}/>}<figcaption>{p.caption}</figcaption><button onClick={() => { if (p.url) URL.revokeObjectURL(p.url); setPictures(current => current.filter(item => item.id !== p.id)); setMessage("Picture removed from the demo gallery."); }}>Remove picture</button></figure>)}</div>}</section>
     <footer className={styles.footer}><p>Want a place for your own system?</p><Link href="/auth/login?returnTo=%2Fhome">Sign in to Bunch →</Link><p className={styles.small}>Demo changes and photos do not transfer to an account.</p></footer>
   </main>;

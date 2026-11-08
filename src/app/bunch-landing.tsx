@@ -1,6 +1,6 @@
 import "./landing.css";
 import Image from "next/image";
-const signIn = "/auth/login";
+const signIn = "/auth/login?returnTo=%2Fhome";
 
 export function BunchLanding() {
   return (
@@ -56,7 +56,7 @@ export function BunchLanding() {
           <div className="section-heading">
             <p className="eyebrow">Less reconstructing. More living.</p>
             <h2 id="features-title">
-              Somewhere to leave
+              Somewhere to leave{" "}
               <br />
               the thread.
             </h2>
@@ -125,7 +125,8 @@ export function BunchLanding() {
             <div className="people-copy">
               <p className="eyebrow">People, with room to be themselves</p>
               <h2>
-                More than a<br />
+                More than a{" "}
+                <br />
                 name in a list.
               </h2>
               <p>
@@ -139,7 +140,7 @@ export function BunchLanding() {
         <section className="closing wrap">
           <p className="eyebrow">Built from lived experience</p>
           <h2>
-            A companion for
+            A companion for{" "}
             <br />
             our kind of everyday.
           </h2>
