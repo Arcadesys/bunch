@@ -1,10 +1,18 @@
-import { test, expect } from "./fixtures";
+import { test, expect, openSections } from "./fixtures";
+
+// Options is a split view: on phones the Appearance row must be chosen to open it.
+async function openAppearance(page: import("@playwright/test").Page) {
+  const row = page.locator(".ld-row").filter({ hasText: "Appearance" });
+  await expect(row).toBeAttached();
+  if (!(await page.locator(".ld-detail").isVisible())) await row.click();
+}
 
 // Acceptance evals intentionally stay red when a user-facing requirement fails.
 // Do not mark known defects as expected failures: a repair should turn them green.
 test("@eval appearance is accessible and persists after reload", async ({ page }) => {
   await page.goto("/home");
-  await page.getByRole("link", { name: "Options", exact: true }).click();
+  await (await openSections(page)).getByRole("link", { name: "Options", exact: true }).click();
+  await openAppearance(page);
   await page.getByRole("button", { name: "Daylight", exact: true }).click();
   await page.getByRole("button", { name: "Save theme", exact: true }).click();
   await page.reload();
@@ -49,10 +57,15 @@ test("@eval signed-out state never claims a confirmed front or empty private inb
 for (const kind of ["note", "todo"]) {
   test(`@eval successful ${kind} save announces success and clears the form`, async ({ page, harness }) => {
     await page.goto(kind === "note" ? "/notes" : "/board");
+    const openForm = page.getByRole("button", { name: kind === "note" ? "+ Leave a note" : "+ Add a todo", exact: true });
+    await openForm.click();
     const input = page.getByLabel(kind === "note" ? "Note" : "Title", { exact: true });
     await input.fill("Synthetic save check");
     await page.getByRole("button", { name: kind === "note" ? "Save note" : "Save todo", exact: true }).click();
     await expect(page.locator(".command-notice")).toContainText(kind === "note" ? "Note saved to Notes." : "Todo saved to Todos.");
+    // Saving closes the form and opens the saved record; a fresh form starts empty.
+    if (!(await openForm.isVisible())) await page.locator(".ld-back").click();
+    await openForm.click();
     await expect(input).toHaveValue("");
     expect(harness.writes).toHaveLength(1);
   });

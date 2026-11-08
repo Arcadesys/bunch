@@ -22,6 +22,7 @@ test("@eval operator creates a copied one-use tenant link and a separate browser
     await route.fulfill({ status: 204 });
   });
   await operatorPage.goto("/account");
+  await operatorPage.getByRole("button", { name: "System invitations" }).click();
   await operatorPage.getByRole("button", { name: "Create and copy invitation link" }).click();
   await expect(operatorPage.getByRole("status")).toContainText("Invitation link copied");
   const link = await operatorPage.evaluate(() => navigator.clipboard.readText());

@@ -1,7 +1,8 @@
 "use client";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AppNavigation } from "../app-navigation";
+import { ListDetail, useListSelection } from "../list-detail";
 import type { AlterView, NoteView, TodoView } from "@/domain/contracts";
 import styles from "./board.module.css";
 type Status = TodoView["status"];
@@ -11,6 +12,15 @@ const cols: [string, Status[], Status][] = [
   ["Blocked", ["BLOCKED"], "BLOCKED"],
   ["Done", ["DONE"], "DONE"],
 ];
+const statusOrder: Status[] = ["BLOCKED", "IN_PROGRESS", "INBOX", "OPEN", "DONE", "CANCELLED"];
+const statusLabels: Record<Status, string> = {
+  BLOCKED: "Blocked",
+  IN_PROGRESS: "Doing",
+  INBOX: "To-do (inbox)",
+  OPEN: "To-do",
+  DONE: "Done",
+  CANCELLED: "Cancelled",
+};
 async function list<T>(path: string) {
   const all: T[] = [];
   let cursor: string | undefined;
@@ -29,7 +39,7 @@ async function list<T>(path: string) {
   } while (cursor);
   return all;
 }
-export function Board() {
+export function Board({ view = "list" }: { view?: "list" | "board" }) {
   const [todos, setTodos] = useState<TodoView[]>([]),
     [notes, setNotes] = useState<NoteView[]>([]),
     [profiles, setProfiles] = useState<AlterView[]>([]),
@@ -40,11 +50,16 @@ export function Board() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [deleting, setDeleting] = useState<string>(),
-    [drafts, setDrafts] = useState<Record<string, string>>({});
+    [drafts, setDrafts] = useState<Record<string, string>>({}),
+    [creating, setCreating] = useState(false);
   const title = useRef<HTMLInputElement>(null),
     receipts = useRef(new Map<string, string>()),
     focusAfterMove = useRef<string | undefined>(undefined),
-    feedback = useRef<HTMLParagraphElement>(null);
+    feedback = useRef<HTMLParagraphElement>(null),
+    createHeading = useRef<HTMLHeadingElement>(null);
+  // List view selection (?id= in the URL); the board view ignores it.
+  const todoIds = useMemo(() => todos.map((t) => t.id), [todos]);
+  const [selectedId, select] = useListSelection(todoIds, { autoSelectFirst: view === "list" });
   const load = async () => {
     try {
       const [a, b, c] = await Promise.all([
@@ -95,7 +110,10 @@ export function Board() {
     path = `/api/v1/todos/${t.id}`,
     method = "PATCH",
   ): Promise<boolean> {
-    if (busy) return false;
+    if (busy) {
+      focusAfterMove.current = undefined;
+      return false;
+    }
     setBusy(true);
     setError("");
     try {
@@ -120,21 +138,16 @@ export function Board() {
       receipts.current.delete(
         `${method}:${path}:${JSON.stringify({ expectedVersion: t.version, ...body })}`,
       );
-      if (method === "DELETE" && !path.includes("/checklist/"))
+      if (method === "DELETE" && !path.includes("/checklist/")) {
         setTodos((x) => x.filter((a) => a.id !== t.id));
-      else put(p.data);
-      if (focusAfterMove.current) {
-        const target = focusAfterMove.current;
-        focusAfterMove.current = undefined;
-        requestAnimationFrame(() =>
-          document
-            .querySelector<HTMLElement>(`[data-task-id="${target}"]`)
-            ?.focus(),
-        );
+        if (view === "list" && selectedId === t.id) select(null);
       }
+      else put(p.data);
+      // The moved card is focused by the effect below, once it has re-rendered in its new column.
       setNotice(message);
       return true;
     } catch (e) {
+      focusAfterMove.current = undefined;
       setError(e instanceof Error ? e.message : "Unable to save task.");
       return false;
     } finally {
@@ -179,7 +192,11 @@ export function Board() {
       put(p.data);
       form.reset();
       setNotice("Todo saved to Todos.");
-      title.current?.focus();
+      if (view === "list") {
+        setCreating(false);
+        select(p.data.id);
+        focusAfterMove.current = p.data.id;
+      } else title.current?.focus();
     } catch (x) {
       setError(x instanceof Error ? x.message : "Unable to save task.");
     } finally {
@@ -196,10 +213,61 @@ export function Board() {
           .join(", ")
       : "System-wide";
   useEffect(() => {
+    const target = focusAfterMove.current;
+    if (!target) return;
+    const card = document.querySelector<HTMLElement>(`[data-task-id="${target}"]`);
+    if (!card) return;
+    focusAfterMove.current = undefined;
+    card.focus();
+  }, [todos]);
+  useEffect(() => {
     if (notice && notice !== "Loading Board…" && notice !== "Board loaded.") feedback.current?.scrollIntoView({ block: "nearest" });
   }, [notice]);
-  return (
-    <main className={styles.shell}>
+
+  const current = todos.find((t) => t.id === selectedId);
+
+  const openCount = todos.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length;
+
+  const listRows = statusOrder.flatMap((status) => {
+    const todosForStatus = todos.filter((t) => t.status === status);
+    if (todosForStatus.length === 0) return [];
+    return todosForStatus.map((t) => {
+      const priorityLabel = t.priority === "HIGH" ? "High" : t.priority === "LOW" ? "Low" : "Normal";
+      const meta = [priorityLabel, t.dueOn].filter(Boolean).join(" · ");
+      const badge =
+        status === "BLOCKED"
+          ? { label: "Blocked", tone: "danger" as const }
+          : status === "IN_PROGRESS"
+          ? { label: "Doing", tone: "also" as const }
+          : undefined;
+      return {
+        id: t.id,
+        title: t.title,
+        meta,
+        snippet: t.details,
+        badge,
+        muted: ["DONE", "CANCELLED"].includes(status),
+        group: statusLabels[status],
+      };
+    });
+  });
+
+  useEffect(() => {
+    if (view !== "list" || loadState !== "ready") return;
+    const match = /^#record-(.+)$/.exec(window.location.hash);
+    if (!match || !todos.some((t) => t.id === match[1])) return;
+    const frame = requestAnimationFrame(() => select(match[1]));
+    return () => cancelAnimationFrame(frame);
+    // Only follow the addressed record once, when the Board first loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, loadState]);
+  useEffect(() => {
+    if (creating) createHeading.current?.focus();
+  }, [creating]);
+
+  if (view === "board") {
+    return (
+      <main className={styles.shell}>
       <AppNavigation current="BOARD" />
       <section className={styles.main}>
         <header className={styles.hero}>
@@ -211,9 +279,14 @@ export function Board() {
               order.
             </p>
           </div>
-          <a className="command-button" href="#create-record">
-            Add a todo
-          </a>
+          <div className={styles.heroActions}>
+            <a className="command-button" href="#create-record">
+              Add a todo
+            </a>
+            <Link className={styles.viewLink} href="/board">
+              Open the list view
+            </Link>
+          </div>
         </header>
         <p className={`command-notice ${styles.status}`}>
           {notice}
@@ -383,9 +456,149 @@ export function Board() {
         )}
       </section>
     </main>
+    );
+  }
+
+  // List view
+  const cardFor = (t: TodoView, detail = false) => (
+    <Card
+      key={t.id}
+      detail={detail}
+      todo={t}
+      profiles={profiles}
+      notes={notes}
+      names={names(t)}
+      busy={busy}
+      deleting={deleting === t.id}
+      draft={drafts[t.id] ?? ""}
+      setDraft={(v) => setDrafts((x) => ({ ...x, [t.id]: v }))}
+      move={(s) => void change(t, { status: s === "INBOX" ? "OPEN" : s }, `${t.title} moved.`)}
+      save={(body) => change(t, body, "Task details saved.")}
+      owners={(ids) => void change(t, { assigneeAlterIds: ids }, "Owners saved.")}
+      links={(ids) => void change(t, { noteIds: ids }, "Linked notes saved.")}
+      checklist={(id, b, m = "PATCH") => change(t, b, "Checklist updated.", `/api/v1/todos/${t.id}/checklist${id ? `/${id}` : ""}`, m)}
+      remove={() => {
+        if (deleting === t.id) {
+          setDeleting(undefined);
+          void change(t, {}, "Task permanently deleted.", `/api/v1/todos/${t.id}`, "DELETE");
+        } else setDeleting(t.id);
+      }}
+    />
+  );
+  const feedbackBlock = (
+    <>
+      {error && loadState === "ready" && (
+        <p className={styles.error} role="alert">
+          {error} <button className="button button-secondary" onClick={() => void load()}>Retry Board</button>
+        </p>
+      )}
+      <p ref={feedback} className={`command-notice ${styles.status}`} role="status" aria-live="polite">{busy ? "Saving…" : notice}</p>
+    </>
+  );
+  return (
+    <main className="app-page">
+      <AppNavigation current="BOARD" />
+      <ListDetail
+        title="Todos"
+        className={styles.listView}
+        count={loadState === "ready" ? `${openCount} open` : undefined}
+        rows={listRows}
+        selectedId={creating ? null : selectedId}
+        onSelect={(id) => { setCreating(false); select(id); }}
+        detailLabel="Todo details"
+        detailOpen={creating}
+        newAction={loadState === "ready" ? { label: "Add a todo", pressed: creating, onClick: () => setCreating(true) } : undefined}
+        listStatus={
+          loadState === "loading" ? (
+            <p className="ld-intro">Loading saved Board records…</p>
+          ) : loadState === "unauthorized" ? (
+            <p className="ld-intro"><a href="/auth/login">Sign in to view your saved Board</a></p>
+          ) : loadState === "error" ? (
+            <div className="ld-intro"><p role="alert">{error}</p><button className="button button-secondary" onClick={() => void load()}>Retry Board</button></div>
+          ) : !todos.length ? (
+            <p className="ld-intro">No todos yet. Add one to get started.</p>
+          ) : null
+        }
+        listTools={
+          <p className="ld-intro"><Link href="/board?view=board" className={styles.viewLink}>Open the board view</Link></p>
+        }
+        emptyDetail={loadState === "ready" ? <div className="detail-card">{feedbackBlock}<p className="ld-empty">Choose a todo from the list, or add a new one.</p></div> : undefined}
+      >
+        {creating && loadState === "ready" ? (
+          <section className={`detail-card ${styles.create}`} aria-labelledby="create-todo-heading">
+            <h2 id="create-todo-heading" ref={createHeading} tabIndex={-1}>Add a todo</h2>
+            <form onSubmit={create}>
+              <label>
+                Title
+                <input ref={title} name="title" required maxLength={500} />
+              </label>
+              <label>
+                Details <span>optional</span>
+                <textarea name="details" rows={3} />
+              </label>
+              <label>
+                Priority
+                <select name="priority" defaultValue="NORMAL">
+                  <option value="LOW">Low</option>
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">High</option>
+                </select>
+              </label>
+              <label>
+                Due date <span>optional</span>
+                <input name="dueOn" type="date" />
+              </label>
+              <fieldset>
+                <legend>Assign to</legend>
+                {profiles.map((p) => (
+                  <label className={styles.check} key={p.id}>
+                    <input name="owners" type="checkbox" value={p.id} />
+                    {p.name}
+                  </label>
+                ))}
+              </fieldset>
+              <div className="detail-actions">
+                <button className="command-button" disabled={busy}>
+                  Save todo
+                </button>
+                <button type="button" className="button button-secondary" disabled={busy} onClick={() => setCreating(false)}>
+                  Cancel
+                </button>
+              </div>
+              {feedbackBlock}
+            </form>
+          </section>
+        ) : current && loadState === "ready" ? (
+          <div className="detail-card">
+            <p className="detail-eyebrow">{statusLabels[current.status]} · {current.priority === "HIGH" ? "High" : current.priority === "LOW" ? "Low" : "Normal"} priority</p>
+            <div role="group" aria-label="Status" className={styles.statusGroup}>
+              {[...cols, ["Cancelled", ["CANCELLED"], "CANCELLED"] as [string, Status[], Status]].map(([label, statuses, target]) => (
+                <button
+                  key={target}
+                  type="button"
+                  aria-pressed={statuses.includes(current.status)}
+                  disabled={busy || statuses.includes(current.status)}
+                  onClick={() => void change(current, { status: target }, `${current.title} moved to ${label}.`)}
+                >
+                  {statuses.includes(current.status) ? <span aria-hidden="true">✓ </span> : null}{label}
+                </button>
+              ))}
+            </div>
+            <dl className="detail-facts">
+              <div><dt>Priority</dt><dd>{current.priority === "HIGH" ? "High" : current.priority === "LOW" ? "Low" : "Normal"}</dd></div>
+              <div><dt>Due date</dt><dd>{current.dueOn || "No due date"}</dd></div>
+              <div><dt>Owners</dt><dd>{names(current)}</dd></div>
+            </dl>
+            {feedbackBlock}
+            {cardFor(current, true)}
+          </div>
+        ) : null}
+      </ListDetail>
+    </main>
   );
 }
 function Card({
+  detail = false,
   todo,
   profiles,
   notes,
@@ -401,6 +614,7 @@ function Card({
   checklist,
   remove,
 }: {
+  detail?: boolean;
   todo: TodoView;
   profiles: AlterView[];
   notes: NoteView[];
@@ -428,11 +642,13 @@ function Card({
     [checklistDrafts, setChecklistDrafts] = useState<Record<string, string>>({});
   return (
     <article
-      className={styles.card}
+      className={detail ? `${styles.card} ${styles.detailCard}` : styles.card}
       data-task-id={todo.id}
       tabIndex={-1}
-      draggable
+      aria-label={detail ? todo.title : undefined}
+      draggable={!detail}
       onDragStart={(e) => {
+        if (detail) return;
         if (busy) {
           e.preventDefault();
           return;
@@ -471,7 +687,7 @@ function Card({
         </>
       ) : (
         <>
-          <h3>{todo.title}</h3>
+          {detail ? <h2>{todo.title}</h2> : <h3>{todo.title}</h3>}
           {todo.details && <p>{todo.details}</p>}
           <button disabled={busy} onClick={() => setEditing(true)}>
             Edit task
@@ -480,27 +696,6 @@ function Card({
       )}
       <p>Assigned to: {names}</p>
       {todo.dueOn && <p>Due {todo.dueOn}</p>}
-      <button
-        disabled={busy}
-        onClick={() => move(todo.status === "DONE" ? "OPEN" : "DONE")}
-      >
-        {todo.status === "DONE" ? "Reopen todo" : "Mark todo complete"}
-      </button>
-      <label>
-        Move to
-        <select
-          value={todo.status}
-          disabled={busy}
-          onChange={(e) => move(e.target.value as Status)}
-        >
-          <option value="INBOX">To-do (inbox)</option>
-          <option value="OPEN">To-do</option>
-          <option value="IN_PROGRESS">Doing</option>
-          <option value="BLOCKED">Blocked</option>
-          <option value="DONE">Done</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
-      </label>
       <details>
         <summary>Owners</summary>
         {profiles.map((p) => (
@@ -618,6 +813,28 @@ function Card({
         const n = notes.find((x) => x.id === id);
         return n && <blockquote key={id}>{n.body}</blockquote>;
       })}
+      {/* Status controls sit below the collapsed sections so a card can be dragged from its middle. */}
+      <button
+        disabled={busy}
+        onClick={() => move(todo.status === "DONE" ? "OPEN" : "DONE")}
+      >
+        {todo.status === "DONE" ? "Reopen todo" : "Mark todo complete"}
+      </button>
+      <label>
+        Move to
+        <select
+          value={todo.status}
+          disabled={busy}
+          onChange={(e) => move(e.target.value as Status)}
+        >
+          <option value="INBOX">To-do (inbox)</option>
+          <option value="OPEN">To-do</option>
+          <option value="IN_PROGRESS">Doing</option>
+          <option value="BLOCKED">Blocked</option>
+          <option value="DONE">Done</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+      </label>
       <button disabled={busy} className={styles.delete} onClick={remove}>
         {deleting ? "Confirm deletion" : "Delete task"}
       </button>

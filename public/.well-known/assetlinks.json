@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "me.thearcades.pendant",
+      "sha256_cert_fingerprints": ["A0:31:90:70:2A:CF:9C:64:1B:EA:96:22:D5:A6:8E:F9:F7:7E:B7:AA:BC:D8:A8:24:99:BA:4C:F5:D1:E1:78:21"]
+    }
+  }
+]

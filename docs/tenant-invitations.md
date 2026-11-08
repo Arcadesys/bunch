@@ -12,7 +12,10 @@ account isolated from the operator's.
 
 Opening invitations requires recording current capacity and recovery evidence
 for the systems the instance will hold. This is a deliberate speed bump, not a
-technical constraint.
+technical constraint. Evidence expires after seven days for new invitations.
+Existing active accounts can continue uploading images after that evidence ages
+out, subject to their storage quota. Operators can still explicitly pause uploads
+or account access.
 
 ## Token design
 

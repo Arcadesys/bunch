@@ -1,0 +1,80 @@
+/* The list pane is narrow at every width, so the date filters stack. */
+.history-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0 0.2rem 0.4rem;
+}
+
+.history-filters label {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.history-filters input {
+  min-height: 48px;
+  width: 100%;
+  font: inherit;
+}
+
+.history-filters button,
+.history-load-older button,
+.history-retry {
+  min-height: 48px;
+}
+
+.history-intro {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.history-summary {
+  margin: 0 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.history-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.history-name-section {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.history-name-section h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-kind {
+  margin: 0;
+  font-weight: 800;
+}
+
+.history-callout {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.history-load-older {
+  padding: 0.4rem 0.2rem 0;
+}
+
+.history-load-older button {
+  width: 100%;
+}

@@ -62,6 +62,7 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 - Use the private upload tools for gallery or profile-picture uploads. Bytes transfer directly to private System storage.
 - Do not place image bytes, temporary download URLs, or storage keys in model-visible content.
 - Do not claim an upload succeeded until the refreshed authenticated record shows it.
+- Use `delete_private_image` only after the user explicitly confirms deleting that specific image. Deletion is permanent and also removes repairs made from it.
 
 ## Conversation catch-up
 
@@ -84,16 +85,17 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 
 ## Canonical image preparation
 
-- For every explicit ChatGPT image request involving named alters, call `prepare_chatgpt_alter_image` with the exact names. `sceneImage` is optional. When present, it is image 1 and the ordered private appearance-reference images follow it; otherwise the references begin at image 1. The widget transfers reference bytes to transient ChatGPT files with `library: false`, keeps capabilities widget-only, and asks ChatGPT's image tool to generate once.
+- In Codex, call `prepare_codex_alter_image` with the exact active names or aliases and scene. It returns ordered permanent, session-authenticated gallery/download routes for every selected appearance reference, without reference capabilities or image bytes. Open each gallery in the owner's signed-in browser, download only its matching selected links, inspect all local references, then use Codex's image generator once with those references and the canonical prompt. An optional user scene/style image stays local. If browser authentication or a reference is unavailable, report the blocker; do not use the ChatGPT widget, guess a likeness, request re-uploads, or start a paid Bunch generation. Preparation alone does not confirm reference transfer or generation.
+- Only in a ChatGPT host with a mounted widget and file-upload/follow-up controls, for every explicit image request involving named alters, call `prepare_chatgpt_alter_image` with the exact names. `sceneImage` is optional. When present, it is image 1 and the ordered private appearance-reference images follow it; otherwise the references begin at image 1. The widget transfers reference bytes to transient ChatGPT files with `library: false`, keeps capabilities widget-only, and asks ChatGPT's image tool to generate once.
 - Never call `generate_scene` as a ChatGPT fallback. It starts a paid Bunch-native provider job and consumes Bunch image allowance. Use it only on a Bunch-owned surface or when the user explicitly requests Bunch-native generation.
 - Resolve every alter by exact active name or confirmed exact alias. Stop visibly on an unknown, ambiguous, archived, or missing-reference alter; never omit a participant or guess.
 - When an external image-studio adapter needs a multi-character Furry scene, call `prepare_furry_scene` with the requested scene and an ordered `alterNames` array. Names resolve only as exact active names or aliases; correct an unknown or ambiguous name instead of guessing.
-- Every participant needs one or more selected appearance references. `ready` means the packet was prepared only; no image was generated or saved. Keep the ordered per-person reference media in private metadata and never put capabilities, URLs, bytes, or storage keys in model-visible content.
+- Every participant needs one or more selected appearance references. `ready` means the packet was prepared only; no image was generated or saved. Keep the ordered per-person reference media in private metadata and never put capabilities, signed URLs, bytes, or storage keys in model-visible content. The Codex tool may return only permanent session-authenticated gallery/download routes; these are not access grants.
 - When an external image-studio adapter needs a canonical prompt for individuals or a group, call `prepare_alter_image_prompt` with the scene and explicit alter IDs, or `alters: "all"` for the complete non-archived lineup. Use its assembled prompt and all per-person private reference metadata.
 - Canonical species, visual description, and preservation instructions take precedence over conflicting scene wording, references, and style tags. Never infer species from tags or overwrite a profile from a generated image.
 - Incomplete text may use the selected appearance reference when `ready` is true. Report the returned gaps. If `status` is `NEEDS_INFORMATION`, resolve the missing identity fields or selected reference before generation; never omit someone silently.
 - `prepare_furry_transform` also returns canonical prompt content with the selected private reference. Preserve the alter-to-reference association and keep capability URLs out of prompt text.
-- Private reference bytes are necessary for identity fidelity. Capabilities, URLs, bytes, storage keys, and appearance reference IDs remain private metadata and never enter model-visible content. Never draw a named alter from text alone, from reference IDs, or from an invented likeness, and never ask the user to upload a photo Bunch already holds.
+- Private reference bytes are necessary for identity fidelity. Capabilities, signed URLs, bytes, and storage keys remain private metadata and never enter model-visible content. Never draw a named alter from text alone, from reference IDs, or from an invented likeness, and never ask the user to upload a photo Bunch already holds.
 
 ## Privacy boundary
 
@@ -109,3 +111,14 @@ Removing a ChatGPT app may disconnect its saved OAuth session. Never remove a pa
 - A completed native or ChatGPT-handoff image is private and separate from profile pictures, selected appearance references, hosting, fronting, presence, and canon. Do not promote it or infer appearance facts from it without a separate explicit request.
 - When a result is labeled **Economy output**, repeat that label and ask the user to verify identity-sensitive details. Economy output is never automatically a profile picture, selected reference, or canon.
 - Never put private reference bytes, signed URLs, capabilities, or storage keys in model-facing text. Report a failed job as failed; do not retry an uncertain provider call automatically.
+
+
+## Personalized sticker packs
+
+- When the user wants a personalized reaction sticker pack for an explicitly named alter, resolve that exact active profile first. Never infer the subject from hosting, fronting, tone, or recent activity.
+- Call `get_sticker_pack_draft` to load any saved ten-reaction direction board. The board contains semantic intents and acting directions only; it does not contain private image bytes.
+- If the board is incomplete, interview for communication style before image generation: how this person says yes/no, apologizes, thanks, celebrates, shows affection, signs, bows, gestures, uses text, or avoids certain portrayals.
+- Save a direction board only after explicit user approval with `save_sticker_pack_draft`.
+- For generation in ChatGPT, use the sticker-generator workflow: approve all ten performances, make a cheap blocking pass first, repair only the selected sticker, and apply the character reference only after the blocking pose is approved.
+- For the final character pass, call `prepare_chatgpt_alter_image` for the exact named alter so ChatGPT receives the canonical private appearance references transiently. Do not ask the user to re-upload references Bunch already holds and do not call paid `generate_scene` as a fallback.
+- Keep each sticker independent. A repair to one reaction must not silently reroll the other nine.

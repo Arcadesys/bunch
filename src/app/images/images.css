@@ -1,0 +1,6 @@
+.images-detail .images-render { display: block; max-width: 100%; height: auto; border-radius: 10px; }
+.images-detail .detail-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.images-detail .detail-actions .button { min-height: 48px; }
+.images-detail fieldset { min-width: 0; }
+.images-section { display: grid; gap: .6rem; }
+.images-section h2 { margin: 0; }

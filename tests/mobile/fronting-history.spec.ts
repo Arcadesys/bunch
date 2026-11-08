@@ -1,4 +1,14 @@
+import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
+
+// Phones show one pane at a time: a row opens its record, "← History" returns to the list.
+async function openRecord(page: Page, name: string) {
+  await page.getByRole("region", { name: "History" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
+}
+async function showList(page: Page) {
+  const back = page.getByRole("button", { name: "← History" });
+  if (await back.isVisible()) await back.click();
+}
 
 test("timeline shows intervals, filters dates and loads older records without writes", async ({ page, harness }, testInfo) => {
   const current = { ...harness.currentFront!, kind: "FRONTING", origin: "EXPLICIT", startedAt: "2026-09-05T12:00:00.000Z" };
@@ -12,10 +22,14 @@ test("timeline shows intervals, filters dates and loads older records without wr
   });
   await page.goto("/history");
   await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+  await openRecord(page, "Test Robin");
   await expect(page.getByText("Fronting · no end recorded")).toBeVisible();
+  await showList(page);
   await page.getByRole("button", { name: "Load older records" }).click();
+  await openRecord(page, "Test Finch");
   await expect(page.getByRole("heading", { name: "Test Finch" })).toBeVisible();
   expect(requests.at(-1)!.searchParams.get("beforeId")).toBe(current.id);
+  await showList(page);
   await page.getByLabel("From date").fill("2026-09-03");
   await page.getByLabel("Through date").fill("2026-09-05");
   await page.getByRole("button", { name: "Show timeline" }).click();
@@ -46,9 +60,14 @@ test("timeline labels overlapping hosting, fronting and unclassified legacy reco
     { ...common, id: "60000000-0000-4000-8000-000000000004", kind: "LEGACY_FRONT", origin: "LEGACY_RECORD", alterName: "Legacy fixture", startedAt: "2026-09-01T12:00:00.000Z" },
   ], meta: { recordedOnly: true } } }));
   await page.goto("/history");
+  await openRecord(page, "Hosting fixture");
   await expect(page.getByText("Hosting · no end recorded", {exact:true})).toBeVisible();
-  await expect(page.getByText("Legacy front record · kind not classified")).toBeVisible();
   await expect(page.getByText("Responsible for everything otherwise unclaimed during this period.")).toBeVisible();
+  await showList(page);
+  await openRecord(page, "Legacy fixture");
+  await expect(page.getByText("Legacy front record · kind not classified")).toBeVisible();
+  await showList(page);
+  await openRecord(page, "Alongside fixture");
   await expect(page.getByRole("heading", {name:"Alongside fixture"})).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(harness.writes).toEqual([]);

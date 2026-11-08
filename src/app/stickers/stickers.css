@@ -1,0 +1,9 @@
+.sticker-card header h3 { margin: 0; font-size: 1.25rem; }
+.sticker-card header small { font-size: .8rem; }
+.sticker-person-detail { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+.sticker-person-detail img { width: 140px; height: 140px; object-fit: contain; border: 3px solid var(--line); border-radius: 12px; background: var(--paper); }
+.sticker-person-detail h2, .sticker-person-detail p { margin: 0 0 .3rem; }
+.sticker-lab-detail .detail-actions { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: .7rem; padding: .8rem; border: 3px solid var(--line); background: var(--surface); }
+.sticker-lab-detail .detail-actions .button { min-height: 48px; }
+.sticker-lab-detail label { display: grid; gap: .25rem; }
+@media (max-width: 759px) { .sticker-lab-detail .detail-actions .button { width: 100%; } }

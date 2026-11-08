@@ -11,6 +11,10 @@
   padding: 0 clamp(1rem, 4vw, 3rem) 5rem;
 }
 
+.page :is(h1, h2, h3) {
+  color: var(--ink);
+}
+
 .skip {
   position: absolute;
   left: -9999px;
@@ -57,14 +61,24 @@
 }
 
 .hero,
+.references,
 .helper,
 .explainer {
   max-width: 72rem;
   margin: 0 auto;
+  scroll-margin-top: 2rem;
 }
 
 .hero {
-  padding: clamp(3.5rem, 9vw, 7rem) 0 clamp(2.5rem, 6vw, 4.5rem);
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 4rem);
+  padding: clamp(2.5rem, 6vw, 5rem) 0;
+}
+
+.heroCopy {
+  min-width: 0;
 }
 
 .eyebrow {
@@ -76,19 +90,55 @@
 }
 
 .hero h1 {
-  max-width: 17ch;
   margin: 0;
-  font-size: clamp(2.4rem, 7vw, 5rem);
-  line-height: 1;
+  font-size: clamp(2.5rem, 5.3vw, 4.6rem);
+  line-height: 1.06;
   letter-spacing: -.045em;
+  text-wrap: balance;
+}
+
+.hero h1 span {
+  color: var(--accent);
 }
 
 .intro {
   max-width: 48rem;
   margin: 1.5rem 0 0;
   color: var(--muted);
-  font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+  font-size: clamp(1.1rem, 2vw, 1.25rem);
   line-height: 1.65;
+}
+
+.heroActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-top: 1.75rem;
+}
+
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  min-height: 44px;
+  border: 2px solid var(--accent);
+  border-radius: .65rem;
+  padding: .8rem 1rem;
+  background: var(--accent);
+  color: #20111a;
+  font-weight: 800;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  text-underline-offset: .25em;
 }
 
 .privacy {
@@ -98,10 +148,153 @@
   border: 1px solid var(--line);
   border-radius: .6rem;
   color: var(--muted);
+  line-height: 1.5;
+}
+
+.heroArtwork {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 1.5rem 4rem #0003;
+}
+
+.artworkLink {
+  display: block;
+}
+
+.sceneImage {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sceneCaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem 1.25rem;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.55;
+}
+
+.sceneCaption strong {
+  display: block;
+  color: var(--ink);
+}
+
+.enlargeHint {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.references {
+  padding: 1rem 0 clamp(3rem, 7vw, 5rem);
+}
+
+.referenceHeading {
+  max-width: 46rem;
+  margin-bottom: 1.75rem;
+}
+
+.referenceHeading h2,
+.helper h2,
+.explainer h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.referenceHeading > p:last-child,
+.helperIntro > p:last-child,
+.explainer p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.referenceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 2.5vw, 1.75rem);
+}
+
+.referenceCard {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.referenceImageLink {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  background: #120d16;
+}
+
+.referenceImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.imageHint {
+  position: absolute;
+  right: .75rem;
+  bottom: .75rem;
+  border: 1px solid var(--line);
+  border-radius: .4rem;
+  padding: .4rem .6rem;
+  background: var(--ground);
+  color: var(--ink);
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.referenceCaption {
+  padding: 1.25rem;
+}
+
+.referenceCaption .eyebrow {
+  margin-bottom: .55rem;
+}
+
+.referenceCaption h3 {
+  margin: 0 0 .65rem;
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.referenceCaption > p:last-child,
+.galleryNote,
+.fieldHint {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.galleryNote {
+  max-width: 60rem;
+  margin-top: 1.25rem;
+  font-size: .95rem;
+}
+
+.fieldHint {
+  font-size: .95rem;
+  font-weight: 400;
 }
 
 .helper {
-  padding: clamp(2rem, 5vw, 3.5rem);
+  padding: clamp(1.25rem, 5vw, 3.5rem);
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
@@ -109,19 +302,6 @@
 
 .helperIntro {
   max-width: 44rem;
-}
-
-.helper h2,
-.explainer h2 {
-  margin: 0 0 1rem;
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
-  line-height: 1.15;
-}
-
-.helperIntro > p:last-child,
-.explainer p {
-  color: var(--muted);
-  line-height: 1.7;
 }
 
 .workspace {
@@ -134,6 +314,7 @@
 .form {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .form label {
@@ -163,9 +344,17 @@
 .form textarea:focus-visible,
 .actions button:focus-visible,
 .output pre:focus-visible,
-.brand:focus-visible {
+.brand:focus-visible,
+.primaryLink:focus-visible,
+.textLink:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
+}
+
+.artworkLink:focus-visible,
+.referenceImageLink:focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: -4px;
 }
 
 .actions {
@@ -235,8 +424,31 @@
     max-width: 14rem;
   }
 
+  .hero,
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .hero h1 {
+    max-width: 15ch;
+    font-size: clamp(2.5rem, 8vw, 4rem);
+  }
+}
+
+@media (max-width: 600px) {
+  .referenceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .header p {
+    max-width: 12rem;
+    font-size: .85rem;
+  }
+
+  .heroActions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: .5rem;
   }
 }
 

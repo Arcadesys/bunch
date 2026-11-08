@@ -134,6 +134,7 @@ test("@eval export includes original image downloads and deletion requires exact
     });
   });
   await page.goto("/account");
+  await page.getByRole("button", { name: "Delete this system’s account" }).click();
   const download = page.waitForEvent("download");
   await page
     .getByRole("button", { name: "Export records and image list" })
@@ -142,7 +143,6 @@ test("@eval export includes original image downloads and deletion requires exact
   await expect(
     page.getByRole("link", { name: "Download original image 1" }),
   ).toBeVisible();
-  await page.getByText("Delete this system’s account", { exact: true }).click();
   await page
     .getByRole("button", { name: "Permanently delete my system" })
     .click();

@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { ConversationSummaryService } from "@/server/conversation-summary-service";
+import { runRetentionCleanup } from "@/server/retention-cleanup";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
@@ -8,11 +8,5 @@ export async function GET(request: Request) {
   const expected = Buffer.from(`Bearer ${secret ?? ""}`);
   if (!secret || supplied.length !== expected.length || !timingSafeEqual(supplied, expected))
     return new Response("Unauthorized", { status: 401 });
-  try {
-    const deleted = await new ConversationSummaryService().purgeExpired();
-    return Response.json({ deleted }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    console.error("CATCH_UP_RETENTION_FAILED");
-    return Response.json({ error: "Retention cleanup failed; retry required." }, { status: 500 });
-  }
+  return runRetentionCleanup();
 }
